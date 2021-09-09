@@ -1,3 +1,7 @@
+#![no_std]
+
+pub mod crypto;
+
 #[cfg(test)]
 mod tests {
     #[test]
