@@ -1,4 +1,3 @@
-use core::convert::TryInto;
 use sha2::{Digest, Sha256, Sha384, Sha512};
 
 pub const SHA256_SIZE: usize = 32;
@@ -6,24 +5,15 @@ pub const SHA384_SIZE: usize = 48;
 pub const SHA512_SIZE: usize = 64;
 
 pub fn sha256<T: AsRef<[u8]>>(input: T) -> [u8; SHA256_SIZE] {
-    Sha256::digest(input.as_ref())
-        .as_slice()
-        .try_into()
-        .expect("Unexpected hash output size")
+    Sha256::digest(input.as_ref()).into()
 }
 
 pub fn sha384<T: AsRef<[u8]>>(input: T) -> [u8; SHA384_SIZE] {
-    Sha384::digest(input.as_ref())
-        .as_slice()
-        .try_into()
-        .expect("Unexpected hash output size")
+    Sha384::digest(input.as_ref()).into()
 }
 
 pub fn sha512<T: AsRef<[u8]>>(input: T) -> [u8; SHA512_SIZE] {
-    Sha512::digest(input.as_ref())
-        .as_slice()
-        .try_into()
-        .expect("Unexpected hash output size")
+    Sha512::digest(input.as_ref()).into()
 }
 
 #[cfg(test)]
