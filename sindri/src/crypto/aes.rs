@@ -8,6 +8,7 @@ pub const KEY256_SIZE: usize = 32;
 pub const NONCE_SIZE: usize = 12;
 pub const TAG_SIZE: usize = 16;
 
+#[derive(Debug)]
 pub enum Error {
     InvalidKeySize,
     InvalidNonceSize,
