@@ -24,10 +24,9 @@ where
     check_sizes(&key, &nonce, KEY128_SIZE)?;
     let key = Key::from_slice(key.as_ref());
     let nonce = Nonce::from_slice(nonce.as_ref());
-    match Aes128Gcm::new(key).encrypt(nonce, plaintext.as_ref()) {
-        Ok(ciphertext) => Ok(ciphertext),
-        Err(_) => Err(Error::Encryption),
-    }
+    Aes128Gcm::new(key)
+        .encrypt(nonce, plaintext.as_ref())
+        .map_err(|_| Error::Encryption)
 }
 
 pub fn aes128gcm_decrypt<K, N, C>(key: K, nonce: N, ciphertext: C) -> Result<Vec<u8>, Error>
@@ -39,10 +38,9 @@ where
     check_sizes(&key, &nonce, KEY128_SIZE)?;
     let key = Key::from_slice(key.as_ref());
     let nonce = Nonce::from_slice(nonce.as_ref());
-    match Aes128Gcm::new(key).decrypt(nonce, ciphertext.as_ref()) {
-        Ok(plaintext) => Ok(plaintext),
-        Err(_) => Err(Error::Decryption),
-    }
+    Aes128Gcm::new(key)
+        .decrypt(nonce, ciphertext.as_ref())
+        .map_err(|_| Error::Decryption)
 }
 
 pub fn aes256gcm_encrypt<K, N, P>(key: K, nonce: N, plaintext: P) -> Result<Vec<u8>, Error>
@@ -54,10 +52,9 @@ where
     check_sizes(&key, &nonce, KEY256_SIZE)?;
     let key = Key::from_slice(key.as_ref());
     let nonce = Nonce::from_slice(nonce.as_ref());
-    match Aes256Gcm::new(key).encrypt(nonce, plaintext.as_ref()) {
-        Ok(ciphertext) => Ok(ciphertext),
-        Err(_) => Err(Error::Encryption),
-    }
+    return Aes256Gcm::new(key)
+        .encrypt(nonce, plaintext.as_ref())
+        .map_err(|_| Error::Encryption);
 }
 
 pub fn aes256gcm_decrypt<K, N, C>(key: K, nonce: N, ciphertext: C) -> Result<Vec<u8>, Error>
@@ -69,10 +66,9 @@ where
     check_sizes(&key, &nonce, KEY256_SIZE)?;
     let key = Key::from_slice(key.as_ref());
     let nonce = Nonce::from_slice(nonce.as_ref());
-    match Aes256Gcm::new(key).decrypt(nonce, ciphertext.as_ref()) {
-        Ok(plaintext) => Ok(plaintext),
-        Err(_) => Err(Error::Decryption),
-    }
+    Aes256Gcm::new(key)
+        .decrypt(nonce, ciphertext.as_ref())
+        .map_err(|_| Error::Decryption)
 }
 
 fn check_sizes<K: AsRef<[u8]>, N: AsRef<[u8]>>(
@@ -90,70 +86,71 @@ fn check_sizes<K: AsRef<[u8]>, N: AsRef<[u8]>>(
 }
 
 #[cfg(test)]
-const KEY128: &'static [u8; KEY128_SIZE] = b"Open sesame! ...";
-#[cfg(test)]
-const KEY256: &'static [u8; KEY256_SIZE] = b"Or was it 'open quinoa' instead?";
-#[cfg(test)]
-const NONCE: &'static [u8; NONCE_SIZE] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-#[cfg(test)]
-const PLAINTEXT: &[u8] = b"Hello, World!";
+pub mod test {
+    use super::*;
 
-#[test]
-fn aes128gcm_encrypt_decrypt() {
-    let expected_ciphertext_and_tag: &[u8; PLAINTEXT.len() + TAG_SIZE] = &[
-        // ciphertext
-        0xbb, 0xfe, 0x8, 0x2b, 0x97, 0x86, 0xd4, 0xe4, 0xa4, 0xec, 0x19, 0xdb, 0x63,
-        // tag
-        0x40, 0xce, 0x93, 0x5a, 0x71, 0x5e, 0x63, 0x9, 0xb, 0x11, 0xad, 0x51, 0x4d, 0xe8, 0x23,
-        0x50,
-    ];
-    match aes128gcm_encrypt(KEY128, NONCE, PLAINTEXT) {
-        Ok(ciphertext_and_tag) => {
-            assert_eq!(
-                ciphertext_and_tag, expected_ciphertext_and_tag,
-                "Unexpected ciphertext"
-            );
-            match aes128gcm_decrypt(KEY128, NONCE, ciphertext_and_tag) {
-                Ok(plaintext) => {
-                    assert_eq!(plaintext, PLAINTEXT, "Unexpected plaintext");
-                }
-                Err(_) => {
-                    panic!("Decryption error");
+    const KEY128: &'static [u8; KEY128_SIZE] = b"Open sesame! ...";
+    const KEY256: &'static [u8; KEY256_SIZE] = b"Or was it 'open quinoa' instead?";
+    const NONCE: &'static [u8; NONCE_SIZE] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    const PLAINTEXT: &[u8] = b"Hello, World!";
+
+    #[test]
+    fn aes128gcm_encrypt_decrypt() {
+        let expected_ciphertext_and_tag: &[u8; PLAINTEXT.len() + TAG_SIZE] = &[
+            // ciphertext
+            0xbb, 0xfe, 0x8, 0x2b, 0x97, 0x86, 0xd4, 0xe4, 0xa4, 0xec, 0x19, 0xdb, 0x63,
+            // tag
+            0x40, 0xce, 0x93, 0x5a, 0x71, 0x5e, 0x63, 0x9, 0xb, 0x11, 0xad, 0x51, 0x4d, 0xe8, 0x23,
+            0x50,
+        ];
+        match aes128gcm_encrypt(KEY128, NONCE, PLAINTEXT) {
+            Ok(ciphertext_and_tag) => {
+                assert_eq!(
+                    ciphertext_and_tag, expected_ciphertext_and_tag,
+                    "Unexpected ciphertext"
+                );
+                match aes128gcm_decrypt(KEY128, NONCE, ciphertext_and_tag) {
+                    Ok(plaintext) => {
+                        assert_eq!(plaintext, PLAINTEXT, "Unexpected plaintext");
+                    }
+                    Err(_) => {
+                        panic!("Decryption error");
+                    }
                 }
             }
-        }
-        Err(_) => {
-            panic!("Encryption error");
+            Err(_) => {
+                panic!("Encryption error");
+            }
         }
     }
-}
 
-#[test]
-fn test_aes256gcm() {
-    let expected_ciphertext_and_tag: &[u8; PLAINTEXT.len() + TAG_SIZE] = &[
-        // ciphertext
-        0xab, 0xe2, 0x9e, 0x5a, 0x8d, 0xd3, 0xbd, 0x62, 0xc9, 0x46, 0x71, 0x8e, 0x50,
-        // tag
-        0xa8, 0xcb, 0x47, 0x81, 0xad, 0x51, 0x89, 0x1f, 0x23, 0x78, 0x11, 0xcb, 0x9f, 0xc5, 0xbf,
-        0x8b,
-    ];
-    match aes256gcm_encrypt(KEY256, NONCE, PLAINTEXT) {
-        Ok(ciphertext_and_tag) => {
-            assert_eq!(
-                ciphertext_and_tag, expected_ciphertext_and_tag,
-                "Unexpected ciphertext"
-            );
-            match aes256gcm_decrypt(KEY256, NONCE, ciphertext_and_tag) {
-                Ok(plaintext) => {
-                    assert_eq!(plaintext, PLAINTEXT, "Unexpected plaintext");
-                }
-                Err(_) => {
-                    panic!("Decryption error");
+    #[test]
+    fn test_aes256gcm() {
+        let expected_ciphertext_and_tag: &[u8; PLAINTEXT.len() + TAG_SIZE] = &[
+            // ciphertext
+            0xab, 0xe2, 0x9e, 0x5a, 0x8d, 0xd3, 0xbd, 0x62, 0xc9, 0x46, 0x71, 0x8e, 0x50,
+            // tag
+            0xa8, 0xcb, 0x47, 0x81, 0xad, 0x51, 0x89, 0x1f, 0x23, 0x78, 0x11, 0xcb, 0x9f, 0xc5,
+            0xbf, 0x8b,
+        ];
+        match aes256gcm_encrypt(KEY256, NONCE, PLAINTEXT) {
+            Ok(ciphertext_and_tag) => {
+                assert_eq!(
+                    ciphertext_and_tag, expected_ciphertext_and_tag,
+                    "Unexpected ciphertext"
+                );
+                match aes256gcm_decrypt(KEY256, NONCE, ciphertext_and_tag) {
+                    Ok(plaintext) => {
+                        assert_eq!(plaintext, PLAINTEXT, "Unexpected plaintext");
+                    }
+                    Err(_) => {
+                        panic!("Decryption error");
+                    }
                 }
             }
-        }
-        Err(_) => {
-            panic!("Encryption error");
+            Err(_) => {
+                panic!("Encryption error");
+            }
         }
     }
 }
