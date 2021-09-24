@@ -48,18 +48,18 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::crypto::rng;
 
-    fn ecdh_secrets_match<C>() -> Result<(), Error>
+    fn ecdh_secrets_match<E, C>() -> Result<(), Error>
     where
+        E: rng::EntropySource,
         C: Curve + ProjectiveArithmetic,
         AffinePoint<C>: Zeroize,
         Scalar<C>: Zeroize,
         SharedSecret<C>: for<'a> From<&'a AffinePoint<C>>,
     {
-        use crate::crypto::rng;
-
-        let mut source = rng::test::TestEntropySource::default();
-        let mut rng = rng::Rng::new(&mut source, None);
+        let source = rng::test::TestEntropySource::default();
+        let mut rng = rng::Rng::new(source, None);
         let (local_public, local_private) = gen_key_pair::<_, C>(&mut rng)?;
         let (remote_public, remote_private) = gen_key_pair::<_, C>(&mut rng)?;
         let local_secret = local_private.diffie_hellman(&remote_public);
@@ -70,6 +70,6 @@ mod test {
 
     #[test]
     fn test_p256() -> Result<(), Error> {
-        ecdh_secrets_match::<p256::NistP256>()
+        ecdh_secrets_match::<rng::test::TestEntropySource, p256::NistP256>()
     }
 }
