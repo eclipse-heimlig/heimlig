@@ -53,8 +53,8 @@ mod test {
 
     #[test]
     fn test_p256() {
-        let source = rng::test::TestEntropySource::default();
-        let mut rng = rng::Rng::new(source, None);
+        let entropy = rng::test::TestEntropySource::default();
+        let mut rng = rng::Rng::new(entropy, None);
         let (local_public, local_private) =
             gen_key_pair::<_, NistP256>(&mut rng).expect("Failed to generate local key pair");
         let (remote_public, remote_private) =
