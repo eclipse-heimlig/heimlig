@@ -1,0 +1,106 @@
+name: "Rust CI/CD"
+
+on: [push, pull_request]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      matrix:
+        os: [x86_64-unknown-linux-musl, arm-unknown-linux-musleabihf]
+        runs-on: [ubuntu-latest]
+        cross: [true]
+        include:
+          - os: x86_64-apple-darwin
+            runs-on: macos-latest # Apple needs to be compiled on an apple os
+            cross: false # Cross fails on these platforms
+          - os: x86_64-pc-windows-gnu
+            runs-on: windows-latest # Not needed, but why not?
+            suffix: .exe # Windows has an .exe suffix
+            cross: false # Cross fails on these platforms
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+        profile: minimal
+        target: ${{ matrix.os }}
+
+    - name: Build Binary
+      uses: actions-rs/cargo@v1
+      with:
+          use-cross: ${{ matrix.cross }}
+          command: build
+          args: --target ${{ matrix.os }} --release
+
+    - name: Tests
+      uses: actions-rs/cargo@v1
+      with:
+          use-cross: ${{ matrix.cross }}
+          command: test
+          args: --target ${{ matrix.os }} --verbose
+
+  clippy_check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          profile: minimal
+          components: clippy
+          target: x86_64-unknown-linux-musl
+      - uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --all-features --target x86_64-unknown-linux-musl
+
+  rustfmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+        profile: minimal
+        components: rustfmt
+    - name: Check code formatting
+      run: |
+        cargo fmt --all -- --check
+
+  rustdoc:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        profile: minimal
+        override: true
+        target: x86_64-unknown-linux-musl
+        components: rustfmt, rust-src
+
+    - name: Build Documentation
+      run: cargo doc --workspace --no-deps  --target x86_64-unknown-linux-musl
+
+    - name: Deploy Docs
+      uses: peaceiris/actions-gh-pages@v3
+      if: ${{ github.ref == 'refs/heads/master' }}
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_branch: gh-pages
+        publish_dir: ./target/x86_64-unknown-linux-musl/doc/
