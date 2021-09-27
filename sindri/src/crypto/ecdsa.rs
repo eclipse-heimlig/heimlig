@@ -61,11 +61,11 @@ mod test {
 
     #[test]
     fn sign_verify_p256() {
-        let source = rng::test::TestEntropySource::default();
-        let mut rng = rng::Rng::new(source, None);
+        let entropy = rng::test::TestEntropySource::default();
+        let mut rng = rng::Rng::new(entropy, None);
         let message = "Hello, World!";
-        let (signer, verifier) = gen_key_pair::<_, NistP256>(&mut rng);
-        let signature = sign(&signer, message.as_ref());
-        assert!(verify(&verifier, message.as_ref(), signature.as_ref()));
+        let (public, private) = gen_key_pair::<_, NistP256>(&mut rng);
+        let signature = sign(&private, message.as_ref());
+        assert!(verify(&public, message.as_ref(), &signature));
     }
 }

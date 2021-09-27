@@ -14,7 +14,7 @@ where
     E: EntropySource,
 {
     rng: ChaCha20Rng,
-    source: E,
+    entropy: E,
     reseed_threshold: u128,
 }
 
@@ -26,15 +26,15 @@ impl<E: EntropySource> Rng<E> {
     ///
     /// # Arguments
     ///
-    /// * `source`: The entropy source from which the generator is seeded and reseeded if
+    /// * `entropy`: The entropy source from which the generator is seeded and reseeded if
     /// `reseed_threshold` is set.
     /// * `reseed_threshold`: Optional number of bytes after which the generator will reseed itself.
     /// Reseeding the generator is an additional defense in depth measure in case an attacker gets
     /// access to the internal state of the generator.
-    pub fn new(mut source: E, reseed_threshold: Option<u128>) -> Self {
+    pub fn new(mut entropy: E, reseed_threshold: Option<u128>) -> Self {
         Rng {
-            rng: ChaCha20Rng::from_seed(source.random_seed()),
-            source,
+            rng: ChaCha20Rng::from_seed(entropy.random_seed()),
+            entropy,
             reseed_threshold: reseed_threshold.unwrap_or(Rng::<E>::CYCLE_LENGTH),
         }
     }
@@ -42,7 +42,7 @@ impl<E: EntropySource> Rng<E> {
     /// Reseeds the random number generator. Without reseeding, the generator cycles after
     /// generating 1 ZiB (zebibyte) of pseudorandom data.
     pub fn reseed(&mut self) {
-        self.rng = ChaCha20Rng::from_seed(self.source.random_seed());
+        self.rng = ChaCha20Rng::from_seed(self.entropy.random_seed());
     }
 }
 
@@ -103,36 +103,36 @@ pub(crate) mod test {
 
     #[test]
     fn create_rng() {
-        let source = TestEntropySource::default();
-        assert_eq!(source.counter, 0);
-        let rng = Rng::new(source, Some(256));
-        assert_eq!(rng.source.counter, 32);
+        let entropy = TestEntropySource::default();
+        assert_eq!(entropy.counter, 0);
+        let rng = Rng::new(entropy, Some(256));
+        assert_eq!(rng.entropy.counter, 32);
     }
 
     #[test]
     fn no_reseed() {
-        let source = TestEntropySource::default();
+        let entropy = TestEntropySource::default();
         let mut data = [0u8; 255];
-        let mut rng = Rng::new(source, Some(256));
+        let mut rng = Rng::new(entropy, Some(256));
         rng.fill_bytes(&mut data);
-        assert_eq!(rng.source.counter, 32);
+        assert_eq!(rng.entropy.counter, 32);
     }
 
     #[test]
     fn one_reseed() {
-        let source = TestEntropySource::default();
+        let entropy = TestEntropySource::default();
         let mut data = [0u8; 256];
-        let mut rng = Rng::new(source, Some(256));
+        let mut rng = Rng::new(entropy, Some(256));
         rng.fill_bytes(&mut data);
-        assert_eq!(rng.source.counter, 64);
+        assert_eq!(rng.entropy.counter, 64);
     }
 
     #[test]
     fn multiple_reseeds() {
-        let source = TestEntropySource::default();
+        let entropy = TestEntropySource::default();
         let mut data = [0u8; 4 * 256];
-        let mut rng = Rng::new(source, Some(256));
+        let mut rng = Rng::new(entropy, Some(256));
         rng.fill_bytes(&mut data);
-        assert_eq!(rng.source.counter, 32 + 4 * 32);
+        assert_eq!(rng.entropy.counter, 32 + 4 * 32);
     }
 }
