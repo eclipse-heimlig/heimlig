@@ -1,6 +1,5 @@
 use ecdsa::elliptic_curve::generic_array::ArrayLength;
 use ecdsa::elliptic_curve::ops::Invert;
-use ecdsa::elliptic_curve::rand_core::{CryptoRng, RngCore};
 use ecdsa::elliptic_curve::zeroize::Zeroize;
 use ecdsa::elliptic_curve::{
     AffinePoint, FieldSize, ProjectiveArithmetic, PublicKey, Scalar, SecretKey,
@@ -10,21 +9,11 @@ use ecdsa::signature::digest::Digest;
 use ecdsa::signature::{DigestSigner, Signer, Verifier};
 use ecdsa::{Curve, Signature, SignatureSize, SigningKey, VerifyingKey};
 
+pub use crate::crypto::ecc::gen_key_pair;
+
 #[derive(Debug)]
 pub enum Error {
     Sign,
-}
-
-pub fn gen_key_pair<R, C>(rng: &mut R) -> (PublicKey<C>, SecretKey<C>)
-where
-    R: CryptoRng + RngCore,
-    C: Curve + ProjectiveArithmetic,
-    Scalar<C>: FromDigest<C> + Invert<Output = Scalar<C>> + SignPrimitive<C> + Zeroize,
-    SignatureSize<C>: ArrayLength<u8>,
-{
-    let private = SecretKey::<C>::random(rng);
-    let public = private.public_key();
-    (public, private)
 }
 
 pub fn sign<C>(key: &SecretKey<C>, message: &[u8]) -> Signature<C>
@@ -47,7 +36,7 @@ where
     SignatureSize<C>: ArrayLength<u8>,
 {
     let key: VerifyingKey<C> = key.into();
-    if key.verify(message, &signature).is_ok() {
+    if key.verify(message, signature).is_ok() {
         return true;
     }
     false
@@ -63,8 +52,8 @@ mod test {
     fn sign_verify_p256() {
         let entropy = rng::test::TestEntropySource::default();
         let mut rng = rng::Rng::new(entropy, None);
-        let message = "Hello, World!";
         let (public, private) = gen_key_pair::<_, NistP256>(&mut rng);
+        let message = "Hello, World!";
         let signature = sign(&private, message.as_ref());
         assert!(verify(&public, message.as_ref(), &signature));
     }
