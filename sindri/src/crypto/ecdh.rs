@@ -1,8 +1,7 @@
-use ecdsa::elliptic_curve::SecretKey;
 use elliptic_curve::ecdh::{diffie_hellman, SharedSecret};
 use elliptic_curve::weierstrass::Curve;
 use elliptic_curve::zeroize::Zeroize;
-use elliptic_curve::{AffinePoint, ProjectiveArithmetic, PublicKey, Scalar};
+use elliptic_curve::{AffinePoint, ProjectiveArithmetic, PublicKey, Scalar, SecretKey};
 
 pub use crate::crypto::ecc::gen_key_pair;
 
