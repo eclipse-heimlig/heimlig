@@ -33,7 +33,7 @@ where
 /// That is, if two peers called A and B have generated their respective key pairs, it holds that
 ///     derive_shared_secret(private_A, public_B) == derive_shared_secret(private_B, public_A)
 pub fn derive_shared_secret<C>(
-    private: EphemeralSecret<C>,
+    private: &EphemeralSecret<C>,
     public: &PublicKey<C>,
 ) -> SharedSecret<C>
 where
@@ -49,28 +49,18 @@ where
 mod test {
     use super::*;
     use crate::crypto::rng;
-
-    fn ecdh_secrets_match<E, C>()
-    where
-        E: rng::EntropySource,
-        C: Curve + ProjectiveArithmetic,
-        AffinePoint<C>: Zeroize,
-        Scalar<C>: Zeroize,
-        SharedSecret<C>: for<'a> From<&'a AffinePoint<C>>,
-    {
-        let source = rng::test::TestEntropySource::default();
-        let mut rng = rng::Rng::new(source, None);
-        let (local_public, local_private) =
-            gen_key_pair::<_, C>(&mut rng).expect("Failed to generate local key pair");
-        let (remote_public, remote_private) =
-            gen_key_pair::<_, C>(&mut rng).expect("Failed to generate remote key pair");
-        let local_secret = local_private.diffie_hellman(&remote_public);
-        let remote_secret = remote_private.diffie_hellman(&local_public);
-        assert_eq!(local_secret.as_bytes(), remote_secret.as_bytes());
-    }
+    use p256::NistP256;
 
     #[test]
     fn test_p256() {
-        ecdh_secrets_match::<rng::test::TestEntropySource, p256::NistP256>();
+        let source = rng::test::TestEntropySource::default();
+        let mut rng = rng::Rng::new(source, None);
+        let (local_public, local_private) =
+            gen_key_pair::<_, NistP256>(&mut rng).expect("Failed to generate local key pair");
+        let (remote_public, remote_private) =
+            gen_key_pair::<_, NistP256>(&mut rng).expect("Failed to generate remote key pair");
+        let local_secret = derive_shared_secret(&local_private, &remote_public);
+        let remote_secret = derive_shared_secret(&remote_private, &local_public);
+        assert_eq!(local_secret.as_bytes(), remote_secret.as_bytes());
     }
 }
