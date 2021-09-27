@@ -50,7 +50,7 @@ mod test {
     use super::*;
     use crate::crypto::rng;
 
-    fn ecdh_secrets_match<E, C>() -> Result<(), Error>
+    fn ecdh_secrets_match<E, C>()
     where
         E: rng::EntropySource,
         C: Curve + ProjectiveArithmetic,
@@ -60,16 +60,17 @@ mod test {
     {
         let source = rng::test::TestEntropySource::default();
         let mut rng = rng::Rng::new(source, None);
-        let (local_public, local_private) = gen_key_pair::<_, C>(&mut rng)?;
-        let (remote_public, remote_private) = gen_key_pair::<_, C>(&mut rng)?;
+        let (local_public, local_private) =
+            gen_key_pair::<_, C>(&mut rng).expect("Failed to generate local key pair");
+        let (remote_public, remote_private) =
+            gen_key_pair::<_, C>(&mut rng).expect("Failed to generate remote key pair");
         let local_secret = local_private.diffie_hellman(&remote_public);
         let remote_secret = remote_private.diffie_hellman(&local_public);
         assert_eq!(local_secret.as_bytes(), remote_secret.as_bytes());
-        Ok(())
     }
 
     #[test]
-    fn test_p256() -> Result<(), Error> {
-        ecdh_secrets_match::<rng::test::TestEntropySource, p256::NistP256>()
+    fn test_p256() {
+        ecdh_secrets_match::<rng::test::TestEntropySource, p256::NistP256>();
     }
 }
