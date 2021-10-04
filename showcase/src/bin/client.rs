@@ -1,5 +1,6 @@
-use structopt::clap::arg_enum;
-use structopt::StructOpt;
+use anyhow::Result;
+use std::io::{self, BufRead, Write};
+use structopt::{clap::arg_enum, StructOpt};
 
 /// This command line tool simulates a crypto client. It reads data from the standard input,
 /// forwards it to the crypto server for processing and writes the result to the standard output.
@@ -22,7 +23,20 @@ struct Opt {
     queue_size: usize,
     /// Cryptographic operation to be carried out.
     #[structopt(subcommand)]
-    op: Op,
+    subcommand: Subcommand,
+}
+
+#[derive(StructOpt, Debug)]
+enum Subcommand {
+    /// Executes a cryptographic hash function
+    Hash(HashSubcommand),
+}
+
+#[derive(StructOpt, Debug)]
+struct HashSubcommand {
+    /// The algorithm that shall be used
+    #[structopt(long, short, possible_values = &HashAlgo::variants(), default_value="Sha256", case_insensitive = true)]
+    algo: HashAlgo,
 }
 
 arg_enum! {
@@ -34,16 +48,21 @@ enum HashAlgo {
 }
 }
 
-#[derive(StructOpt, Debug)]
-enum Op {
-    /// Executes a cryptographic hash function
-    Hash {
-        #[structopt(long, short, possible_values = &HashAlgo::variants(), case_insensitive = true)]
-        algo: HashAlgo,
-    },
+fn hash_subcommand(_opt: &HashSubcommand) -> Result<()> {
+    let input = io::BufReader::new(io::stdin());
+    let mut output = io::BufWriter::new(io::stdout());
+
+    for line in input.lines() {
+        output.write_all(line?.as_bytes())?;
+        output.flush()?;
+    }
+
+    Ok(())
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     let opt = Opt::from_args();
-    println!("{:?}", opt);
+    match opt.subcommand {
+        Subcommand::Hash(s) => hash_subcommand(&s),
+    }
 }
