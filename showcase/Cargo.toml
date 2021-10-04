@@ -3,12 +3,5 @@ name = "showcase"
 version = "0.1.0"
 edition = "2018"
 
-[[bin]]
-name = "client"
-path = "src/bin/client.rs"
-
-[[bin]]
-name = "server"
-path = "src/bin/server.rs"
-
 [dependencies]
+structopt = "0.3.23"
