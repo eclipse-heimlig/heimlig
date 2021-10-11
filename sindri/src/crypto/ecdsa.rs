@@ -11,11 +11,6 @@ use ecdsa::{Curve, Signature, SignatureSize, SigningKey, VerifyingKey};
 
 pub use crate::crypto::ecc::gen_key_pair;
 
-#[derive(Debug)]
-pub enum Error {
-    Sign,
-}
-
 pub fn sign<C>(key: &SecretKey<C>, message: &[u8]) -> Signature<C>
 where
     C: Curve + ProjectiveArithmetic + DigestPrimitive,

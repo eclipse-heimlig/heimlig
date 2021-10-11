@@ -3,6 +3,7 @@
 extern crate alloc;
 
 pub mod crypto;
+pub mod queue;
 
 #[cfg(test)]
 mod tests {
