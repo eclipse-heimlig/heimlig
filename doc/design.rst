@@ -1,11 +1,10 @@
 Sindri
 ======
 
-
 Introduction
 ------------
 
-Desging and Development Gudielines
+Design and Development Guidelines
 ----------------------------------
 
 
@@ -24,15 +23,15 @@ Goals
 Milestones
 ----------
 
-System Desging
+System Design
 --------------
 
-System Archtiecture
+System Architecture
 +++++++++++++++++++
 .. image:: ../resources/images/architecture.png
-    :alt: Archtiecture
+    :alt: Architecture
 
-Detailed System Desging
+Detailed System Design
 +++++++++++++++++++++++
 
 FAQ
