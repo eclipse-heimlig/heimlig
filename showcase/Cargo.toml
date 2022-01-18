@@ -5,4 +5,4 @@ version = "0.1.0"
 
 [dependencies]
 anyhow = "1.0.51"
-structopt = "0.3.25"
+structopt = "0.3.26"
