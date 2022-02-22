@@ -4,5 +4,5 @@ name = "showcase"
 version = "0.1.0"
 
 [dependencies]
-anyhow = "1.0.51"
+anyhow = "1.0.55"
 structopt = "0.3.25"
