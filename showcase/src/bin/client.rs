@@ -11,16 +11,16 @@ struct Opt {
     /// instance. The name should be in the form of "/somename". If the leading slash is omitted,
     /// it'll be added implicitly.
     #[structopt(long, short)]
-    shm: String,
+    _shm: String,
     /// Index of the queue allocated within the shared memory to be used for communicating with the
     /// server. Please make sure that this index does not exceed the number of queues the server
     /// provides. The index is zero-based, which means that if there are N queues, the highest index
     /// is N-1.
     #[structopt(long, short)]
-    queue: usize,
+    _queue: usize,
     /// The queues size in bytes.
     #[structopt(long, short = "n", default_value = "1024")]
-    queue_size: usize,
+    _queue_size: usize,
     /// Cryptographic operation to be carried out.
     #[structopt(subcommand)]
     subcommand: Subcommand,
@@ -36,7 +36,7 @@ enum Subcommand {
 struct HashSubcommand {
     /// The algorithm that shall be used
     #[structopt(long, short, possible_values = &HashAlgo::variants(), default_value="Sha256", case_insensitive = true)]
-    algo: HashAlgo,
+    _algo: HashAlgo,
 }
 
 arg_enum! {

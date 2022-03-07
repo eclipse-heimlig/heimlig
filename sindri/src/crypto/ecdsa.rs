@@ -1,13 +1,12 @@
 use ecdsa::elliptic_curve::generic_array::ArrayLength;
-use ecdsa::elliptic_curve::ops::Invert;
-use ecdsa::elliptic_curve::zeroize::Zeroize;
+use ecdsa::elliptic_curve::ops::{Invert, Reduce};
 use ecdsa::elliptic_curve::{
     AffinePoint, FieldSize, ProjectiveArithmetic, PublicKey, Scalar, SecretKey,
 };
-use ecdsa::hazmat::{DigestPrimitive, FromDigest, SignPrimitive, VerifyPrimitive};
+use ecdsa::hazmat::{DigestPrimitive, SignPrimitive, VerifyPrimitive};
 use ecdsa::signature::digest::Digest;
 use ecdsa::signature::{DigestSigner, Signer, Verifier};
-use ecdsa::{Curve, Signature, SignatureSize, SigningKey, VerifyingKey};
+use ecdsa::{PrimeCurve, Signature, SignatureSize, SigningKey, VerifyingKey};
 
 pub use crate::crypto::ecc::gen_key_pair;
 
@@ -18,8 +17,8 @@ pub enum Error {
 
 pub fn sign<C>(key: &SecretKey<C>, message: &[u8]) -> Signature<C>
 where
-    C: Curve + ProjectiveArithmetic + DigestPrimitive,
-    Scalar<C>: FromDigest<C> + Invert<Output = Scalar<C>> + SignPrimitive<C> + Zeroize,
+    C: PrimeCurve + ProjectiveArithmetic + DigestPrimitive,
+    Scalar<C>: Invert<Output = Scalar<C>> + Reduce<C::UInt> + SignPrimitive<C>,
     SignatureSize<C>: ArrayLength<u8>,
     SigningKey<C>: DigestSigner<<C>::Digest, Signature<C>>,
 {
@@ -29,17 +28,14 @@ where
 
 pub fn verify<C>(key: &PublicKey<C>, message: &[u8], signature: &Signature<C>) -> bool
 where
-    C: Curve + ProjectiveArithmetic + DigestPrimitive,
+    C: PrimeCurve + ProjectiveArithmetic + DigestPrimitive,
     C::Digest: Digest<OutputSize = FieldSize<C>>,
     AffinePoint<C>: VerifyPrimitive<C>,
-    Scalar<C>: FromDigest<C>,
+    Scalar<C>: Reduce<C::UInt>,
     SignatureSize<C>: ArrayLength<u8>,
 {
     let key: VerifyingKey<C> = key.into();
-    if key.verify(message, signature).is_ok() {
-        return true;
-    }
-    false
+    key.verify(message, signature).is_ok()
 }
 
 #[cfg(test)]
