@@ -3,7 +3,6 @@ use aes_gcm::{Aes128Gcm, Aes256Gcm, Key, Nonce};
 use alloc::vec::Vec;
 
 pub const KEY128_SIZE: usize = 16;
-pub const KEY192_SIZE: usize = 24;
 pub const KEY256_SIZE: usize = 32;
 pub const NONCE_SIZE: usize = 12;
 pub const TAG_SIZE: usize = 16;
@@ -97,61 +96,31 @@ pub mod test {
 
     #[test]
     fn aes128gcm_encrypt_decrypt() {
-        let expected_ciphertext_and_tag: &[u8; PLAINTEXT.len() + TAG_SIZE] = &[
+        let expected_encrypted: &[u8; PLAINTEXT.len() + TAG_SIZE] = &[
             // ciphertext
             0xbb, 0xfe, 0x8, 0x2b, 0x97, 0x86, 0xd4, 0xe4, 0xa4, 0xec, 0x19, 0xdb, 0x63,
             // tag
             0x40, 0xce, 0x93, 0x5a, 0x71, 0x5e, 0x63, 0x9, 0xb, 0x11, 0xad, 0x51, 0x4d, 0xe8, 0x23,
             0x50,
         ];
-        match aes128gcm_encrypt(KEY128, NONCE, PLAINTEXT) {
-            Ok(ciphertext_and_tag) => {
-                assert_eq!(
-                    ciphertext_and_tag, expected_ciphertext_and_tag,
-                    "Unexpected ciphertext"
-                );
-                match aes128gcm_decrypt(KEY128, NONCE, ciphertext_and_tag) {
-                    Ok(plaintext) => {
-                        assert_eq!(plaintext, PLAINTEXT, "Unexpected plaintext");
-                    }
-                    Err(_) => {
-                        panic!("Decryption error");
-                    }
-                }
-            }
-            Err(_) => {
-                panic!("Encryption error");
-            }
-        }
+        let encrypted = aes128gcm_encrypt(KEY128, NONCE, PLAINTEXT).expect("encryption error");
+        let decrypted = aes128gcm_decrypt(KEY128, NONCE, &encrypted).expect("decryption error");
+        assert_eq!(encrypted, expected_encrypted, "ciphertext mismatch");
+        assert_eq!(decrypted, PLAINTEXT, "plaintext mismatch");
     }
 
     #[test]
     fn test_aes256gcm() {
-        let expected_ciphertext_and_tag: &[u8; PLAINTEXT.len() + TAG_SIZE] = &[
+        let expected_encrypted: &[u8; PLAINTEXT.len() + TAG_SIZE] = &[
             // ciphertext
             0xab, 0xe2, 0x9e, 0x5a, 0x8d, 0xd3, 0xbd, 0x62, 0xc9, 0x46, 0x71, 0x8e, 0x50,
             // tag
             0xa8, 0xcb, 0x47, 0x81, 0xad, 0x51, 0x89, 0x1f, 0x23, 0x78, 0x11, 0xcb, 0x9f, 0xc5,
             0xbf, 0x8b,
         ];
-        match aes256gcm_encrypt(KEY256, NONCE, PLAINTEXT) {
-            Ok(ciphertext_and_tag) => {
-                assert_eq!(
-                    ciphertext_and_tag, expected_ciphertext_and_tag,
-                    "Unexpected ciphertext"
-                );
-                match aes256gcm_decrypt(KEY256, NONCE, ciphertext_and_tag) {
-                    Ok(plaintext) => {
-                        assert_eq!(plaintext, PLAINTEXT, "Unexpected plaintext");
-                    }
-                    Err(_) => {
-                        panic!("Decryption error");
-                    }
-                }
-            }
-            Err(_) => {
-                panic!("Encryption error");
-            }
-        }
+        let encrypted = aes256gcm_encrypt(KEY256, NONCE, PLAINTEXT).expect("encryption error");
+        let decrypted = aes256gcm_decrypt(KEY256, NONCE, &encrypted).expect("decryption error");
+        assert_eq!(encrypted, expected_encrypted, "ciphertext mismatch");
+        assert_eq!(decrypted, PLAINTEXT, "plaintext mismatch");
     }
 }
