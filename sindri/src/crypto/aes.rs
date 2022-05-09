@@ -25,7 +25,7 @@ where
     let key = Key::from_slice(key.as_ref());
     let nonce = Nonce::from_slice(nonce.as_ref());
     Aes128Gcm::new(key)
-        .encrypt(nonce, plaintext.as_ref())
+        .encrypt(nonce, plaintext.as_ref()) // TODO: Avoid allocation by using heapless feature of aes-gcm
         .map_err(|_| Error::Encryption)
 }
 
@@ -39,7 +39,7 @@ where
     let key = Key::from_slice(key.as_ref());
     let nonce = Nonce::from_slice(nonce.as_ref());
     Aes128Gcm::new(key)
-        .decrypt(nonce, ciphertext.as_ref())
+        .decrypt(nonce, ciphertext.as_ref()) // TODO: Avoid allocation by using heapless feature of aes-gcm
         .map_err(|_| Error::Decryption)
 }
 
@@ -53,7 +53,7 @@ where
     let key = Key::from_slice(key.as_ref());
     let nonce = Nonce::from_slice(nonce.as_ref());
     return Aes256Gcm::new(key)
-        .encrypt(nonce, plaintext.as_ref())
+        .encrypt(nonce, plaintext.as_ref()) // TODO: Avoid allocation by using heapless feature of aes-gcm
         .map_err(|_| Error::Encryption);
 }
 
@@ -67,7 +67,7 @@ where
     let key = Key::from_slice(key.as_ref());
     let nonce = Nonce::from_slice(nonce.as_ref());
     Aes256Gcm::new(key)
-        .decrypt(nonce, ciphertext.as_ref())
+        .decrypt(nonce, ciphertext.as_ref()) // TODO: Avoid allocation by using heapless feature of aes-gcm
         .map_err(|_| Error::Decryption)
 }
 
