@@ -29,6 +29,9 @@ mod test {
         let (remote_public, remote_private) = gen_key_pair::<_, NistP256>(&mut rng);
         let local_secret = derive_shared_secret(&local_private, &remote_public);
         let remote_secret = derive_shared_secret(&remote_private, &local_public);
-        assert_eq!(local_secret.as_bytes(), remote_secret.as_bytes());
+        assert_eq!(
+            local_secret.raw_secret_bytes(),
+            remote_secret.raw_secret_bytes()
+        );
     }
 }
