@@ -1,0 +1,14 @@
+[package]
+edition = "2021"
+name = "server"
+version = "0.1.0"
+
+[dependencies]
+sindri = { path = "../sindri" }
+anyhow = "1"
+base64 = "0.13"
+clap = { version = "3", features = ["derive"] }
+hex = "0.4"
+log = "0.4"
+rand = "0.8"
+simple_logger = "2"
