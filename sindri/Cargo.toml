@@ -5,16 +5,19 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+# TODO: Remove alloc feature or find a way to handle allocation errors
 [dependencies]
-aes-gcm = "0.9"
+aes-gcm = { version = "0.9", default-features = false, features = ["aes", "alloc"] }
 ecdsa = { version = "0.14", default-features = false }
 elliptic-curve = { version = "0.12", default-features = false }
 generic-array = { version = "0.14", default-features = false, features = ["more_lengths"] }
 p256 = { version = "0.11", default-features = false, features = ["ecdh", "ecdsa"] }
+postcard =  { version = "0.7", default-features = false, features = ["alloc"] }
 rand = { version = "0.8", default-features = false }
 rand_chacha = { version = "0.3", default-features = false }
 rand_core = { version = "0.6", default-features = false }
-sha2 = { version = "0.10" }
+sha2 = { version = "0.10" , default-features = false }
+serde = { version = "1" , default-features = false }
 
 [dev-dependencies]
 hex = { version = "0.4" }
