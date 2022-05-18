@@ -1,6 +1,6 @@
 use crate::common::alloc::alloc_vec;
+use crate::common::jobs::{Request, Response, MAX_RANDOM_DATA};
 use crate::crypto::rng::{EntropySource, Rng};
-use crate::host::jobs::{Request, Response, MAX_RANDOM_DATA};
 use rand_core::RngCore;
 use serde::{Deserialize, Serialize};
 
@@ -35,8 +35,8 @@ impl<E: EntropySource> Scheduler<E> {
 
 #[cfg(test)]
 pub(crate) mod test {
+    use crate::common::jobs::{Request, Response, MAX_RANDOM_DATA};
     use crate::crypto::rng::{EntropySource, Rng};
-    use crate::host::jobs::{Request, Response, MAX_RANDOM_DATA};
     use crate::host::scheduler::Error;
     use crate::host::scheduler::Scheduler;
 

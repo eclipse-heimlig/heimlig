@@ -142,7 +142,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "client"
+name = "cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -150,6 +150,7 @@ dependencies = [
  "clap",
  "hex",
  "log",
+ "rand",
  "simple_logger",
  "sindri",
 ]
@@ -577,20 +578,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "server"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64",
- "clap",
- "hex",
- "log",
- "rand",
- "simple_logger",
- "sindri",
 ]
 
 [[package]]
