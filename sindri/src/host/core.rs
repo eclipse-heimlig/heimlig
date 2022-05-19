@@ -1,8 +1,15 @@
 use crate::common::channel::Sender;
-use crate::common::jobs::{Error, Request};
+use crate::common::jobs::Request;
 use crate::crypto::rng::{EntropySource, Rng};
 use crate::host::scheduler::Scheduler;
 use alloc::vec::Vec;
+
+#[derive(Clone, Eq, PartialEq, Debug)]
+pub enum Error {
+    Encode,
+    Decode,
+    Send,
+}
 
 pub struct Core<E: EntropySource> {
     scheduler: Scheduler<E>,
@@ -18,7 +25,7 @@ impl<E: EntropySource> Core<E> {
 
 impl<E: EntropySource> Core<E> {
     pub fn process<S: Sender>(&mut self, sender: &mut S, data: &[u8]) -> Result<(), Error> {
-        let request = Request::try_from(data)?;
+        let request = Request::try_from(data).map_err(|_| Error::Decode)?;
         let response = self.scheduler.schedule(request);
         let response: Vec<u8> = response.try_into().map_err(|_| Error::Encode)?;
         sender.send(response.as_slice()).map_err(|_| Error::Send)?;
@@ -31,9 +38,9 @@ mod tests {
     extern crate std;
 
     use crate::common::channel::{Receiver, Sender};
-    use crate::common::jobs::{Error, Request, Response};
+    use crate::common::jobs::{Request, Response};
     use crate::crypto::rng;
-    use crate::host::core::Core;
+    use crate::host::core::{Core, Error};
     use alloc::vec;
     use alloc::vec::Vec;
     use std::println;
