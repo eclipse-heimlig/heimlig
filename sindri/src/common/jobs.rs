@@ -4,13 +4,6 @@ use serde::{Deserialize, Serialize};
 
 pub const MAX_RANDOM_DATA: usize = 1024;
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub enum Error {
-    Encode,
-    Decode,
-    Send,
-}
-
 #[derive(Deserialize, Serialize, Debug)]
 pub enum Request {
     GetRandom { size: usize },
@@ -23,35 +16,35 @@ pub enum Response {
 }
 
 impl TryFrom<&[u8]> for Request {
-    type Error = Error;
+    type Error = postcard::Error;
 
-    fn try_from(value: &[u8]) -> Result<Self, Error> {
-        postcard::from_bytes(value).map_err(|_| Error::Decode)
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        postcard::from_bytes(value)
     }
 }
 
 impl TryFrom<&[u8]> for Response {
-    type Error = Error;
+    type Error = postcard::Error;
 
-    fn try_from(value: &[u8]) -> Result<Self, Error> {
-        postcard::from_bytes(value).map_err(|_| Error::Decode)
+    fn try_from(value: &[u8]) -> Result<Self, <Response as TryFrom<&[u8]>>::Error> {
+        postcard::from_bytes(value)
     }
 }
 
 impl TryInto<Vec<u8>> for Request {
-    type Error = Error;
+    type Error = postcard::Error;
 
-    fn try_into(self) -> Result<Vec<u8>, Error> {
+    fn try_into(self) -> Result<Vec<u8>, Self::Error> {
         // TODO: Avoid allocation by using rkyv, bincode or to_slice
-        postcard::to_allocvec(&self).map_err(|_| Error::Encode)
+        postcard::to_allocvec(&self)
     }
 }
 
 impl TryInto<Vec<u8>> for Response {
-    type Error = Error;
+    type Error = postcard::Error;
 
-    fn try_into(self) -> Result<Vec<u8>, Error> {
+    fn try_into(self) -> Result<Vec<u8>, <Response as TryInto<Vec<u8>>>::Error> {
         // TODO: Avoid allocation by using rkyv, bincode or to_slice
-        postcard::to_allocvec(&self).map_err(|_| Error::Encode)
+        postcard::to_allocvec(&self)
     }
 }
