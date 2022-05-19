@@ -3,8 +3,6 @@ name = "sindri"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 # TODO: Remove alloc feature or find a way to handle allocation errors
 [dependencies]
 aes-gcm = { version = "0.9", default-features = false, features = ["aes", "alloc"] }

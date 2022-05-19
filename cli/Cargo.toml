@@ -1,0 +1,22 @@
+[package]
+edition = "2021"
+name = "cli"
+version = "0.1.0"
+
+[[bin]]
+name = "client"
+path = "src/bin/client.rs"
+
+[[bin]]
+name = "server"
+path = "src/bin/server.rs"
+
+[dependencies]
+anyhow = "1"
+base64 = "0.13"
+clap = { version = "3", features = ["derive"] }
+hex = "0.4"
+log = "0.4"
+rand = "0.8"
+simple_logger = "2"
+sindri = { path = "../sindri" }

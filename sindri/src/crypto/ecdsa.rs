@@ -11,7 +11,7 @@ use elliptic_curve::subtle::CtOption;
 
 pub use crate::crypto::ecc::gen_key_pair;
 
-#[derive(Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Error {
     Sign,
 }
