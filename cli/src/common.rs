@@ -4,6 +4,13 @@ use std::io::BufReader;
 use std::io::Write;
 use std::os::unix::net::UnixStream;
 
+#[derive(Clone, Eq, PartialEq, Debug)]
+pub enum Error {
+    Encode,
+    Decode,
+    Busy,
+}
+
 pub struct UnixStreamReceiver {
     id: u32,
     stream: UnixStream,
@@ -31,12 +38,15 @@ impl Receiver for UnixStreamReceiver {
 }
 
 impl Sender for UnixStreamSender {
+    type Error = Error;
+
     fn id(&self) -> u32 {
         self.id
     }
 
-    fn send(&mut self, data: &[u8]) {
+    fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         writeln!(self.stream, "{}", base64::encode(data)).expect("Failed to write to stream");
+        Ok(())
     }
 }
 

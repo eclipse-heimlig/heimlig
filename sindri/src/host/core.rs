@@ -20,8 +20,8 @@ impl<E: EntropySource> Core<E> {
     pub fn process<S: Sender>(&mut self, sender: &mut S, data: &[u8]) -> Result<(), Error> {
         let request = Request::try_from(data)?;
         let response = self.scheduler.schedule(request);
-        let response: Vec<u8> = response.try_into().expect("Failed to serialize result");
-        sender.send(response.as_slice());
+        let response: Vec<u8> = response.try_into().map_err(|_| Error::Encode)?;
+        sender.send(response.as_slice()).map_err(|_| Error::Send)?;
         Ok(())
     }
 }
@@ -56,13 +56,16 @@ mod tests {
     }
 
     impl Sender for TestClient {
+        type Error = Error;
+
         fn id(&self) -> u32 {
             self.id
         }
 
-        fn send(&mut self, data: &[u8]) {
+        fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
             self.output.extend_from_slice(&data);
             println!("Data received by client: {}", hex::encode(&data));
+            Ok(())
         }
     }
 

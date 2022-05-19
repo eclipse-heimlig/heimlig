@@ -6,8 +6,9 @@ pub const MAX_RANDOM_DATA: usize = 1024;
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Error {
-    Decode,
     Encode,
+    Decode,
+    Send,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
