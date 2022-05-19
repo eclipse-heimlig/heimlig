@@ -1,5 +1,8 @@
+#![feature(type_alias_impl_trait)] // Required for embassy
+
 use clap::Parser;
 use cli::common::split_stream;
+use embassy::executor::Spawner;
 use log::{error, info};
 use sindri::api::Api;
 use sindri::common::jobs::{Request, Response};
@@ -14,12 +17,8 @@ struct Args {
     socket: PathBuf,
 }
 
-fn main() {
-    simple_logger::SimpleLogger::new()
-        .init()
-        .expect("Failed to initialize logger");
-    let args = Args::parse();
-
+#[embassy::task]
+async fn run(args: Args) {
     // Connect to socket
     let stream = UnixStream::connect(&args.socket).expect("Failed to connect to socket");
     info!("Connected to '{}'", args.socket.to_string_lossy());
@@ -32,7 +31,6 @@ fn main() {
     let request = Request::GetRandom { size: 16 };
     info!("Sending request");
     api.enqueue(request).expect("Failed to enqueue request");
-    info!("Receiving response");
     let response = api.dequeue().expect("Failed to dequeue response");
     info!("Received response");
     match response {
@@ -47,4 +45,14 @@ fn main() {
             )
         }
     }
+}
+
+#[embassy::main]
+async fn main(spawner: Spawner) {
+    simple_logger::SimpleLogger::new()
+        .init()
+        .expect("Failed to initialize logger");
+    let args = Args::parse();
+
+    spawner.spawn(run(args)).unwrap();
 }
