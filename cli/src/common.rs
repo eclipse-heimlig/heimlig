@@ -50,7 +50,7 @@ impl Sender for UnixStreamSender {
     }
 }
 
-pub fn split_stream(id: u32, stream: UnixStream) -> (UnixStreamSender, UnixStreamReceiver) {
+pub async fn split_stream(id: u32, stream: UnixStream) -> (UnixStreamSender, UnixStreamReceiver) {
     let sender = UnixStreamSender {
         id,
         stream: stream.try_clone().expect("Failed to clone stream"),

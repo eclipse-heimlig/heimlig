@@ -24,7 +24,7 @@ async fn run(args: Args) {
     info!("Connected to '{}'", args.socket.to_string_lossy());
 
     // Instantiate API
-    let (sender, receiver) = split_stream(0, stream);
+    let (sender, receiver) = split_stream(0, stream).await;
     let mut api = Api { sender, receiver };
 
     // Send request

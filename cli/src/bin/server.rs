@@ -40,14 +40,14 @@ async fn run(args: Args) {
     remove_old_socket(args.socket.as_path());
     let listener = UnixListener::bind(args.socket).expect("Failed to create socket");
     for stream in listener.incoming().filter_map(Result::ok) {
-        let (mut sender, mut receiver) = split_stream(0, stream);
+        let (mut sender, mut receiver) = split_stream(0, stream).await;
         let request = receiver.recv();
         info!(
             "Received request ({} bytes): {}",
             request.len(),
             hex::encode(&request)
         );
-        if let Err(e) = core.process(&mut sender, &request) {
+        if let Err(e) = core.process(&mut sender, &request).await {
             error!("Failed to send data to core: {:?}", e);
         }
     }
