@@ -16,7 +16,7 @@ pub struct Scheduler<E: EntropySource> {
 
 // TODO: Replace return value with an SPSC queue back to the caller for async operation
 impl<E: EntropySource> Scheduler<E> {
-    pub fn schedule(&mut self, job: Request) -> Response {
+    pub async fn schedule(&mut self, job: Request) -> Response {
         match job {
             Request::GetRandom { size } => {
                 if size >= MAX_RANDOM_DATA {
@@ -49,13 +49,13 @@ pub(crate) mod test {
         }
     }
 
-    #[test]
-    fn get_random() {
+    #[futures_test::test]
+    async fn get_random() {
         let entropy = TestEntropySource::default();
         let rng = Rng::new(entropy, None);
         let mut scheduler = Scheduler { rng };
         let request = Request::GetRandom { size: 32 };
-        let response = scheduler.schedule(request);
+        let response = scheduler.schedule(request).await;
         match response {
             Response::GetRandom { data } => {
                 assert_eq!(data.len(), 32)
@@ -66,15 +66,15 @@ pub(crate) mod test {
         };
     }
 
-    #[test]
-    fn get_random_request_too_large() {
+    #[futures_test::test]
+    async fn get_random_request_too_large() {
         let entropy = TestEntropySource::default();
         let rng = Rng::new(entropy, None);
         let mut scheduler = Scheduler { rng };
         let request = Request::GetRandom {
             size: MAX_RANDOM_DATA + 1,
         };
-        let response = scheduler.schedule(request);
+        let response = scheduler.schedule(request).await;
         assert!(matches!(
             response,
             Response::Error(Error::RequestedDataExceedsLimit)

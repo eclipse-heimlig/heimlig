@@ -1,5 +1,8 @@
+#![feature(type_alias_impl_trait)] // Required for embassy
+
 use clap::Parser;
 use cli::common::split_stream;
+use embassy::executor::Spawner;
 use log::{error, info};
 use rand::RngCore;
 use sindri::common::channel::Receiver;
@@ -27,12 +30,8 @@ impl rng::EntropySource for EntropySource {
     }
 }
 
-fn main() {
-    simple_logger::SimpleLogger::new()
-        .init()
-        .expect("Failed to initialize logger");
-    let args = Args::parse();
-
+#[embassy::task]
+async fn run(args: Args) {
     // instantiate core
     let rng = rng::Rng::new(EntropySource {}, None);
     let mut core = Core::new(rng);
@@ -41,14 +40,14 @@ fn main() {
     remove_old_socket(args.socket.as_path());
     let listener = UnixListener::bind(args.socket).expect("Failed to create socket");
     for stream in listener.incoming().filter_map(Result::ok) {
-        let (mut sender, mut receiver) = split_stream(0, stream);
+        let (mut sender, mut receiver) = split_stream(0, stream).await;
         let request = receiver.recv();
         info!(
             "Received request ({} bytes): {}",
             request.len(),
             hex::encode(&request)
         );
-        if let Err(e) = core.process(&mut sender, &request) {
+        if let Err(e) = core.process(&mut sender, &request).await {
             error!("Failed to send data to core: {:?}", e);
         }
     }
@@ -64,4 +63,14 @@ fn remove_old_socket(socket: &Path) {
             };
         }
     }
+}
+
+#[embassy::main]
+async fn main(spawner: Spawner) {
+    simple_logger::SimpleLogger::new()
+        .init()
+        .expect("Failed to initialize logger");
+    spawner
+        .spawn(run(Args::parse()))
+        .expect("Failed to spawn task");
 }

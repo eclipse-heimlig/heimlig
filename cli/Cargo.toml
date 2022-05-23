@@ -15,6 +15,8 @@ path = "src/bin/server.rs"
 anyhow = "1"
 base64 = "0.13"
 clap = { version = "3", features = ["derive"] }
+# Embassy has no formal releases yet. This is the latest version as of 2022-05-21
+embassy = { git = "https://github.com/embassy-rs/embassy.git", rev = "36a1f203648dcb402727ea3eb5d30cf1f6993795", features = ["std", "nightly"] }
 hex = "0.4"
 log = "0.4"
 rand = "0.8"

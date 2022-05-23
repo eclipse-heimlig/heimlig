@@ -24,9 +24,9 @@ impl<E: EntropySource> Core<E> {
 }
 
 impl<E: EntropySource> Core<E> {
-    pub fn process<S: Sender>(&mut self, sender: &mut S, data: &[u8]) -> Result<(), Error> {
+    pub async fn process<S: Sender>(&mut self, sender: &mut S, data: &[u8]) -> Result<(), Error> {
         let request = Request::try_from(data).map_err(|_| Error::Decode)?;
-        let response = self.scheduler.schedule(request);
+        let response = self.scheduler.schedule(request).await;
         let response: Vec<u8> = response.try_into().map_err(|_| Error::Encode)?;
         sender.send(response.as_slice()).map_err(|_| Error::Send)?;
         Ok(())
@@ -76,8 +76,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn receive_rng_request() {
+    #[futures_test::test]
+    async fn receive_rng_request() {
         let entropy = rng::test::TestEntropySource::default();
         let rng = rng::Rng::new(entropy, None);
         let request = Request::GetRandom { size: 32 };
@@ -88,7 +88,7 @@ mod tests {
         let mut core = Core::new(rng);
         let request = postcard::to_allocvec(&request).unwrap();
         assert!(matches!(
-            core.process(&mut client, request.as_slice()),
+            core.process(&mut client, request.as_slice()).await,
             Ok(())
         ));
         match postcard::from_bytes(client.output.as_slice()).unwrap() {
@@ -101,8 +101,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn receive_invalid_data() {
+    #[futures_test::test]
+    async fn receive_invalid_data() {
         let entropy = rng::test::TestEntropySource::default();
         let rng = rng::Rng::new(entropy, None);
         let mut client = TestClient {
@@ -112,7 +112,7 @@ mod tests {
         let mut core = Core::new(rng);
         let invalid_data = vec![1, 2, 3];
         assert!(matches!(
-            core.process(&mut client, invalid_data.as_slice()),
+            core.process(&mut client, invalid_data.as_slice()).await,
             Err(Error::Decode)
         ));
     }
