@@ -52,7 +52,7 @@ async fn main(spawner: Spawner) {
     simple_logger::SimpleLogger::new()
         .init()
         .expect("Failed to initialize logger");
-    let args = Args::parse();
-
-    spawner.spawn(run(args)).unwrap();
+    spawner
+        .spawn(run(Args::parse()))
+        .expect("Failed to spawn task");
 }
