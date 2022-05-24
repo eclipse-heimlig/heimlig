@@ -1,6 +1,6 @@
-use crate::common::alloc::alloc_vec;
 use crate::common::jobs::{Request, Response, MAX_RANDOM_DATA};
 use crate::crypto::rng::{EntropySource, Rng};
+use alloc::vec;
 use rand_core::RngCore;
 use serde::{Deserialize, Serialize};
 
@@ -22,11 +22,14 @@ impl<E: EntropySource> Scheduler<E> {
                 if size >= MAX_RANDOM_DATA {
                     return Response::Error(Error::RequestedDataExceedsLimit);
                 }
-                if let Ok(mut data) = alloc_vec(size) {
-                    self.rng.fill_bytes(data.as_mut_slice());
-                    Response::GetRandom { data }
-                } else {
-                    Response::Error(Error::Alloc)
+                let mut data = vec![];
+                match data.try_reserve_exact(size) {
+                    Ok(_) => {
+                        data.resize(size, 0);
+                        self.rng.fill_bytes(data.as_mut_slice());
+                        Response::GetRandom { data }
+                    }
+                    Err(_) => Response::Error(Error::Alloc),
                 }
             }
         }

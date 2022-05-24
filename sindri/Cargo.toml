@@ -5,7 +5,7 @@ edition = "2021"
 
 # TODO: Remove alloc feature or find a way to handle allocation errors
 [dependencies]
-aes-gcm = { version = "0.9", default-features = false, features = ["aes", "alloc"] }
+aes-gcm = { version = "0.9", default-features = false, features = ["aes"] }
 ecdsa = { version = "0.14", default-features = false }
 elliptic-curve = { version = "0.12", default-features = false }
 generic-array = { version = "0.14", default-features = false, features = ["more_lengths"] }

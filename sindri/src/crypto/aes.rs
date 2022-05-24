@@ -1,5 +1,6 @@
-use aes_gcm::aead::{Aead, NewAead};
-use aes_gcm::{Aes128Gcm, Aes256Gcm, Key, Nonce};
+use aes_gcm::aead::NewAead;
+use aes_gcm::{AeadInPlace, Aes128Gcm, Aes256Gcm, Key, Nonce};
+use alloc::vec;
 use alloc::vec::Vec;
 
 pub const KEY128_SIZE: usize = 16;
@@ -11,8 +12,10 @@ pub const TAG_SIZE: usize = 16;
 pub enum Error {
     InvalidKeySize,
     InvalidNonceSize,
+    InvalidBufferSize,
     Encryption,
     Decryption,
+    Alloc,
 }
 
 pub fn aes128gcm_encrypt<K, N, P>(key: K, nonce: N, plaintext: P) -> Result<Vec<u8>, Error>
@@ -24,23 +27,45 @@ where
     check_sizes(&key, &nonce, KEY128_SIZE)?;
     let key = Key::from_slice(key.as_ref());
     let nonce = Nonce::from_slice(nonce.as_ref());
-    Aes128Gcm::new(key)
-        .encrypt(nonce, plaintext.as_ref()) // TODO: Avoid allocation by using heapless feature of aes-gcm
-        .map_err(|_| Error::Encryption)
+    let mut ciphertext_and_tag = vec![];
+    ciphertext_and_tag
+        .try_reserve_exact(plaintext.as_ref().len() + TAG_SIZE)
+        .map_err(|_| Error::Alloc)?;
+    ciphertext_and_tag.extend_from_slice(plaintext.as_ref());
+    let tag = Aes128Gcm::new(key)
+        .encrypt_in_place_detached(nonce, vec![].as_slice(), &mut ciphertext_and_tag)
+        .map_err(|_| Error::Encryption)?;
+    ciphertext_and_tag.extend_from_slice(tag.as_ref());
+    Ok(ciphertext_and_tag)
 }
 
-pub fn aes128gcm_decrypt<K, N, C>(key: K, nonce: N, ciphertext: C) -> Result<Vec<u8>, Error>
+pub fn aes128gcm_decrypt<K, N, C>(key: K, nonce: N, ciphertext_and_tag: C) -> Result<Vec<u8>, Error>
 where
     K: AsRef<[u8]>,
     N: AsRef<[u8]>,
     C: AsRef<[u8]>,
 {
     check_sizes(&key, &nonce, KEY128_SIZE)?;
+    if ciphertext_and_tag.as_ref().len() < TAG_SIZE {
+        return Err(Error::InvalidBufferSize);
+    }
     let key = Key::from_slice(key.as_ref());
     let nonce = Nonce::from_slice(nonce.as_ref());
-    Aes128Gcm::new(key)
-        .decrypt(nonce, ciphertext.as_ref()) // TODO: Avoid allocation by using heapless feature of aes-gcm
+    let (ciphertext, tag) = ciphertext_and_tag
+        .as_ref()
+        .split_at(ciphertext_and_tag.as_ref().len() - TAG_SIZE);
+    let mut plaintext = vec![];
+    plaintext
+        .try_reserve_exact(ciphertext.len())
+        .map_err(|_| Error::Alloc)?;
+    plaintext.extend_from_slice(ciphertext);
+    match Aes128Gcm::new(key)
+        .decrypt_in_place_detached(nonce, vec![].as_slice(), &mut plaintext, tag.into())
         .map_err(|_| Error::Decryption)
+    {
+        Ok(()) => Ok(plaintext),
+        Err(e) => Err(e),
+    }
 }
 
 pub fn aes256gcm_encrypt<K, N, P>(key: K, nonce: N, plaintext: P) -> Result<Vec<u8>, Error>
@@ -52,23 +77,45 @@ where
     check_sizes(&key, &nonce, KEY256_SIZE)?;
     let key = Key::from_slice(key.as_ref());
     let nonce = Nonce::from_slice(nonce.as_ref());
-    return Aes256Gcm::new(key)
-        .encrypt(nonce, plaintext.as_ref()) // TODO: Avoid allocation by using heapless feature of aes-gcm
-        .map_err(|_| Error::Encryption);
+    let mut ciphertext_and_tag = vec![];
+    ciphertext_and_tag
+        .try_reserve_exact(plaintext.as_ref().len() + TAG_SIZE)
+        .map_err(|_| Error::Alloc)?;
+    ciphertext_and_tag.extend_from_slice(plaintext.as_ref());
+    let tag = Aes256Gcm::new(key)
+        .encrypt_in_place_detached(nonce, vec![].as_slice(), &mut ciphertext_and_tag)
+        .map_err(|_| Error::Encryption)?;
+    ciphertext_and_tag.extend_from_slice(tag.as_ref());
+    Ok(ciphertext_and_tag)
 }
 
-pub fn aes256gcm_decrypt<K, N, C>(key: K, nonce: N, ciphertext: C) -> Result<Vec<u8>, Error>
+pub fn aes256gcm_decrypt<K, N, C>(key: K, nonce: N, ciphertext_and_tag: C) -> Result<Vec<u8>, Error>
 where
     K: AsRef<[u8]>,
     N: AsRef<[u8]>,
     C: AsRef<[u8]>,
 {
     check_sizes(&key, &nonce, KEY256_SIZE)?;
+    if ciphertext_and_tag.as_ref().len() < TAG_SIZE {
+        return Err(Error::InvalidBufferSize);
+    }
     let key = Key::from_slice(key.as_ref());
     let nonce = Nonce::from_slice(nonce.as_ref());
-    Aes256Gcm::new(key)
-        .decrypt(nonce, ciphertext.as_ref()) // TODO: Avoid allocation by using heapless feature of aes-gcm
+    let (ciphertext, tag) = ciphertext_and_tag
+        .as_ref()
+        .split_at(ciphertext_and_tag.as_ref().len() - TAG_SIZE);
+    let mut plaintext = vec![];
+    plaintext
+        .try_reserve_exact(ciphertext.len())
+        .map_err(|_| Error::Alloc)?;
+    plaintext.extend_from_slice(ciphertext);
+    match Aes256Gcm::new(key)
+        .decrypt_in_place_detached(nonce, vec![].as_slice(), &mut plaintext, tag.into())
         .map_err(|_| Error::Decryption)
+    {
+        Ok(()) => Ok(plaintext),
+        Err(e) => Err(e),
+    }
 }
 
 fn check_sizes<K: AsRef<[u8]>, N: AsRef<[u8]>>(
@@ -89,9 +136,9 @@ fn check_sizes<K: AsRef<[u8]>, N: AsRef<[u8]>>(
 pub mod test {
     use super::*;
 
-    const KEY128: &'static [u8; KEY128_SIZE] = b"Open sesame! ...";
-    const KEY256: &'static [u8; KEY256_SIZE] = b"Or was it 'open quinoa' instead?";
-    const NONCE: &'static [u8; NONCE_SIZE] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    const KEY128: &[u8; KEY128_SIZE] = b"Open sesame! ...";
+    const KEY256: &[u8; KEY256_SIZE] = b"Or was it 'open quinoa' instead?";
+    const NONCE: &[u8; NONCE_SIZE] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
     const PLAINTEXT: &[u8] = b"Hello, World!";
 
     #[test]
@@ -118,8 +165,8 @@ pub mod test {
             0xa8, 0xcb, 0x47, 0x81, 0xad, 0x51, 0x89, 0x1f, 0x23, 0x78, 0x11, 0xcb, 0x9f, 0xc5,
             0xbf, 0x8b,
         ];
-        let encrypted = aes256gcm_encrypt(KEY256, NONCE, PLAINTEXT).expect("encryption error");
-        let decrypted = aes256gcm_decrypt(KEY256, NONCE, &encrypted).expect("decryption error");
+        let encrypted = aes256gcm_encrypt(KEY256, NONCE, PLAINTEXT).expect("Encryption error");
+        let decrypted = aes256gcm_decrypt(KEY256, NONCE, &encrypted).expect("Decryption error");
         assert_eq!(encrypted, expected_encrypted, "ciphertext mismatch");
         assert_eq!(decrypted, PLAINTEXT, "plaintext mismatch");
     }
