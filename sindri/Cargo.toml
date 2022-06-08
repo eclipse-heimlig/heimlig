@@ -5,7 +5,9 @@ edition = "2021"
 
 # TODO: Remove alloc feature or find a way to handle allocation errors
 [dependencies]
+aes = { version = "0.8.1", default-features = false, features = ["zeroize"]}
 aes-gcm = { version = "0.9", default-features = false, features = ["aes"] }
+cbc = { version = "0.1.2", default-features = false, features = ["block-padding", "zeroize"] }
 ecdsa = { version = "0.14", default-features = false }
 elliptic-curve = { version = "0.12", default-features = false }
 # Embassy has no formal releases yet. This is the latest version as of 2022-06-09
@@ -17,8 +19,8 @@ postcard =  { version = "0.7", default-features = false, features = ["alloc"] }
 rand = { version = "0.8", default-features = false }
 rand_chacha = { version = "0.3", default-features = false }
 rand_core = { version = "0.6", default-features = false }
-sha2 = { version = "0.10" , default-features = false }
 serde = { version = "1" , default-features = false }
+sha2 = { version = "0.10" , default-features = false }
 
 [dev-dependencies]
 futures-test = "0.3"
