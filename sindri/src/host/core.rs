@@ -1,8 +1,7 @@
-use crate::common::channel::Sender;
-use crate::common::jobs::Request;
+use crate::common::jobs::{Request, Response};
 use crate::crypto::rng::{EntropySource, Rng};
 use crate::host::scheduler::Scheduler;
-use alloc::vec::Vec;
+use heapless::spsc::Producer;
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Error {
@@ -11,24 +10,26 @@ pub enum Error {
     Send,
 }
 
-pub struct Core<E: EntropySource> {
+pub struct Core<E: EntropySource, const QUEUE_SIZE: usize> {
     scheduler: Scheduler<E>,
 }
 
-impl<E: EntropySource> Core<E> {
-    pub fn new(rng: Rng<E>) -> Core<E> {
+impl<E: EntropySource, const QUEUE_SIZE: usize> Core<E, QUEUE_SIZE> {
+    pub fn new(rng: Rng<E>) -> Core<E, QUEUE_SIZE> {
         Core {
             scheduler: Scheduler { rng },
         }
     }
 }
 
-impl<E: EntropySource> Core<E> {
-    pub async fn process<S: Sender>(&mut self, sender: &mut S, data: &[u8]) -> Result<(), Error> {
-        let request = Request::try_from(data).map_err(|_| Error::Decode)?;
+impl<E: EntropySource, const QUEUE_SIZE: usize> Core<E, QUEUE_SIZE> {
+    pub async fn process(
+        &mut self,
+        producer: &mut Producer<'_, Response, QUEUE_SIZE>,
+        request: Request,
+    ) -> Result<(), Error> {
         let response = self.scheduler.schedule(request).await;
-        let response: Vec<u8> = response.try_into().map_err(|_| Error::Encode)?;
-        sender.send(response.as_slice()).map_err(|_| Error::Send)?;
+        producer.enqueue(response).map_err(|_| Error::Send)?;
         Ok(())
     }
 }
@@ -37,83 +38,35 @@ impl<E: EntropySource> Core<E> {
 mod tests {
     extern crate std;
 
-    use crate::common::channel::{Receiver, Sender};
     use crate::common::jobs::{Request, Response};
     use crate::crypto::rng;
-    use crate::host::core::{Core, Error};
-    use alloc::vec;
-    use alloc::vec::Vec;
-    use std::println;
+    use crate::host::core::Core;
+    use heapless::spsc::Queue;
 
-    struct TestClient {
-        id: u32,
-        output: Vec<u8>,
-    }
-
-    impl Receiver for TestClient {
-        fn id(&self) -> u32 {
-            self.id
-        }
-
-        fn recv(&mut self) -> Vec<u8> {
-            let ret = self.output.clone();
-            self.output.clear();
-            ret
-        }
-    }
-
-    impl Sender for TestClient {
-        type Error = Error;
-
-        fn id(&self) -> u32 {
-            self.id
-        }
-
-        fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
-            self.output.extend_from_slice(&data);
-            println!("Data received by client: {}", hex::encode(&data));
-            Ok(())
-        }
-    }
+    const QUEUE_SIZE: usize = 8;
+    static mut HOST_TO_CLIENT: Queue<Response, QUEUE_SIZE> = Queue::<Response, QUEUE_SIZE>::new();
 
     #[futures_test::test]
     async fn receive_rng_request() {
         let entropy = rng::test::TestEntropySource::default();
         let rng = rng::Rng::new(entropy, None);
+        let (mut p2, mut c2) = unsafe { HOST_TO_CLIENT.split() };
+
         let request = Request::GetRandom { size: 32 };
-        let mut client = TestClient {
-            id: 0,
-            output: Vec::new(),
-        };
-        let mut core = Core::new(rng);
-        let request = postcard::to_allocvec(&request).unwrap();
-        assert!(matches!(
-            core.process(&mut client, request.as_slice()).await,
-            Ok(())
-        ));
-        match postcard::from_bytes(client.output.as_slice()).unwrap() {
-            Response::GetRandom { data } => {
-                assert_eq!(data.len(), 32)
-            }
-            _ => {
-                panic!("Unexpected response type");
+        let mut core = Core::<_, QUEUE_SIZE>::new(rng);
+        assert!(matches!(core.process(&mut p2, request).await, Ok(())));
+        match c2.dequeue() {
+            Some(response) => match response {
+                Response::GetRandom { data } => {
+                    assert_eq!(data.len(), 32)
+                }
+                _ => {
+                    panic!("Unexpected response type");
+                }
+            },
+            None => {
+                panic!("Failed to obtain response");
             }
         }
-    }
-
-    #[futures_test::test]
-    async fn receive_invalid_data() {
-        let entropy = rng::test::TestEntropySource::default();
-        let rng = rng::Rng::new(entropy, None);
-        let mut client = TestClient {
-            id: 0,
-            output: Vec::new(),
-        };
-        let mut core = Core::new(rng);
-        let invalid_data = vec![1, 2, 3];
-        assert!(matches!(
-            core.process(&mut client, invalid_data.as_slice()).await,
-            Err(Error::Decode)
-        ));
     }
 }
