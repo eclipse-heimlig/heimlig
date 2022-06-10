@@ -379,7 +379,7 @@ dependencies = [
 [[package]]
 name = "embassy"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy.git?rev=36a1f203648dcb402727ea3eb5d30cf1f6993795#36a1f203648dcb402727ea3eb5d30cf1f6993795"
+source = "git+https://github.com/embassy-rs/embassy.git?rev=db344c2bda55bd0352a43720788185cc4d3a420e#db344c2bda55bd0352a43720788185cc4d3a420e"
 dependencies = [
  "atomic-polyfill",
  "cfg-if",
@@ -396,7 +396,7 @@ dependencies = [
 [[package]]
 name = "embassy-macros"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy.git?rev=36a1f203648dcb402727ea3eb5d30cf1f6993795#36a1f203648dcb402727ea3eb5d30cf1f6993795"
+source = "git+https://github.com/embassy-rs/embassy.git?rev=db344c2bda55bd0352a43720788185cc4d3a420e#db344c2bda55bd0352a43720788185cc4d3a420e"
 dependencies = [
  "darling",
  "proc-macro2",
