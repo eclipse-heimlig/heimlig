@@ -8,7 +8,10 @@ edition = "2021"
 aes-gcm = { version = "0.9", default-features = false, features = ["aes"] }
 ecdsa = { version = "0.14", default-features = false }
 elliptic-curve = { version = "0.12", default-features = false }
+# Embassy has no formal releases yet. This is the latest version as of 2022-06-09
+embassy = { git = "https://github.com/embassy-rs/embassy.git", rev = "db344c2bda55bd0352a43720788185cc4d3a420e" }
 generic-array = { version = "0.14", default-features = false, features = ["more_lengths"] }
+heapless = { version = "0.7", default-features = false }
 p256 = { version = "0.11", default-features = false, features = ["ecdh", "ecdsa"] }
 postcard =  { version = "0.7", default-features = false, features = ["alloc"] }
 rand = { version = "0.8", default-features = false }

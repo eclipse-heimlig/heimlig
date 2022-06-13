@@ -16,8 +16,8 @@ pub struct Scheduler<E: EntropySource> {
 
 // TODO: Replace return value with an SPSC queue back to the caller for async operation
 impl<E: EntropySource> Scheduler<E> {
-    pub async fn schedule(&mut self, job: Request) -> Response {
-        match job {
+    pub async fn schedule(&mut self, request: Request) -> Response {
+        match request {
             Request::GetRandom { size } => {
                 if size >= MAX_RANDOM_DATA {
                     return Response::Error(Error::RequestedDataExceedsLimit);
