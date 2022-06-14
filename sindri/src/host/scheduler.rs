@@ -2,9 +2,8 @@ use crate::common::jobs::{Request, Response, MAX_RANDOM_DATA};
 use crate::crypto::rng::{EntropySource, Rng};
 use alloc::vec;
 use rand_core::RngCore;
-use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Eq, PartialEq, Debug, Deserialize, Serialize)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Error {
     Alloc,
     RequestedDataExceedsLimit,

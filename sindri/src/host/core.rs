@@ -1,7 +1,6 @@
 use crate::common::jobs::{Request, Response};
 use crate::crypto::rng::{EntropySource, Rng};
 use crate::host::scheduler::Scheduler;
-use heapless::spsc::Producer;
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Error {
@@ -22,14 +21,18 @@ impl<E: EntropySource, const QUEUE_SIZE: usize> Core<E, QUEUE_SIZE> {
     }
 }
 
+pub trait Sender {
+    fn send(&mut self, response: Response);
+}
+
 impl<E: EntropySource, const QUEUE_SIZE: usize> Core<E, QUEUE_SIZE> {
     pub async fn process(
         &mut self,
-        producer: &mut Producer<'_, Response, QUEUE_SIZE>,
+        sender: &mut dyn Sender,
         request: Request,
     ) -> Result<(), Error> {
         let response = self.scheduler.schedule(request).await;
-        producer.enqueue(response).map_err(|_| Error::Send)?;
+        sender.send(response);
         Ok(())
     }
 }
@@ -41,21 +44,46 @@ mod tests {
     use crate::common::jobs::{Request, Response};
     use crate::crypto::rng;
     use crate::host::core::Core;
-    use heapless::spsc::Queue;
+    use heapless::spsc::{Consumer, Producer, Queue};
 
     const QUEUE_SIZE: usize = 8;
-    static mut HOST_TO_CLIENT: Queue<Response, QUEUE_SIZE> = Queue::<Response, QUEUE_SIZE>::new();
+
+    struct ResponseReceiver<'a> {
+        receiver: Consumer<'a, Response, QUEUE_SIZE>,
+    }
+
+    struct ResponseSender<'a> {
+        sender: Producer<'a, Response, QUEUE_SIZE>,
+    }
+
+    impl<'ch> crate::host::core::Sender for ResponseSender<'ch> {
+        fn send(&mut self, response: Response) {
+            let _response = self.sender.enqueue(response);
+        }
+    }
+
+    impl<'ch> ResponseReceiver<'ch> {
+        fn recv(&mut self) -> Option<Response> {
+            self.receiver.dequeue()
+        }
+    }
 
     #[futures_test::test]
     async fn receive_rng_request() {
         let entropy = rng::test::TestEntropySource::default();
         let rng = rng::Rng::new(entropy, None);
-        let (mut p2, mut c2) = unsafe { HOST_TO_CLIENT.split() };
+        let mut core = Core::<_, QUEUE_SIZE>::new(rng);
+        let mut host_to_client: Queue<Response, QUEUE_SIZE> = Queue::<Response, QUEUE_SIZE>::new();
+        let (h2c_p, h2c_c) = host_to_client.split();
+        let mut response_receiver = ResponseReceiver { receiver: h2c_c };
+        let mut response_sender = ResponseSender { sender: h2c_p };
 
         let request = Request::GetRandom { size: 32 };
-        let mut core = Core::<_, QUEUE_SIZE>::new(rng);
-        assert!(matches!(core.process(&mut p2, request).await, Ok(())));
-        match c2.dequeue() {
+        assert!(matches!(
+            core.process(&mut response_sender, request).await,
+            Ok(())
+        ));
+        match response_receiver.recv() {
             Some(response) => match response {
                 Response::GetRandom { data } => {
                     assert_eq!(data.len(), 32)
@@ -65,7 +93,7 @@ mod tests {
                 }
             },
             None => {
-                panic!("Failed to obtain response");
+                panic!("Failed to receive expected response");
             }
         }
     }
