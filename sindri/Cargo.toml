@@ -15,7 +15,7 @@ embassy = { git = "https://github.com/embassy-rs/embassy.git", rev = "db344c2bda
 generic-array = { version = "0.14", default-features = false, features = ["more_lengths"] }
 heapless = { version = "0.7", default-features = false }
 p256 = { version = "0.11", default-features = false, features = ["ecdh", "ecdsa"] }
-postcard =  { version = "0.7", default-features = false, features = ["alloc"] }
+postcard =  { version = "1.0", default-features = false, features = ["alloc"] }
 rand = { version = "0.8", default-features = false }
 rand_chacha = { version = "0.3", default-features = false }
 rand_core = { version = "0.6", default-features = false }
