@@ -1,28 +1,18 @@
 #![feature(type_alias_impl_trait)] // Required for embassy
 
-use clap::Parser;
 use embassy::executor::Spawner;
-use embassy::time::Duration;
-use embassy::time::Timer;
+use embassy::time::{Duration, Timer};
 use heapless::spsc::{Consumer, Producer, Queue};
-use log::{error, info};
+use log::{error, info, warn};
 use rand::RngCore;
 use sindri::common::jobs::{Request, Response};
 use sindri::crypto::rng;
 use sindri::host::core::Core;
-use std::path::PathBuf;
+use sindri::host::core::Sender;
 
 const QUEUE_SIZE: usize = 8;
 static mut CLIENT_TO_HOST: Queue<Request, QUEUE_SIZE> = Queue::<Request, QUEUE_SIZE>::new();
 static mut HOST_TO_CLIENT: Queue<Response, QUEUE_SIZE> = Queue::<Response, QUEUE_SIZE>::new();
-
-#[derive(Parser, Debug)]
-#[clap(author, version, about, long_about = None)]
-struct Args {
-    /// Unix domain socket path
-    #[clap(short, long, default_value = "sindri.sock")]
-    socket: PathBuf,
-}
 
 struct EntropySource {}
 
@@ -34,74 +24,113 @@ impl rng::EntropySource for EntropySource {
     }
 }
 
+struct RequestReceiver<'a> {
+    receiver: Consumer<'a, Request, QUEUE_SIZE>,
+}
+
+struct RequestSender<'a> {
+    sender: Producer<'a, Request, QUEUE_SIZE>,
+}
+
+struct ResponseReceiver<'a> {
+    receiver: Consumer<'a, Response, QUEUE_SIZE>,
+}
+
+struct ResponseSender<'a> {
+    sender: Producer<'a, Response, QUEUE_SIZE>,
+}
+
+impl<'ch> RequestReceiver<'ch> {
+    fn recv(&mut self) -> Option<Request> {
+        self.receiver.dequeue()
+    }
+}
+
+impl<'ch> RequestSender<'ch> {
+    fn send(&mut self, request: Request) {
+        let request = self.sender.enqueue(request);
+        if request.is_err() {
+            warn!("Queue is full. Dropping request.")
+        }
+    }
+}
+
+impl<'ch> ResponseReceiver<'ch> {
+    fn recv(&mut self) -> Option<Response> {
+        self.receiver.dequeue()
+    }
+}
+
+impl<'ch> Sender for ResponseSender<'ch> {
+    fn send(&mut self, response: Response) {
+        let response = self.sender.enqueue(response);
+        if response.is_err() {
+            warn!("Queue is full. Dropping response.")
+        }
+    }
+}
+
 #[embassy::task]
-async fn client_send(mut producer: Producer<'static, Request, QUEUE_SIZE>) {
+async fn client_send(mut sender: RequestSender<'static>) {
     loop {
         let size = 16;
         let request = Request::GetRandom { size };
-        info!(target: "CLIENT", "Sending request: random data (size={})", size);
-        let response = producer.enqueue(request);
-        match response {
-            Ok(()) => {}
-            Err(ref e) => {
-                error!(target: "CLIENT", "Failed to send request: {:?}", e);
-            }
-        }
-        drop(response);
+        info!(target: "client", "Sending request: random data (size={})", size);
+        sender.send(request);
         Timer::after(Duration::from_secs(1)).await;
     }
 }
 
 #[embassy::task]
-async fn client_recv(mut consumer: Consumer<'static, Response, QUEUE_SIZE>) {
+async fn client_recv(mut receiver: ResponseReceiver<'static>) {
     loop {
-        let response = consumer.dequeue();
-        match &response {
+        match receiver.recv() {
             Some(response) => match response {
                 Response::Error(e) => {
-                    error!(target: "CLIENT", "Received response: Error: {:?}", e)
+                    error!(target: "client", "Received response: Error: {:?}", e)
                 }
                 Response::GetRandom { data } => {
-                    info!(target: "CLIENT",
+                    info!(target: "client",
                         "Received response: random data (size={}): {}",
                         data.len(),
                         hex::encode(data)
                     );
                 }
             },
-            None => {}
+            None => {
+                Timer::after(Duration::from_millis(100)).await;
+            }
         }
-        drop(response);
-        Timer::after(Duration::from_millis(100)).await;
     }
 }
 
 #[embassy::task]
 async fn host_recv_resp(
-    mut consumer: Consumer<'static, Request, QUEUE_SIZE>,
-    mut producer: Producer<'static, Response, QUEUE_SIZE>,
+    mut sender: ResponseSender<'static>,
+    mut receiver: RequestReceiver<'static>,
 ) {
-    // instantiate core
     let rng = rng::Rng::new(EntropySource {}, None);
-    let mut core = Core::new(rng);
+    let mut core: Core<EntropySource, QUEUE_SIZE> = Core::new(rng);
 
     loop {
-        let request = consumer.dequeue();
-        match request {
+        match receiver.recv() {
             Some(request) => match request {
                 Request::GetRandom { size } => {
-                    info!(target: "HOST", "Received request: random data (size={})", size);
-                    match core.process(&mut producer, request).await {
-                        Ok(_) => {}
+                    info!(target: "host", "Received request: random data (size={})", size);
+                    match core.process(&mut sender, request).await {
+                        Ok(_) => {
+                            info!(target: "host", "Request processed successfully");
+                        }
                         Err(e) => {
-                            error!(target: "HOST", "Failed to process request: {:?}", e);
+                            error!(target: "host", "Failed to process request: {:?}", e);
                         }
                     };
                 }
             },
-            None => {}
+            None => {
+                Timer::after(Duration::from_millis(100)).await;
+            }
         }
-        Timer::after(Duration::from_millis(100)).await;
     }
 }
 
@@ -110,20 +139,23 @@ async fn main(spawner: Spawner) {
     simple_logger::SimpleLogger::new()
         .init()
         .expect("[MAIN] Failed to initialize logger");
-    let _args = Args::parse();
 
-    // Unsafe: Access to mutable static only happens here. Static lifetime is required by embassy tasks.
-    let (p1, c1) = unsafe { CLIENT_TO_HOST.split() };
-    let (p2, c2) = unsafe { HOST_TO_CLIENT.split() };
+    // TODO: Unsafe: Access to static queues must be protected across tasks/cores
+    let (c2h_p, c2h_c) = unsafe { CLIENT_TO_HOST.split() };
+    let (h2c_p, h2c_c) = unsafe { HOST_TO_CLIENT.split() };
+    let request_receiver = RequestReceiver { receiver: c2h_c };
+    let request_sender = RequestSender { sender: c2h_p };
+    let response_receiver = ResponseReceiver { receiver: h2c_c };
+    let response_sender = ResponseSender { sender: h2c_p };
 
     // Start tasks
     spawner
-        .spawn(host_recv_resp(c1, p2))
+        .spawn(host_recv_resp(response_sender, request_receiver))
         .expect("[MAIN] Failed to spawn host task");
     spawner
-        .spawn(client_recv(c2))
+        .spawn(client_recv(response_receiver))
         .expect("[MAIN] Failed to spawn client receiver task");
     spawner
-        .spawn(client_send(p1))
+        .spawn(client_send(request_sender))
         .expect("[MAIN] Failed to spawn client sender task");
 }
