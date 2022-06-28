@@ -1,7 +1,6 @@
+use crate::common::limits::MAX_RANDOM_SIZE;
 use crate::host::scheduler;
-use alloc::vec::Vec;
-
-pub const MAX_RANDOM_DATA: usize = 1024;
+use heapless::Vec;
 
 #[derive(Debug)]
 pub enum Request {
@@ -11,5 +10,5 @@ pub enum Request {
 #[derive(Debug)]
 pub enum Response {
     Error(scheduler::Error),
-    GetRandom { data: Vec<u8> },
+    GetRandom { data: Vec<u8, MAX_RANDOM_SIZE> },
 }
