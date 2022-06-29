@@ -56,15 +56,13 @@ where
 {
     check_sizes(key, nonce, C::KeySize::USIZE, C::NonceSize::USIZE)?;
 
-    let key = aes_gcm::Key::from_slice(key);
-    let nonce = aes_gcm::Nonce::from_slice(nonce);
     let mut ciphertext_and_tag = Vec::new();
     ciphertext_and_tag
         .extend_from_slice(plaintext)
         .map_err(|_| Error::Alloc)?;
 
-    let tag = C::new(key)
-        .encrypt_in_place_detached(nonce, associated_data, &mut ciphertext_and_tag)
+    let tag = C::new(key.into())
+        .encrypt_in_place_detached(nonce.into(), associated_data, &mut ciphertext_and_tag)
         .map_err(|_| Error::Encryption)?;
     ciphertext_and_tag
         .extend_from_slice(&tag)
@@ -87,16 +85,15 @@ where
     if ciphertext_and_tag.len() < C::TagSize::USIZE {
         return Err(Error::InvalidBufferSize);
     }
-    let key = aes_gcm::Key::from_slice(key);
-    let nonce = aes_gcm::Nonce::from_slice(nonce);
+
     let (ciphertext, tag) =
         ciphertext_and_tag.split_at(ciphertext_and_tag.len() - C::TagSize::USIZE);
     let mut plaintext = Vec::new();
     plaintext
         .extend_from_slice(ciphertext)
         .map_err(|_| Error::Alloc)?;
-    C::new(key)
-        .decrypt_in_place_detached(nonce, associated_data, &mut plaintext, tag.into())
+    C::new(key.into())
+        .decrypt_in_place_detached(nonce.into(), associated_data, &mut plaintext, tag.into())
         .map_err(|_| Error::Decryption)?;
     Ok(plaintext)
 }
@@ -113,8 +110,6 @@ where
 {
     check_sizes(key, iv, C::KeySize::USIZE, C::BlockSize::USIZE)?;
 
-    let key = aes::cipher::Key::<cbc::Encryptor<C>>::from_slice(key);
-    let iv = aes::cipher::Iv::<cbc::Encryptor<C>>::from_slice(iv);
     let mut ciphertext = Vec::new();
     let ciphertext_size = get_padded_size::<C, P>(plaintext.len());
     ciphertext
@@ -124,7 +119,7 @@ where
         .resize(ciphertext_size, 0)
         .map_err(|_| Error::Alloc)?;
 
-    cbc::Encryptor::<C>::new(key, iv)
+    cbc::Encryptor::<C>::new(key.into(), iv.into())
         .encrypt_padded_mut::<P>(&mut ciphertext, plaintext.len())
         .map_err(|_| Error::InvalidPadding)?;
 
@@ -143,14 +138,12 @@ where
 {
     check_sizes(key, iv, C::KeySize::USIZE, C::BlockSize::USIZE)?;
 
-    let key = aes::cipher::Key::<cbc::Decryptor<C>>::from_slice(key);
-    let iv = aes::cipher::Iv::<cbc::Decryptor<C>>::from_slice(iv);
     let mut plaintext = Vec::new();
     plaintext
         .extend_from_slice(ciphertext)
         .map_err(|_| Error::Alloc)?;
 
-    let plaintext_size = cbc::Decryptor::<C>::new(key, iv)
+    let plaintext_size = cbc::Decryptor::<C>::new(key.into(), iv.into())
         .decrypt_padded_mut::<P>(&mut plaintext)
         .map_err(|_| Error::InvalidPadding)?
         .len();
@@ -216,9 +209,6 @@ macro_rules! define_aes_gcm_impl {
 
 define_aes_gcm_impl!(aes128gcm_encrypt, aes128gcm_decrypt, Aes128Gcm);
 define_aes_gcm_impl!(aes256gcm_encrypt, aes256gcm_decrypt, Aes256Gcm);
-
-define_aes_gcm_impl!(aes128ccm_encrypt, aes128ccm_decrypt, Aes128Gcm);
-define_aes_gcm_impl!(aes256ccm_encrypt, aes256ccm_decrypt, Aes256Gcm);
 
 macro_rules! define_aes_cbc_impl {
     (
