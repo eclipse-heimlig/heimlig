@@ -1,0 +1,368 @@
+use super::*;
+
+use crate::common::limits::{MAX_CIPHERTEXT_SIZE, MAX_PLAINTEXT_SIZE};
+use aes::{
+    cipher::{
+        block_padding::{PadType, Padding},
+        BlockCipher, BlockDecryptMut, BlockEncryptMut, BlockSizeUser, KeyInit, KeyIvInit, Unsigned,
+    },
+    Aes128, Aes192, Aes256,
+};
+use heapless::Vec;
+
+/// AES-CBC encryption: generic over an underlying AES implementation.
+fn aes_cbc_encrypt<C, P>(
+    key: &[u8],
+    iv: &[u8],
+    plaintext: &[u8],
+) -> Result<Vec<u8, MAX_CIPHERTEXT_SIZE>, Error>
+where
+    C: BlockEncryptMut + BlockCipher + KeyInit,
+    P: Padding<C::BlockSize>,
+{
+    check_sizes(key, iv, C::KeySize::USIZE, C::BlockSize::USIZE)?;
+
+    let mut ciphertext = Vec::new();
+    let ciphertext_size = get_padded_size::<C, P>(plaintext.len());
+    ciphertext
+        .extend_from_slice(plaintext)
+        .map_err(|_| Error::Alloc)?;
+    ciphertext
+        .resize(ciphertext_size, 0)
+        .map_err(|_| Error::Alloc)?;
+
+    cbc::Encryptor::<C>::new(key.into(), iv.into())
+        .encrypt_padded_mut::<P>(&mut ciphertext, plaintext.len())
+        .map_err(|_| Error::InvalidPadding)?;
+
+    Ok(ciphertext)
+}
+
+/// AES-CBC decryption: generic over an underlying AES implementation.
+fn aes_cbc_decrypt<C, P>(
+    key: &[u8],
+    iv: &[u8],
+    ciphertext: &[u8],
+) -> Result<Vec<u8, MAX_PLAINTEXT_SIZE>, Error>
+where
+    C: BlockDecryptMut + BlockCipher + KeyInit,
+    P: Padding<C::BlockSize>,
+{
+    check_sizes(key, iv, C::KeySize::USIZE, C::BlockSize::USIZE)?;
+
+    let mut plaintext = Vec::new();
+    plaintext
+        .extend_from_slice(ciphertext)
+        .map_err(|_| Error::Alloc)?;
+
+    let plaintext_size = cbc::Decryptor::<C>::new(key.into(), iv.into())
+        .decrypt_padded_mut::<P>(&mut plaintext)
+        .map_err(|_| Error::InvalidPadding)?
+        .len();
+
+    plaintext
+        .resize(plaintext_size, 0)
+        .map_err(|_| Error::Alloc)?;
+
+    Ok(plaintext)
+}
+
+macro_rules! define_aes_cbc_impl {
+    (
+        $encryptor:ident,
+        $decryptor:ident,
+        $core:tt
+    ) => {
+        pub fn $encryptor<P>(
+            key: &[u8],
+            iv: &[u8],
+            plaintext: &[u8],
+        ) -> Result<Vec<u8, MAX_CIPHERTEXT_SIZE>, Error>
+        where
+            P: Padding<<$core as BlockSizeUser>::BlockSize>,
+        {
+            aes_cbc_encrypt::<$core, P>(key, iv, plaintext)
+        }
+
+        pub fn $decryptor<P>(
+            key: &[u8],
+            iv: &[u8],
+            ciphertext: &[u8],
+        ) -> Result<Vec<u8, MAX_PLAINTEXT_SIZE>, Error>
+        where
+            P: Padding<<$core as BlockSizeUser>::BlockSize>,
+        {
+            aes_cbc_decrypt::<$core, P>(key, iv, ciphertext)
+        }
+    };
+}
+
+define_aes_cbc_impl!(aes128cbc_encrypt, aes128cbc_decrypt, Aes128);
+define_aes_cbc_impl!(aes192cbc_encrypt, aes192cbc_decrypt, Aes192);
+define_aes_cbc_impl!(aes256cbc_encrypt, aes256cbc_decrypt, Aes256);
+
+/// Returns buffer size after the padding.
+fn get_padded_size<C, P>(unpadded_size: usize) -> usize
+where
+    C: BlockSizeUser,
+    P: Padding<C::BlockSize>,
+{
+    let tail = unpadded_size % C::BlockSize::USIZE;
+
+    match P::TYPE {
+        PadType::NoPadding => unpadded_size,
+        PadType::Ambiguous if tail == 0 => unpadded_size,
+        PadType::Reversible | PadType::Ambiguous => unpadded_size - tail + C::BlockSize::USIZE,
+    }
+}
+
+#[cfg(test)]
+pub mod test {
+    use super::*;
+
+    use aes::cipher::block_padding::{NoPadding, Pkcs7};
+
+    const KEY128: &[u8; KEY128_SIZE] = b"Open sesame! ...";
+    const KEY192: &[u8; KEY192_SIZE] = b"Open sesame! ... Please!";
+    const KEY256: &[u8; KEY256_SIZE] = b"Or was it 'open quinoa' instead?";
+    const IV: &[u8; IV_SIZE] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+    const PLAINTEXT_NOT_PADDED: &[u8] = b"Hello, World!";
+    const PLAINTEXT_PADDED: &[u8] = b"Greetings, Rustaceans!!!!!!!!!!!";
+
+    macro_rules! define_aes_cbc_encrypt_decrypt_test {
+        (
+        $test_name:ident,
+        $cipher:ty,
+        $padding: ty,
+        $key:tt,
+        $iv:tt,
+        $plaintext:tt,
+        $encrypted_plaintext:tt
+    ) => {
+            #[test]
+            fn $test_name() {
+                let encrypted = aes_cbc_encrypt::<$cipher, $padding>($key, $iv, $plaintext)
+                    .expect("encryption error");
+                let decrypted = aes_cbc_decrypt::<$cipher, $padding>($key, $iv, &encrypted)
+                    .expect("decryption error");
+                assert_eq!(encrypted, $encrypted_plaintext, "ciphertext mismatch");
+                assert_eq!(decrypted, $plaintext, "plaintext mismatch");
+            }
+        };
+    }
+
+    define_aes_cbc_encrypt_decrypt_test!(
+        test_aes128cbc_encrypt_decrypt_nopadding,
+        Aes128,
+        NoPadding,
+        KEY128,
+        IV,
+        PLAINTEXT_PADDED,
+        [
+            0x1b, 0x07, 0xde, 0x3d, 0xf2, 0x24, 0x0b, 0x38, 0x33, 0x42, 0xe4, 0xd4, 0x6b, 0x83,
+            0xdc, 0x37, 0xd1, 0x44, 0xea, 0x35, 0x6a, 0x13, 0x34, 0x80, 0x86, 0xc0, 0x86, 0xce,
+            0x06, 0x82, 0x1f, 0xd7,
+        ]
+    );
+
+    define_aes_cbc_encrypt_decrypt_test!(
+        test_aes192cbc_encrypt_decrypt_nopadding,
+        Aes192,
+        NoPadding,
+        KEY192,
+        IV,
+        PLAINTEXT_PADDED,
+        [
+            0x1c, 0x0c, 0x08, 0xe6, 0x4f, 0x2f, 0x02, 0xd1, 0x61, 0xd2, 0xba, 0xf0, 0x04, 0x27,
+            0x6e, 0xb6, 0x56, 0xab, 0x52, 0xf3, 0x56, 0xf5, 0xb5, 0x20, 0x67, 0x92, 0x91, 0xcb,
+            0xf9, 0xca, 0x81, 0x8a,
+        ]
+    );
+
+    define_aes_cbc_encrypt_decrypt_test!(
+        test_aes256cbc_encrypt_decrypt_nopadding,
+        Aes256,
+        NoPadding,
+        KEY256,
+        IV,
+        PLAINTEXT_PADDED,
+        [
+            0xd8, 0x4e, 0xbc, 0xf9, 0x1b, 0x4a, 0x10, 0xe8, 0xc9, 0x68, 0xb8, 0x93, 0xe6, 0xa5,
+            0xc8, 0x0f, 0x6b, 0xa9, 0x7e, 0xdc, 0x09, 0x90, 0x6f, 0x7b, 0xfb, 0x04, 0x35, 0xa1,
+            0xe9, 0x6b, 0x92, 0x1e,
+        ]
+    );
+
+    define_aes_cbc_encrypt_decrypt_test!(
+        test_aes128cbc_encrypt_decrypt_pkcs7,
+        Aes128,
+        Pkcs7,
+        KEY128,
+        IV,
+        PLAINTEXT_NOT_PADDED,
+        [
+            0xd1, 0x04, 0x10, 0xd2, 0xb2, 0xa7, 0x3c, 0x65, 0xcc, 0xc8, 0xc9, 0xa7, 0x8d, 0x01,
+            0x86, 0xc7,
+        ]
+    );
+
+    define_aes_cbc_encrypt_decrypt_test!(
+        test_aes192cbc_encrypt_decrypt_pkcs7,
+        Aes192,
+        Pkcs7,
+        KEY192,
+        IV,
+        PLAINTEXT_NOT_PADDED,
+        [
+            0x4f, 0x99, 0xa8, 0x90, 0xfa, 0x4e, 0xe9, 0xfe, 0x94, 0x5d, 0x29, 0x96, 0xb3, 0xee,
+            0x5e, 0x4d,
+        ]
+    );
+
+    define_aes_cbc_encrypt_decrypt_test!(
+        test_aes256cbc_encrypt_decrypt_pkcs7,
+        Aes256,
+        Pkcs7,
+        KEY256,
+        IV,
+        PLAINTEXT_NOT_PADDED,
+        [
+            0x60, 0x53, 0xee, 0xb8, 0x14, 0xe1, 0x2c, 0x59, 0x7b, 0xf1, 0x1c, 0xad, 0x4d, 0x70,
+            0x34, 0x1d,
+        ]
+    );
+
+    macro_rules! define_aes_cbc_wrong_key_test {
+        (
+        $test_name:ident,
+        $cipher:ty,
+        $padding: ty,
+        $iv:tt,
+        $plaintext:tt,
+        $wrong_key_sizes:tt
+    ) => {
+            #[test]
+            fn $test_name() {
+                for size in $wrong_key_sizes {
+                    let mut key: Vec<u8, 256> = Vec::new();
+                    key.resize(size, 0).expect("Allocation error");
+                    assert_eq!(
+                        aes_cbc_encrypt::<$cipher, $padding>(&key, $iv, $plaintext),
+                        Err(Error::InvalidKeySize)
+                    );
+                    assert_eq!(
+                        aes_cbc_decrypt::<$cipher, $padding>(&key, $iv, $plaintext),
+                        Err(Error::InvalidKeySize)
+                    );
+                }
+            }
+        };
+    }
+
+    define_aes_cbc_wrong_key_test!(
+        test_aes128cbc_wrong_key,
+        Aes128,
+        NoPadding,
+        IV,
+        PLAINTEXT_PADDED,
+        [0, 1, 8, 24, 32, 128]
+    );
+
+    define_aes_cbc_wrong_key_test!(
+        test_aes192cbc_wrong_key,
+        Aes192,
+        NoPadding,
+        IV,
+        PLAINTEXT_PADDED,
+        [0, 1, 8, 16, 32, 192]
+    );
+
+    define_aes_cbc_wrong_key_test!(
+        test_aes256cbc_wrong_key,
+        Aes256,
+        NoPadding,
+        IV,
+        PLAINTEXT_PADDED,
+        [0, 1, 8, 16, 24, 256]
+    );
+
+    macro_rules! define_aes_cbc_errors_test {
+        (
+        $test_name:ident,
+        $cipher:ty,
+        $key:tt,
+        $wrong_key_sizes:tt
+    ) => {
+            #[test]
+            fn $test_name() {
+                for size in $wrong_key_sizes {
+                    let mut wrong_key: Vec<u8, 256> = Vec::new();
+                    wrong_key.resize(size, 0).expect("Allocation error");
+                    assert_eq!(
+                        aes_cbc_encrypt::<$cipher, Pkcs7>(&wrong_key, IV, &PLAINTEXT_PADDED),
+                        Err(Error::InvalidKeySize)
+                    );
+                    let mut zeros: Vec<u8, { PLAINTEXT_PADDED.len() }> = Vec::new();
+                    zeros
+                        .resize(PLAINTEXT_PADDED.len(), 0)
+                        .expect("Allocation error");
+                    assert_eq!(
+                        aes_cbc_decrypt::<$cipher, Pkcs7>(&wrong_key, IV, &zeros),
+                        Err(Error::InvalidKeySize)
+                    );
+                }
+
+                for size in [0, 1, 10, 12, 32] {
+                    let mut wrong_iv: Vec<u8, 32> = Vec::new();
+                    wrong_iv.resize(size, 0).expect("Allocation error");
+                    assert_eq!(
+                        aes_cbc_encrypt::<$cipher, Pkcs7>($key, &wrong_iv, &PLAINTEXT_PADDED),
+                        Err(Error::InvalidIvSize)
+                    );
+                    let mut zeros: Vec<u8, { PLAINTEXT_PADDED.len() }> = Vec::new();
+                    zeros
+                        .resize(PLAINTEXT_PADDED.len(), 0)
+                        .expect("Allocation error");
+                    assert_eq!(
+                        aes_cbc_decrypt::<$cipher, Pkcs7>($key, &wrong_iv, &zeros),
+                        Err(Error::InvalidIvSize)
+                    );
+                }
+
+                for size in [1, 15, 17, 65] {
+                    let mut not_padded_buffer: Vec<u8, 65> = Vec::new();
+                    not_padded_buffer.resize(size, 0).expect("Allocation error");
+                    assert_eq!(
+                        aes_cbc_encrypt::<$cipher, NoPadding>($key, IV, &not_padded_buffer),
+                        Err(Error::InvalidPadding)
+                    );
+                    assert_eq!(
+                        aes_cbc_decrypt::<$cipher, NoPadding>($key, IV, &not_padded_buffer),
+                        Err(Error::InvalidPadding)
+                    );
+                }
+            }
+        };
+    }
+
+    define_aes_cbc_errors_test!(
+        test_aes128cbc_errors,
+        Aes128,
+        KEY128,
+        [0, 1, 8, 24, 32, 128]
+    );
+
+    define_aes_cbc_errors_test!(
+        test_aes192cbc_errors,
+        Aes192,
+        KEY192,
+        [0, 1, 8, 16, 32, 192]
+    );
+
+    define_aes_cbc_errors_test!(
+        test_aes256cbc_errors,
+        Aes256,
+        KEY256,
+        [0, 1, 8, 16, 24, 256]
+    );
+}
