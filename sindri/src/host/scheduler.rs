@@ -1,6 +1,7 @@
-use crate::common::jobs::{Request, Response, MAX_RANDOM_DATA};
+use crate::common::jobs::{Request, Response};
+use crate::common::limits::MAX_RANDOM_SIZE;
 use crate::crypto::rng::{EntropySource, Rng};
-use alloc::vec;
+use heapless::Vec;
 use rand_core::RngCore;
 
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -18,14 +19,13 @@ impl<E: EntropySource> Scheduler<E> {
     pub async fn schedule(&mut self, request: Request) -> Response {
         match request {
             Request::GetRandom { size } => {
-                if size >= MAX_RANDOM_DATA {
+                if size >= MAX_RANDOM_SIZE {
                     return Response::Error(Error::RequestedDataExceedsLimit);
                 }
-                let mut data = vec![];
-                match data.try_reserve_exact(size) {
+                let mut data: Vec<u8, MAX_RANDOM_SIZE> = Vec::new();
+                match data.resize(size, 0) {
                     Ok(_) => {
-                        data.resize(size, 0);
-                        self.rng.fill_bytes(data.as_mut_slice());
+                        self.rng.fill_bytes(&mut data);
                         Response::GetRandom { data }
                     }
                     Err(_) => Response::Error(Error::Alloc),
@@ -37,7 +37,8 @@ impl<E: EntropySource> Scheduler<E> {
 
 #[cfg(test)]
 pub(crate) mod test {
-    use crate::common::jobs::{Request, Response, MAX_RANDOM_DATA};
+    use crate::common::jobs::{Request, Response};
+    use crate::common::limits::MAX_RANDOM_SIZE;
     use crate::crypto::rng::{EntropySource, Rng};
     use crate::host::scheduler::Error;
     use crate::host::scheduler::Scheduler;
@@ -74,7 +75,7 @@ pub(crate) mod test {
         let rng = Rng::new(entropy, None);
         let mut scheduler = Scheduler { rng };
         let request = Request::GetRandom {
-            size: MAX_RANDOM_DATA + 1,
+            size: MAX_RANDOM_SIZE + 1,
         };
         let response = scheduler.schedule(request).await;
         assert!(matches!(
