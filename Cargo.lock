@@ -43,7 +43,7 @@ dependencies = [
  "aead",
  "aes 0.7.5",
  "cipher 0.3.0",
- "ctr",
+ "ctr 0.8.0",
  "ghash",
  "subtle",
 ]
@@ -165,6 +165,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26b52a9543ae338f279b96b0b9fed9c8093744685043739079ce85cd58f289a6"
 dependencies = [
  "cipher 0.4.3",
+]
+
+[[package]]
+name = "ccm"
+version = "0.5.0-pre"
+source = "git+https://github.com/RustCrypto/AEADs?rev=6b980d96962a1aadd90c7b802d591b99994d647a#6b980d96962a1aadd90c7b802d591b99994d647a"
+dependencies = [
+ "aead",
+ "cipher 0.4.3",
+ "ctr 0.9.1",
+ "subtle",
 ]
 
 [[package]]
@@ -327,6 +338,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "049bb91fb4aaf0e3c7efa6cd5ef877dbbbd15b39dad06d9948de4ec8a75761ea"
 dependencies = [
  "cipher 0.3.0",
+]
+
+[[package]]
+name = "ctr"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d14f329cfbaf5d0e06b5e87fff7e265d2673c5ea7d2c27691a2c107db1442a0"
+dependencies = [
+ "cipher 0.4.3",
 ]
 
 [[package]]
@@ -1099,6 +1119,7 @@ dependencies = [
  "aes 0.8.1",
  "aes-gcm",
  "cbc",
+ "ccm",
  "ecdsa",
  "elliptic-curve",
  "futures-test",
