@@ -1,18 +1,32 @@
 use crate::common::jobs::{Request, Response};
 use crate::crypto::rng::{EntropySource, Rng};
-use crate::host::scheduler::Scheduler;
-use heapless::Vec;
+use crate::host::scheduler::{Job, Scheduler};
+use heapless::{LinearMap, Vec};
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Error {
-    Encode,
-    Decode,
-    Send,
+    Busy,
+    UnknownId,
 }
 
-pub struct Core<'a, E: EntropySource, const MAX_CLIENTS: usize> {
+pub struct Core<
+    'a,
+    E: EntropySource,
+    const MAX_CLIENTS: usize = 8,
+    const MAX_PENDING_RESPONSES: usize = 16,
+> {
     scheduler: Scheduler<E>,
     response_channels: Vec<&'a mut dyn Sender, MAX_CLIENTS>,
+    requester_to_job_ids: LinearMap<u32, u32, MAX_PENDING_RESPONSES>,
+    request_counter: u32,
+}
+
+pub trait Sender {
+    /// Unique ID of the sender. Used to determine the proper response channel once a request has been processed.
+    fn get_id(&self) -> u32;
+
+    /// Send a response through this channel back to the requester.
+    fn send(&mut self, response: Response);
 }
 
 impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
@@ -29,29 +43,47 @@ impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
         Core {
             scheduler: Scheduler { rng },
             response_channels,
+            requester_to_job_ids: Default::default(),
+            request_counter: 0,
         }
     }
-}
 
-pub trait Sender {
-    /// Unique ID of the sender. Used to determine the proper response channel once a request has been processed.
-    fn get_id(&self) -> u32;
+    pub async fn process(&mut self, requester_id: u32, request: Request) -> Result<(), Error> {
+        let job = self.new_job(request);
 
-    /// Send a response through this channel back to the requester.
-    fn send(&mut self, response: Response);
-}
-
-impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
-    pub async fn process(&mut self, sender_id: u32, request: Request) -> Result<(), Error> {
-        let response = self.scheduler.schedule(request).await;
-        if let Some(sender) = self
-            .response_channels
-            .iter_mut()
-            .find(|s| s.get_id() == sender_id)
+        // Associate job ID with sender ID to determine response channel later
+        if self
+            .requester_to_job_ids
+            .insert(job.id, requester_id)
+            .is_err()
         {
-            sender.send(response);
+            return Err(Error::Busy);
         }
-        Ok(())
+
+        // TODO: retrieve response asynchronously
+        let result = self.scheduler.schedule(job).await;
+
+        // Get sender ID for job ID and send response
+        if let Some(requester_id) = self.requester_to_job_ids.get(&result.id) {
+            if let Some(response_channel) = self
+                .response_channels
+                .iter_mut()
+                .find(|s| s.get_id() == *requester_id)
+            {
+                response_channel.send(result.response);
+            }
+            Ok(())
+        } else {
+            Err(Error::UnknownId)
+        }
+    }
+
+    fn new_job(&mut self, request: Request) -> Job {
+        self.request_counter += 1;
+        Job {
+            id: self.request_counter,
+            request,
+        }
     }
 }
 
