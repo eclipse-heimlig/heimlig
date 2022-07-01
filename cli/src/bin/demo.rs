@@ -10,6 +10,7 @@ use sindri::crypto::rng;
 use sindri::host::core::Core;
 use sindri::host::core::Sender;
 
+const MAX_CLIENTS: usize = 1;
 const QUEUE_SIZE: usize = 8;
 static mut CLIENT_TO_HOST: Queue<Request, QUEUE_SIZE> = Queue::<Request, QUEUE_SIZE>::new();
 static mut HOST_TO_CLIENT: Queue<Response, QUEUE_SIZE> = Queue::<Response, QUEUE_SIZE>::new();
@@ -37,6 +38,7 @@ struct ResponseReceiver<'a> {
 }
 
 struct ResponseSender<'a> {
+    id: u32,
     sender: Producer<'a, Response, QUEUE_SIZE>,
 }
 
@@ -62,6 +64,10 @@ impl<'ch> ResponseReceiver<'ch> {
 }
 
 impl<'ch> Sender for ResponseSender<'ch> {
+    fn get_id(&self) -> u32 {
+        self.id
+    }
+
     fn send(&mut self, response: Response) {
         let response = self.sender.enqueue(response);
         if response.is_err() {
@@ -110,14 +116,18 @@ async fn host_recv_resp(
     mut receiver: RequestReceiver<'static>,
 ) {
     let rng = rng::Rng::new(EntropySource {}, None);
-    let mut core: Core<EntropySource, QUEUE_SIZE> = Core::new(rng);
+    let mut response_channels = heapless::Vec::<&mut dyn Sender, MAX_CLIENTS>::new();
+    if response_channels.push(&mut sender).is_err() {
+        panic!("List of return channels not large enough");
+    }
+    let mut core = Core::new(rng, response_channels);
 
     loop {
         match receiver.recv() {
             Some(request) => match request {
                 Request::GetRandom { size } => {
                     info!(target: "host", "Received request: random data (size={})", size);
-                    match core.process(&mut sender, request).await {
+                    match core.process(0, request).await {
                         Ok(_) => {
                             info!(target: "host", "Request processed successfully");
                         }
@@ -146,7 +156,10 @@ async fn main(spawner: Spawner) {
     let request_receiver = RequestReceiver { receiver: c2h_c };
     let request_sender = RequestSender { sender: c2h_p };
     let response_receiver = ResponseReceiver { receiver: h2c_c };
-    let response_sender = ResponseSender { sender: h2c_p };
+    let response_sender = ResponseSender {
+        id: 0,
+        sender: h2c_p,
+    };
 
     // Start tasks
     spawner

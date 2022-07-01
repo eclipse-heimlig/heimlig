@@ -10,27 +10,44 @@ pub enum Error {
     RequestedDataExceedsLimit,
 }
 
+pub struct Job {
+    pub id: u32,
+    pub request: Request,
+}
+
+pub struct JobResult {
+    pub id: u32,
+    pub response: Response,
+}
+
 pub struct Scheduler<E: EntropySource> {
     pub rng: Rng<E>, // TODO: Have the RNG as a singleton available everywhere?
 }
 
 // TODO: Replace return value with an SPSC queue back to the caller for async operation
 impl<E: EntropySource> Scheduler<E> {
-    pub async fn schedule(&mut self, request: Request) -> Response {
-        match request {
-            Request::GetRandom { size } => {
-                if size >= MAX_RANDOM_SIZE {
-                    return Response::Error(Error::RequestedDataExceedsLimit);
-                }
-                let mut data: Vec<u8, MAX_RANDOM_SIZE> = Vec::new();
-                match data.resize(size, 0) {
-                    Ok(_) => {
-                        self.rng.fill_bytes(&mut data);
-                        Response::GetRandom { data }
-                    }
-                    Err(_) => Response::Error(Error::Alloc),
-                }
+    pub async fn schedule(&mut self, job: Job) -> JobResult {
+        let response = match job.request {
+            Request::GetRandom { size } => self.proc_random(size),
+        };
+        JobResult {
+            id: job.id,
+            response,
+        }
+    }
+
+    // TODO: Move to worker task
+    fn proc_random(&mut self, size: usize) -> Response {
+        if size >= MAX_RANDOM_SIZE {
+            return Response::Error(Error::RequestedDataExceedsLimit);
+        }
+        let mut data: Vec<u8, MAX_RANDOM_SIZE> = Vec::new();
+        match data.resize(size, 0) {
+            Ok(_) => {
+                self.rng.fill_bytes(&mut data);
+                Response::GetRandom { data }
             }
+            Err(_) => Response::Error(Error::Alloc),
         }
     }
 }
@@ -40,8 +57,8 @@ pub(crate) mod test {
     use crate::common::jobs::{Request, Response};
     use crate::common::limits::MAX_RANDOM_SIZE;
     use crate::crypto::rng::{EntropySource, Rng};
-    use crate::host::scheduler::Error;
     use crate::host::scheduler::Scheduler;
+    use crate::host::scheduler::{Error, Job};
 
     #[derive(Default)]
     pub struct TestEntropySource {}
@@ -58,8 +75,9 @@ pub(crate) mod test {
         let rng = Rng::new(entropy, None);
         let mut scheduler = Scheduler { rng };
         let request = Request::GetRandom { size: 32 };
-        let response = scheduler.schedule(request).await;
-        match response {
+        let job = Job { id: 0, request };
+        let result = scheduler.schedule(job).await;
+        match result.response {
             Response::GetRandom { data } => {
                 assert_eq!(data.len(), 32)
             }
@@ -77,9 +95,10 @@ pub(crate) mod test {
         let request = Request::GetRandom {
             size: MAX_RANDOM_SIZE + 1,
         };
-        let response = scheduler.schedule(request).await;
+        let job = Job { id: 0, request };
+        let result = scheduler.schedule(job).await;
         assert!(matches!(
-            response,
+            result.response,
             Response::Error(Error::RequestedDataExceedsLimit)
         ))
     }

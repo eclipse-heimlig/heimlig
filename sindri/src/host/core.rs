@@ -1,39 +1,89 @@
 use crate::common::jobs::{Request, Response};
 use crate::crypto::rng::{EntropySource, Rng};
-use crate::host::scheduler::Scheduler;
+use crate::host::scheduler::{Job, Scheduler};
+use heapless::{LinearMap, Vec};
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Error {
-    Encode,
-    Decode,
-    Send,
+    Busy,
+    UnknownId,
 }
 
-pub struct Core<E: EntropySource, const QUEUE_SIZE: usize> {
+pub struct Core<
+    'a,
+    E: EntropySource,
+    const MAX_CLIENTS: usize = 8,
+    const MAX_PENDING_RESPONSES: usize = 16,
+> {
     scheduler: Scheduler<E>,
-}
-
-impl<E: EntropySource, const QUEUE_SIZE: usize> Core<E, QUEUE_SIZE> {
-    pub fn new(rng: Rng<E>) -> Core<E, QUEUE_SIZE> {
-        Core {
-            scheduler: Scheduler { rng },
-        }
-    }
+    response_channels: Vec<&'a mut dyn Sender, MAX_CLIENTS>,
+    requester_to_job_ids: LinearMap<u32, u32, MAX_PENDING_RESPONSES>,
+    request_counter: u32,
 }
 
 pub trait Sender {
+    /// Unique ID of the sender. Used to determine the proper response channel once a request has been processed.
+    fn get_id(&self) -> u32;
+
+    /// Send a response through this channel back to the requester.
     fn send(&mut self, response: Response);
 }
 
-impl<E: EntropySource, const QUEUE_SIZE: usize> Core<E, QUEUE_SIZE> {
-    pub async fn process(
-        &mut self,
-        sender: &mut dyn Sender,
-        request: Request,
-    ) -> Result<(), Error> {
-        let response = self.scheduler.schedule(request).await;
-        sender.send(response);
-        Ok(())
+impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
+    /// Create a new HSM core. The core accepts requests and forwards the responses once they are ready.
+    ///
+    /// # Arguments
+    ///
+    /// * `rng`: Random number generator (RNG) used to seed the core RNG.
+    /// * `response_channels`: List of channels to send responses back to the clients.
+    pub fn new(
+        rng: Rng<E>,
+        response_channels: Vec<&mut dyn Sender, MAX_CLIENTS>,
+    ) -> Core<E, MAX_CLIENTS> {
+        Core {
+            scheduler: Scheduler { rng },
+            response_channels,
+            requester_to_job_ids: Default::default(),
+            request_counter: 0,
+        }
+    }
+
+    pub async fn process(&mut self, requester_id: u32, request: Request) -> Result<(), Error> {
+        let job = self.new_job(request);
+
+        // Associate job ID with sender ID to determine response channel later
+        if self
+            .requester_to_job_ids
+            .insert(job.id, requester_id)
+            .is_err()
+        {
+            return Err(Error::Busy);
+        }
+
+        // TODO: retrieve response asynchronously
+        let result = self.scheduler.schedule(job).await;
+
+        // Get sender ID for job ID and send response
+        if let Some(requester_id) = self.requester_to_job_ids.get(&result.id) {
+            if let Some(response_channel) = self
+                .response_channels
+                .iter_mut()
+                .find(|s| s.get_id() == *requester_id)
+            {
+                response_channel.send(result.response);
+            }
+            Ok(())
+        } else {
+            Err(Error::UnknownId)
+        }
+    }
+
+    fn new_job(&mut self, request: Request) -> Job {
+        self.request_counter += 1;
+        Job {
+            id: self.request_counter,
+            request,
+        }
     }
 }
 
@@ -43,7 +93,7 @@ mod tests {
 
     use crate::common::jobs::{Request, Response};
     use crate::crypto::rng;
-    use crate::host::core::Core;
+    use crate::host::core::{Core, Sender};
     use heapless::spsc::{Consumer, Producer, Queue};
 
     const QUEUE_SIZE: usize = 8;
@@ -53,10 +103,15 @@ mod tests {
     }
 
     struct ResponseSender<'a> {
+        id: u32,
         sender: Producer<'a, Response, QUEUE_SIZE>,
     }
 
-    impl<'ch> crate::host::core::Sender for ResponseSender<'ch> {
+    impl<'ch> Sender for ResponseSender<'ch> {
+        fn get_id(&self) -> u32 {
+            self.id
+        }
+
         fn send(&mut self, response: Response) {
             let _response = self.sender.enqueue(response);
         }
@@ -69,24 +124,62 @@ mod tests {
     }
 
     #[futures_test::test]
-    async fn receive_rng_request() {
+    async fn multiple_clients() {
+        // Create core
         let entropy = rng::test::TestEntropySource::default();
         let rng = rng::Rng::new(entropy, None);
-        let mut core = Core::<_, QUEUE_SIZE>::new(rng);
-        let mut host_to_client: Queue<Response, QUEUE_SIZE> = Queue::<Response, QUEUE_SIZE>::new();
-        let (h2c_p, h2c_c) = host_to_client.split();
-        let mut response_receiver = ResponseReceiver { receiver: h2c_c };
-        let mut response_sender = ResponseSender { sender: h2c_p };
+        let mut host_to_client1: Queue<Response, QUEUE_SIZE> = Queue::<Response, QUEUE_SIZE>::new();
+        let mut host_to_client2: Queue<Response, QUEUE_SIZE> = Queue::<Response, QUEUE_SIZE>::new();
+        let (h2c1_p, h2c1_c) = host_to_client1.split();
+        let (h2c2_p, h2c2_c) = host_to_client2.split();
+        let mut response_receiver1 = ResponseReceiver { receiver: h2c1_c };
+        let mut response_receiver2 = ResponseReceiver { receiver: h2c2_c };
+        let mut response_sender1 = ResponseSender {
+            id: 0,
+            sender: h2c1_p,
+        };
+        let mut response_sender2 = ResponseSender {
+            id: 1,
+            sender: h2c2_p,
+        };
+        let mut response_channels = heapless::Vec::<&mut dyn Sender, 2>::new();
+        if response_channels.push(&mut response_sender1).is_err()
+            || response_channels.push(&mut response_sender2).is_err()
+        {
+            panic!("List of return channels not large enough");
+        }
+        let mut core = Core::new(rng, response_channels);
 
-        let request = Request::GetRandom { size: 32 };
-        assert!(matches!(
-            core.process(&mut response_sender, request).await,
-            Ok(())
-        ));
-        match response_receiver.recv() {
+        // Send request from client 0
+        let size = 32;
+        let request = Request::GetRandom { size };
+        assert!(matches!(core.process(0, request.clone()).await, Ok(())));
+        if response_receiver2.recv().is_some() {
+            panic!("Received unexpected response");
+        }
+        match response_receiver1.recv() {
             Some(response) => match response {
                 Response::GetRandom { data } => {
-                    assert_eq!(data.len(), 32)
+                    assert_eq!(data.len(), size)
+                }
+                _ => {
+                    panic!("Unexpected response type");
+                }
+            },
+            None => {
+                panic!("Failed to receive expected response");
+            }
+        }
+
+        // Send request from client 1
+        assert!(matches!(core.process(1, request).await, Ok(())));
+        if response_receiver1.recv().is_some() {
+            panic!("Received unexpected response");
+        }
+        match response_receiver2.recv() {
+            Some(response) => match response {
+                Response::GetRandom { data } => {
+                    assert_eq!(data.len(), size)
                 }
                 _ => {
                     panic!("Unexpected response type");
