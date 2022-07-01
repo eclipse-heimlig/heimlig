@@ -10,7 +10,7 @@ fn aes_gcm_encrypt<C>(
     nonce: &[u8],
     associated_data: &[u8],
     plaintext: &[u8],
-) -> Result<Vec<u8, { MAX_CIPHERTEXT_SIZE + TAG_SIZE }>, Error>
+) -> Result<Vec<u8, { MAX_CIPHERTEXT_SIZE + GCM_TAG_SIZE }>, Error>
 where
     C: NewAead + AeadInPlace,
 {
@@ -69,7 +69,7 @@ macro_rules! define_aes_gcm_impl {
             nonce: &[u8],
             aad: &[u8],
             plaintext: &[u8],
-        ) -> Result<Vec<u8, { MAX_PLAINTEXT_SIZE + TAG_SIZE }>, Error> {
+        ) -> Result<Vec<u8, { MAX_PLAINTEXT_SIZE + GCM_TAG_SIZE }>, Error> {
             aes_gcm_encrypt::<$core>(key, nonce, aad, plaintext)
         }
 
@@ -93,7 +93,7 @@ pub mod test {
 
     const KEY128: &[u8; KEY128_SIZE] = b"Open sesame! ...";
     const KEY256: &[u8; KEY256_SIZE] = b"Or was it 'open quinoa' instead?";
-    const NONCE: &[u8; NONCE_SIZE] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    const NONCE: &[u8; GCM_NONCE_SIZE] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
     const PLAINTEXT: &[u8] = b"Hello, World!";
     const AAD: &[u8] = b"Never gonna give you up, Never gonna let you down!";
 
@@ -203,9 +203,9 @@ pub mod test {
                         aes_gcm_encrypt::<$cipher>(&wrong_key, $nonce, &[], $plaintext),
                         Err(Error::InvalidKeySize)
                     );
-                    let mut zeros: Vec<u8, { MAX_PLAINTEXT_SIZE + TAG_SIZE }> = Vec::new();
+                    let mut zeros: Vec<u8, { MAX_PLAINTEXT_SIZE + GCM_TAG_SIZE }> = Vec::new();
                     zeros
-                        .resize($plaintext.len() + TAG_SIZE, 0)
+                        .resize($plaintext.len() + GCM_TAG_SIZE, 0)
                         .expect("Allocation error");
                     assert_eq!(
                         aes_gcm_decrypt::<$cipher>(&wrong_key, $nonce, &[], &zeros),
@@ -220,9 +220,9 @@ pub mod test {
                         aes_gcm_encrypt::<$cipher>($key, &wrong_nonce, &[], $plaintext),
                         Err(Error::InvalidIvSize)
                     );
-                    let mut zeros: Vec<u8, { MAX_PLAINTEXT_SIZE + TAG_SIZE }> = Vec::new();
+                    let mut zeros: Vec<u8, { MAX_PLAINTEXT_SIZE + GCM_TAG_SIZE }> = Vec::new();
                     zeros
-                        .resize($plaintext.len() + TAG_SIZE, 0)
+                        .resize($plaintext.len() + GCM_TAG_SIZE, 0)
                         .expect("Allocation error");
                     assert_eq!(
                         aes_gcm_decrypt::<$cipher>($key, &wrong_nonce, &[], &zeros),
@@ -230,8 +230,8 @@ pub mod test {
                     );
                 }
 
-                for size in [0, 1, TAG_SIZE - 1] {
-                    const MAX_SIZE: usize = TAG_SIZE - 1;
+                for size in [0, 1, GCM_TAG_SIZE - 1] {
+                    const MAX_SIZE: usize = GCM_TAG_SIZE - 1;
                     let mut wrong_ciphertext: Vec<u8, MAX_SIZE> = Vec::new();
                     wrong_ciphertext.resize(size, 0).expect("Allocation error");
                     assert_eq!(
