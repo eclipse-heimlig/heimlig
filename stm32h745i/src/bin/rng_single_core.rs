@@ -1,14 +1,17 @@
-#![feature(type_alias_impl_trait)] // Required for embassy
+#![no_std]
+#![no_main]
+#![feature(type_alias_impl_trait)]
 
+use defmt::*;
 use embassy::executor::Spawner;
 use embassy::time::{Duration, Timer};
+use embassy_stm32::Peripherals;
 use heapless::spsc::{Consumer, Producer, Queue};
-use log::{error, info, warn};
-use rand::RngCore;
 use sindri::common::jobs::{Request, Response};
 use sindri::crypto::rng;
 use sindri::host::core::Core;
 use sindri::host::core::Sender;
+use {defmt_rtt as _, panic_probe as _};
 
 const MAX_CLIENTS: usize = 1;
 const QUEUE_SIZE: usize = 8;
@@ -19,9 +22,8 @@ struct EntropySource {}
 
 impl rng::EntropySource for EntropySource {
     fn random_seed(&mut self) -> [u8; 32] {
-        let mut data = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut data);
-        data
+        // TODO: Use hardware random generator
+        [0u8; 32]
     }
 }
 
@@ -81,7 +83,7 @@ async fn client_send(mut sender: RequestSender<'static>) {
     loop {
         let size = 16;
         let request = Request::GetRandom { size };
-        info!(target: "client", "Sending request: random data (size={})", size);
+        info!("Sending request: random data (size={})", size);
         sender.send(request);
         Timer::after(Duration::from_secs(1)).await;
     }
@@ -92,15 +94,11 @@ async fn client_recv(mut receiver: ResponseReceiver<'static>) {
     loop {
         match receiver.recv() {
             Some(response) => match response {
-                Response::Error(e) => {
-                    error!(target: "client", "Received response: Error: {:?}", e)
+                Response::Error(_e) => {
+                    error!("Received response: Error")
                 }
                 Response::GetRandom { data } => {
-                    info!(target: "client",
-                        "Received response: random data (size={}): {}",
-                        data.len(),
-                        hex::encode(data)
-                    );
+                    info!("Received response: random data (size={})", data.len(),);
                 }
             },
             None => {
@@ -118,7 +116,7 @@ async fn host_recv_resp(
     let rng = rng::Rng::new(EntropySource {}, None);
     let mut response_channels = heapless::Vec::<&mut dyn Sender, MAX_CLIENTS>::new();
     if response_channels.push(&mut sender).is_err() {
-        panic!("List of return channels not large enough");
+        error!("List of return channels not large enough");
     }
     let mut core = Core::new(rng, response_channels);
 
@@ -126,13 +124,13 @@ async fn host_recv_resp(
         match receiver.recv() {
             Some(request) => match request {
                 Request::GetRandom { size } => {
-                    info!(target: "host", "Received request: random data (size={})", size);
+                    info!("Received request: random data (size={})", size);
                     match core.process(0, request).await {
                         Ok(_) => {
-                            info!(target: "host", "Request processed successfully");
+                            info!("Request processed successfully");
                         }
-                        Err(e) => {
-                            error!(target: "host", "Failed to process request: {:?}", e);
+                        Err(_e) => {
+                            error!("Failed to process request");
                         }
                     };
                 }
@@ -145,11 +143,7 @@ async fn host_recv_resp(
 }
 
 #[embassy::main]
-async fn main(spawner: Spawner) {
-    simple_logger::SimpleLogger::new()
-        .init()
-        .expect("[MAIN] Failed to initialize logger");
-
+async fn main(spawner: Spawner, _p: Peripherals) {
     // TODO: Unsafe: Access to static queues must be protected across tasks/cores
     let (c2h_p, c2h_c) = unsafe { CLIENT_TO_HOST.split() };
     let (h2c_p, h2c_c) = unsafe { HOST_TO_CLIENT.split() };
