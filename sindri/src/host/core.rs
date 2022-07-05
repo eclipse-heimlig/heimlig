@@ -64,11 +64,11 @@ impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
         let result = self.scheduler.schedule(job).await;
 
         // Get sender ID for job ID and send response
-        if let Some(requester_id) = self.requester_to_job_ids.get(&result.id) {
+        if let Some(requester_id) = self.requester_to_job_ids.remove(&result.id) {
             if let Some(response_channel) = self
                 .response_channels
                 .iter_mut()
-                .find(|s| s.get_id() == *requester_id)
+                .find(|s| s.get_id() == requester_id)
             {
                 response_channel.send(result.response);
             }
