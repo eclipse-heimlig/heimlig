@@ -1,0 +1,23 @@
+[package]
+edition = "2021"
+name = "cli"
+version = "0.1.0"
+
+[[bin]]
+name = "rng_single_core"
+path = "src/bin/rng_single_core.rs"
+
+[dependencies]
+base64 = { version = "0.13", default-features = false }
+# Embassy has no formal releases yet. This is the latest version as of 2022-06-30
+cortex-m-rt = { version = "0.7", default-features = false }
+defmt = { version = "0.3", default-features = false }
+defmt-rtt = { version = "0.3", default-features = false }
+embassy = { git = "https://github.com/embassy-rs/embassy.git", rev = "0ed4e57ea45087e007bfa2b2d2b0a7807923d35b", features = ["nightly", "defmt", "defmt-timestamp-uptime", "unstable-traits", "time-tick-32768hz"] }
+embassy-stm32 = { git = "https://github.com/embassy-rs/embassy.git", rev = "0ed4e57ea45087e007bfa2b2d2b0a7807923d35b", features = ["nightly", "defmt", "stm32h745xi-cm7", "net", "time-driver-any", "exti", "unstable-pac", "unstable-traits"] }
+embassy-net = { git = "https://github.com/embassy-rs/embassy.git", rev = "0ed4e57ea45087e007bfa2b2d2b0a7807923d35b", features = ["defmt", "tcp", "dhcpv4", "medium-ethernet", "pool-16"] }
+heapless = { version = "0.7", default-features = false }
+hex = { version = "0.4", default-features = false }
+panic-probe = { version = "0.3", features = ["print-defmt"] }
+rand = { version = "0.8", default-features = false }
+sindri = { path = "../sindri", default-features = false }
