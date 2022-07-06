@@ -10,6 +10,7 @@ path = "src/bin/rng_single_core.rs"
 [dependencies]
 base64 = { version = "0.13", default-features = false }
 # Embassy has no formal releases yet. This is the latest version as of 2022-06-30
+cortex-m = { version = "0.7", default-features = false }
 cortex-m-rt = { version = "0.7", default-features = false }
 defmt = { version = "0.3", default-features = false }
 defmt-rtt = { version = "0.3", default-features = false }
@@ -20,4 +21,5 @@ heapless = { version = "0.7", default-features = false }
 hex = { version = "0.4", default-features = false }
 panic-probe = { version = "0.3", features = ["print-defmt"] }
 rand = { version = "0.8", default-features = false }
+rand_core = "0.6.3"
 sindri = { path = "../sindri", default-features = false }
