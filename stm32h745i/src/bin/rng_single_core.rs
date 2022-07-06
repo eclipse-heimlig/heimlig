@@ -2,15 +2,19 @@
 #![no_main]
 #![feature(type_alias_impl_trait)]
 
+use core::cell::RefCell;
+use cortex_m::interrupt::{self, Mutex};
 use defmt::*;
 use embassy::executor::Spawner;
 use embassy::time::{Duration, Timer};
 use embassy_stm32::Peripherals;
+use embassy_stm32::peripherals::RNG as PeripheralRNG;
+use embassy_stm32::rng::Rng;
 use heapless::spsc::{Consumer, Producer, Queue};
+use rand_core::RngCore;
 use sindri::common::jobs::{Request, Response};
 use sindri::crypto::rng;
-use sindri::host::core::Core;
-use sindri::host::core::Sender;
+use sindri::host::core::{Core, Error, Sender};
 use {defmt_rtt as _, panic_probe as _};
 
 const MAX_CLIENTS: usize = 1;
@@ -18,12 +22,20 @@ const QUEUE_SIZE: usize = 8;
 static mut CLIENT_TO_HOST: Queue<Request, QUEUE_SIZE> = Queue::<Request, QUEUE_SIZE>::new();
 static mut HOST_TO_CLIENT: Queue<Response, QUEUE_SIZE> = Queue::<Response, QUEUE_SIZE>::new();
 
+static HW_RNG_INSTANCE: Mutex<RefCell<Option<PeripheralRNG>>> = Mutex::new(RefCell::new(None));
+
 struct EntropySource {}
 
 impl rng::EntropySource for EntropySource {
     fn random_seed(&mut self) -> [u8; 32] {
-        // TODO: Use hardware random generator
-        [0u8; 32]
+        let mut buf = [0u8; 32];
+
+        interrupt::free(|cs| {
+            let r = HW_RNG_INSTANCE.borrow(cs).borrow_mut().take().unwrap();
+            let mut rng = Rng::new(r);
+            rng.fill_bytes(&mut buf);
+        });
+        buf
     }
 }
 
@@ -129,8 +141,11 @@ async fn host_recv_resp(
                         Ok(_) => {
                             info!("Request processed successfully");
                         }
-                        Err(_e) => {
-                            error!("Failed to process request");
+                        Err(e) => {
+                            match e {
+                                Error::Busy => error!("Failed to process request: Busy"),
+                                Error::UnknownId => error!("Failed to process request: UnknownId"),
+                            }
                         }
                     };
                 }
@@ -143,7 +158,10 @@ async fn host_recv_resp(
 }
 
 #[embassy::main]
-async fn main(spawner: Spawner, _p: Peripherals) {
+async fn main(spawner: Spawner, p: Peripherals) {
+
+    interrupt::free(|cs| HW_RNG_INSTANCE.borrow(cs).replace(Some(p.RNG)));
+
     // TODO: Unsafe: Access to static queues must be protected across tasks/cores
     let (c2h_p, c2h_c) = unsafe { CLIENT_TO_HOST.split() };
     let (h2c_p, h2c_c) = unsafe { HOST_TO_CLIENT.split() };
