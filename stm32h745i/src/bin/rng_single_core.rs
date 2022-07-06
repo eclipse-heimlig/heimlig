@@ -31,10 +31,17 @@ impl rng::EntropySource for EntropySource {
         let mut buf = [0u8; 32];
 
         interrupt::free(|cs| {
-            let r = HW_RNG_INSTANCE.borrow(cs).borrow_mut().take().unwrap();
-            let mut rng = Rng::new(r);
-            rng.fill_bytes(&mut buf);
+            match HW_RNG_INSTANCE.borrow(cs).borrow_mut().take() {
+                Some(p_rng) => {
+                    let mut rng = Rng::new(p_rng);
+                    rng.fill_bytes(&mut buf);
+                },
+                None => defmt::panic!("HW_RNG_INSTANCE is not initialized"),
+            }
         });
+
+        info!("New random seed (size={}, data={:02x})", buf.len(), buf);
+
         buf
     }
 }
@@ -110,7 +117,7 @@ async fn client_recv(mut receiver: ResponseReceiver<'static>) {
                     error!("Received response: Error")
                 }
                 Response::GetRandom { data } => {
-                    info!("Received response: random data (size={})", data.len(),);
+                    info!("Received response: random data (size={}, data={:02x})", data.len(), data.as_slice());
                 }
             },
             None => {
