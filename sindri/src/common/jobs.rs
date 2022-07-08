@@ -42,47 +42,6 @@ impl ResponseData {
         return self.size;
     } 
 
-/*
-    pub fn alloc(&mut self, size: usize) -> bool {
-        self.size = size;
-        let mut left = size;
-        match unsafe {
-            POOL.alloc()
-        } {
-            None => {
-                self.chunk_list = None;
-                return false;
-            },
-            Some(b) => {
-                let mut chunk = b.init(PoolChunk { next: None, data: [0u8; POOL_CHUNK_SIZE] });
-                loop {
-                    if left <= POOL_CHUNK_SIZE {
-                        break;
-                    }
-                    match unsafe {
-                        POOL.alloc()
-                    } {
-                        None => {
-                            self.chunk_list = None;
-                            return false;
-                        },
-                        Some(b2) => {
-                            let mut next_chunk = b2.init(PoolChunk { next: 
-None, data: [0u8; POOL_CHUNK_SIZE] });
-                            next_chunk.next = Some(&chunk);
-                            chunk = next_chunk;
-                            left -= POOL_CHUNK_SIZE;
-                        }d
-                    }       
-                }
-                self.chunk_list = Some(&chunk);
-        
-            } 
-        }
-        return true;
-    }
-*/
-
     pub fn alloc(&mut self, size: usize) -> bool {
         self.size = size;
         let mut left = size;
@@ -114,37 +73,6 @@ None, data: [0u8; POOL_CHUNK_SIZE] });
         }
         return true;
     }
-
-/*
-    pub fn copy_from_vec(&mut self, vec: Vec<u8, MAX_RANDOM_SIZE>)
-    {
-        match self.chunk_list {
-            None => {
-                return;
-            },
-            Some(first_chunk) => {
-                let mut chunk = first_chunk;
-                let mut cnt: usize = 0;
-                for elem in vec.iter()
-                {
-                    chunk.data[cnt] = *elem;
-                    cnt += 1;
-                    if cnt == POOL_CHUNK_SIZE {
-                        match chunk.next {
-                            None => {
-                                return;
-                            },
-                            Some(next_chunk) => {
-                                chunk = next_chunk;
-                                cnt = 0;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-*/
 
     pub fn copy_from_vec(&mut self, vec: &Vec<u8, MAX_RANDOM_SIZE>)
     {
