@@ -24,4 +24,3 @@ sha2 = { version = "0.10" , default-features = false }
 [dev-dependencies]
 futures-test = "0.3"
 heapless = "0.7"
-hex = "0.4"
