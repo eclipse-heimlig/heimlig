@@ -46,7 +46,7 @@ impl<E: EntropySource> Scheduler<E> {
             Ok(_) => {
                 self.rng.fill_bytes(&mut data);
                 let mut response_data = ResponseData::new();
-                if response_data.alloc(MAX_RANDOM_SIZE) {
+                if response_data.alloc(data.len()) {
                     response_data.copy_from_vec(&data);
                     Response::GetRandom { response_data }
                 }
@@ -85,8 +85,8 @@ pub(crate) mod test {
         let job = Job { id: 0, request };
         let result = scheduler.schedule(job).await;
         match result.response {
-            Response::GetRandom { data } => {
-                assert_eq!(data.len(), 32)
+            Response::GetRandom { response_data } => {
+                assert_eq!(response_data.len(), 32)
             }
             _ => {
                 panic!("Unexpected response type");
