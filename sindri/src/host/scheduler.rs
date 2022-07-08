@@ -1,4 +1,4 @@
-use crate::common::jobs::{Request, Response};
+use crate::common::jobs::{Request, Response, ResponseData};
 use crate::common::limits::MAX_RANDOM_SIZE;
 use crate::crypto::rng::{EntropySource, Rng};
 use heapless::Vec;
@@ -45,7 +45,14 @@ impl<E: EntropySource> Scheduler<E> {
         match data.resize(size, 0) {
             Ok(_) => {
                 self.rng.fill_bytes(&mut data);
-                Response::GetRandom { data }
+                let mut response_data = ResponseData::new();
+                if response_data.alloc(MAX_RANDOM_SIZE) {
+                    response_data.copy_from_vec(&data);
+                    Response::GetRandom { response_data }
+                }
+                else {
+                    Response::Error(Error::Alloc)
+                }
             }
             Err(_) => Response::Error(Error::Alloc),
         }
