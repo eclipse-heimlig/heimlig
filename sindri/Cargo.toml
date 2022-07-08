@@ -15,6 +15,7 @@ ecdsa = { version = "0.14", default-features = false }
 elliptic-curve = { version = "0.12", default-features = false }
 generic-array = { version = "0.14", default-features = false, features = ["more_lengths"] }
 heapless = { version = "0.7", default-features = false }
+hmac = { version = "0.12", default-features = false }
 p256 = { version = "0.11", default-features = false, features = ["ecdh", "ecdsa"] }
 rand = { version = "0.8", default-features = false }
 rand_chacha = { version = "0.3", default-features = false }

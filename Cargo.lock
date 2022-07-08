@@ -1559,6 +1559,7 @@ dependencies = [
  "futures-test",
  "generic-array 0.14.5",
  "heapless",
+ "hmac",
  "p256",
  "rand",
  "rand_chacha",

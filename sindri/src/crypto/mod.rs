@@ -4,4 +4,5 @@ mod ecc;
 pub mod ecdh;
 pub mod ecdsa;
 pub mod hash;
+pub mod hmac;
 pub mod rng;
