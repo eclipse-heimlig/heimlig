@@ -38,7 +38,7 @@ impl ResponseData {
         }
     }
 
-    pub fn len(self) -> usize {
+    pub fn len(&self) -> usize {
         return self.size;
     } 
 
@@ -50,7 +50,6 @@ impl ResponseData {
                 POOL.alloc()
             } {
                 None => {
-                    self.chunk_list.clear();
                     return false;
                 },
                 Some(b2) => {
@@ -64,7 +63,6 @@ impl ResponseData {
 
                         },
                         Err(_) => {
-                            self.chunk_list.clear();
                             return false;
                         }
                     } 
@@ -122,4 +120,19 @@ impl ResponseData {
         }
     }
 
+}
+
+impl Drop for ResponseData {
+    fn drop(&mut self) {
+        while !self.chunk_list.is_empty() {
+            let elem = self.chunk_list.pop();
+            match elem {
+                Some(b) => {
+                    unsafe { POOL.free(b); }
+                },
+                None => {}
+            };
+        }
+        self.chunk_list.clear();
+    }
 }
