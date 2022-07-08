@@ -90,6 +90,7 @@ impl ResponseData {
                 cnt = 0;
             }
         }
+        self.size = vec.len();
     }
 
     pub fn copy_to_vec(&self, vec: &mut Vec<u8, MAX_RANDOM_SIZE>)
