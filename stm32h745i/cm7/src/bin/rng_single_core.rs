@@ -12,10 +12,13 @@ use embassy_stm32::peripherals::RNG as PeripheralRNG;
 use embassy_stm32::rng::Rng;
 use heapless::spsc::{Consumer, Producer, Queue};
 use rand_core::RngCore;
-use sindri::common::jobs::{Request, Response};
+use sindri::common::jobs::{Request, Response, PoolChunk, POOL};
+use heapless::Vec;
+use sindri::common::limits::MAX_RANDOM_SIZE;
 use sindri::crypto::rng;
 use sindri::host::core::{Core, Error, Sender};
 use {defmt_rtt as _, panic_probe as _};
+use core::mem::size_of;
 
 const MAX_CLIENTS: usize = 1;
 const QUEUE_SIZE: usize = 8;
@@ -116,7 +119,9 @@ async fn client_recv(mut receiver: ResponseReceiver<'static>) {
                 Response::Error(_e) => {
                     error!("Received response: Error")
                 }
-                Response::GetRandom { data } => {
+                Response::GetRandom { response_data } => {
+                    let mut data: Vec<u8, MAX_RANDOM_SIZE> = Default::default();
+                    response_data.copy_to_vec(&mut data);
                     info!("Received response: random data (size={}, data={:02x})", data.len(), data.as_slice());
                 }
             },
@@ -168,6 +173,12 @@ async fn host_recv_resp(
 async fn main(spawner: Spawner, p: Peripherals) {
 
     interrupt::free(|cs| HW_RNG_INSTANCE.borrow(cs).replace(Some(p.RNG)));
+
+    // increase the capacity of the pool by ~10 blocks
+    static mut MEMORY: [u8; size_of::<PoolChunk>()*10] = [0; size_of::<PoolChunk>()*10];
+    unsafe {
+        POOL.grow(&mut MEMORY);
+    }
 
     // TODO: Unsafe: Access to static queues must be protected across tasks/cores
     let (c2h_p, c2h_c) = unsafe { CLIENT_TO_HOST.split() };
