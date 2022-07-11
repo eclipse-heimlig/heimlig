@@ -331,35 +331,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cli"
-version = "0.1.0"
-dependencies = [
- "base64",
- "cortex-m",
- "cortex-m-rt",
- "critical-section",
- "defmt",
- "defmt-rtt",
- "embassy",
- "embassy-net",
- "embassy-stm32",
- "embedded-hal 0.2.7",
- "embedded-hal 1.0.0-alpha.8",
- "embedded-hal-async",
- "embedded-io",
- "embedded-storage",
- "futures",
- "heapless",
- "hex",
- "micromath",
- "panic-probe",
- "rand",
- "rand_core",
- "sindri",
- "stm32-fmc",
-]
-
-[[package]]
 name = "const-oid"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1121,12 +1092,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "micromath"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39617bc909d64b068dcffd0e3e31679195b5576d0c83fadc52690268cc2b2b55"
-
-[[package]]
 name = "nb"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1607,6 +1572,26 @@ dependencies = [
  "regex",
  "serde",
  "serde_yaml",
+]
+
+[[package]]
+name = "stm32h745i-cm7"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "cortex-m",
+ "cortex-m-rt",
+ "defmt",
+ "defmt-rtt",
+ "embassy",
+ "embassy-net",
+ "embassy-stm32",
+ "heapless",
+ "hex",
+ "panic-probe",
+ "rand",
+ "rand_core",
+ "sindri",
 ]
 
 [[package]]
