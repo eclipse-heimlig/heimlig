@@ -351,6 +351,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmac"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "606383658416244b8dc4b36f864ec1f86cb922b95c41a908fd07aeb01cad06fa"
+dependencies = [
+ "cipher 0.4.3",
+ "dbl",
+ "digest",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -527,6 +538,15 @@ dependencies = [
  "darling_core",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "dbl"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd2735a791158376708f9347fe8faba9667589d82427ef3aed6794a8981de3d9"
+dependencies = [
+ "generic-array 0.14.5",
 ]
 
 [[package]]
@@ -1554,6 +1574,7 @@ dependencies = [
  "cbc",
  "ccm",
  "chacha20poly1305",
+ "cmac",
  "ecdsa",
  "elliptic-curve",
  "futures-test",

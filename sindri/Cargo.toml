@@ -11,6 +11,7 @@ cbc = { version = "0.1", default-features = false, features = ["block-padding", 
 ccm = { git = "https://github.com/RustCrypto/AEADs", rev = "6b980d96962a1aadd90c7b802d591b99994d647a", default-features = false }
 # TODO: switch to 0.10 version after chacha20poly1305 crate release
 chacha20poly1305 = { git = "https://github.com/RustCrypto/AEADs", rev = "6b980d96962a1aadd90c7b802d591b99994d647a", default-features = false }
+cmac = { version = "0.7", default-features = false, features = ["zeroize"] }
 ecdsa = { version = "0.14", default-features = false }
 elliptic-curve = { version = "0.12", default-features = false }
 generic-array = { version = "0.14", default-features = false, features = ["more_lengths"] }
