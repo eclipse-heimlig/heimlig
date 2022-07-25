@@ -1226,6 +1226,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "p384"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70723b6e03216e79df3765a7e4cdf39746c4a2392ba4bdb458111a939494cc1d"
+dependencies = [
+ "ecdsa",
+ "elliptic-curve",
+ "sha2",
+]
+
+[[package]]
 name = "panic-probe"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1582,6 +1593,7 @@ dependencies = [
  "heapless",
  "hmac",
  "p256",
+ "p384",
  "rand",
  "rand_chacha",
  "rand_core",
