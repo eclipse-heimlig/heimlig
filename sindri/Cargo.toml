@@ -24,6 +24,7 @@ rand = { version = "0.8", default-features = false }
 rand_chacha = { version = "0.3", default-features = false }
 rand_core = { version = "0.6", default-features = false }
 sha2 = { version = "0.10" , default-features = false }
+x25519-dalek = { version = "2.0.0-pre.1", default-features = false }
 
 [dev-dependencies]
 futures-test = "0.3"

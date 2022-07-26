@@ -7,3 +7,4 @@ pub mod ecdsa;
 pub mod hash;
 pub mod hmac;
 pub mod rng;
+pub mod x25519;
