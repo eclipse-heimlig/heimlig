@@ -1,6 +1,0 @@
-[workspace]
-
-members = [
-    "sindri",
-    "stm32h745i",
-]
