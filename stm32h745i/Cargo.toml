@@ -1,6 +1,6 @@
 [package]
 edition = "2021"
-name = "cli"
+name = "stm32h745i"
 version = "0.1.0"
 
 [[bin]]
