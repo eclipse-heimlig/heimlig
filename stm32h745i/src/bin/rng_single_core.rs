@@ -7,9 +7,9 @@ use cortex_m::interrupt::{self, Mutex};
 use defmt::*;
 use embassy::executor::Spawner;
 use embassy::time::{Duration, Timer};
+use embassy_stm32::Peripherals;
 use embassy_stm32::peripherals::RNG as PeripheralRNG;
 use embassy_stm32::rng::Rng;
-use embassy_stm32::Peripherals;
 use heapless::spsc::{Consumer, Producer, Queue};
 use rand_core::RngCore;
 use sindri::common::jobs::{Request, Response};
@@ -30,12 +30,14 @@ impl rng::EntropySource for EntropySource {
     fn random_seed(&mut self) -> [u8; 32] {
         let mut buf = [0u8; 32];
 
-        interrupt::free(|cs| match HW_RNG_INSTANCE.borrow(cs).borrow_mut().take() {
-            Some(p_rng) => {
-                let mut rng = Rng::new(p_rng);
-                rng.fill_bytes(&mut buf);
+        interrupt::free(|cs| {
+            match HW_RNG_INSTANCE.borrow(cs).borrow_mut().take() {
+                Some(p_rng) => {
+                    let mut rng = Rng::new(p_rng);
+                    rng.fill_bytes(&mut buf);
+                },
+                None => defmt::panic!("HW_RNG_INSTANCE is not initialized"),
             }
-            None => defmt::panic!("HW_RNG_INSTANCE is not initialized"),
         });
 
         info!("New random seed (size={}, data={:02x})", buf.len(), buf);
@@ -115,11 +117,7 @@ async fn client_recv(mut receiver: ResponseReceiver<'static>) {
                     error!("Received response: Error")
                 }
                 Response::GetRandom { data } => {
-                    info!(
-                        "Received response: random data (size={}, data={:02x})",
-                        data.len(),
-                        data.as_slice()
-                    );
+                    info!("Received response: random data (size={}, data={:02x})", data.len(), data.as_slice());
                 }
             },
             None => {
@@ -150,10 +148,12 @@ async fn host_recv_resp(
                         Ok(_) => {
                             info!("Request processed successfully");
                         }
-                        Err(e) => match e {
-                            Error::Busy => error!("Failed to process request: Busy"),
-                            Error::UnknownId => error!("Failed to process request: UnknownId"),
-                        },
+                        Err(e) => {
+                            match e {
+                                Error::Busy => error!("Failed to process request: Busy"),
+                                Error::UnknownId => error!("Failed to process request: UnknownId"),
+                            }
+                        }
                     };
                 }
             },
@@ -166,6 +166,7 @@ async fn host_recv_resp(
 
 #[embassy::main]
 async fn main(spawner: Spawner, p: Peripherals) {
+
     interrupt::free(|cs| HW_RNG_INSTANCE.borrow(cs).replace(Some(p.RNG)));
 
     // TODO: Unsafe: Access to static queues must be protected across tasks/cores
