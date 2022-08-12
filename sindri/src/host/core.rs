@@ -1,8 +1,7 @@
 use crate::common::jobs::{Request, Response};
-use crate::common::pool::PoolChunk;
+use crate::common::pool::Pool;
 use crate::crypto::rng::{EntropySource, Rng};
 use crate::host::scheduler::{Job, Scheduler};
-use heapless::pool::Pool;
 use heapless::{LinearMap, Vec};
 
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -39,10 +38,10 @@ impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
     /// * `rng`: Random number generator (RNG) used to seed the core RNG.
     /// * `response_channels`: List of channels to send responses back to the clients.
     pub fn new(
-        pool: Pool<PoolChunk>,
+        pool: &'static Pool,
         rng: Rng<E>,
-        response_channels: Vec<&mut dyn Sender, MAX_CLIENTS>,
-    ) -> Core<E, MAX_CLIENTS> {
+        response_channels: Vec<&'a mut dyn Sender, MAX_CLIENTS>,
+    ) -> Core<'a, E, MAX_CLIENTS> {
         Core {
             scheduler: Scheduler { pool, rng },
             response_channels,
@@ -95,7 +94,7 @@ mod tests {
     extern crate std;
 
     use crate::common::jobs::{Request, Response};
-    use crate::common::pool::{PoolChunk, MAX_CHUNKS, POOL_CHUNK_SIZE};
+    use crate::common::pool::{Memory, Pool};
     use crate::crypto::rng;
     use crate::host::core::{Core, Sender};
     use heapless::spsc::{Consumer, Producer, Queue};
@@ -130,11 +129,9 @@ mod tests {
     #[futures_test::test]
     async fn multiple_clients() {
         // Memory pool
-        static mut MEMORY: [u8; MAX_CHUNKS * POOL_CHUNK_SIZE] = [0; MAX_CHUNKS * POOL_CHUNK_SIZE];
-        let pool = heapless::pool::Pool::<PoolChunk>::new();
-        unsafe {
-            pool.grow(&mut MEMORY);
-        }
+        static mut MEMORY: Memory = [0; Pool::required_memory()];
+        static POOL: Pool = Pool::new();
+        POOL.init(unsafe { &mut MEMORY }).unwrap();
 
         // RNG
         let entropy = rng::test::TestEntropySource::default();
@@ -163,10 +160,10 @@ mod tests {
         }
 
         // Create core
-        let mut core = Core::new(pool, rng, response_channels);
+        let mut core = Core::new(&POOL, rng, response_channels);
 
         // Send request from client 0
-        let size = 32;
+        let size = 65; // Exceed size of a small chunk
         let request = Request::GetRandom { size };
         assert!(matches!(core.process(0, request.clone()).await, Ok(())));
         if response_receiver2.recv().is_some() {
