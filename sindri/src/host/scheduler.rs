@@ -1,7 +1,10 @@
-use crate::common::jobs::{Request, Response, ResponseData};
+use crate::common::jobs::Response::GetRandom;
+use crate::common::jobs::{Request, Response};
 use crate::common::limits::MAX_RANDOM_SIZE;
+use crate::common::pool::PoolChunk;
 use crate::crypto::rng::{EntropySource, Rng};
-use heapless::Vec;
+use core::ops::DerefMut;
+use heapless::pool::Pool;
 use rand_core::RngCore;
 
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -21,6 +24,7 @@ pub struct JobResult {
 }
 
 pub struct Scheduler<E: EntropySource> {
+    pub pool: Pool<PoolChunk>,
     pub rng: Rng<E>, // TODO: Have the RNG as a singleton available everywhere?
 }
 
@@ -41,20 +45,18 @@ impl<E: EntropySource> Scheduler<E> {
         if size >= MAX_RANDOM_SIZE {
             return Response::Error(Error::RequestedDataExceedsLimit);
         }
-        let mut data: Vec<u8, MAX_RANDOM_SIZE> = Vec::new();
-        match data.resize(size, 0) {
-            Ok(_) => {
-                self.rng.fill_bytes(&mut data);
-                let mut response_data = ResponseData::new();
-                if response_data.alloc(data.len()) {
-                    response_data.copy_from_vec(&data);
-                    Response::GetRandom { response_data }
-                }
-                else {
-                    Response::Error(Error::Alloc)
-                }
+        let chunk = self.pool.alloc(); // TODO: handle different size classes
+        match chunk {
+            None => Response::Error(Error::Alloc),
+            Some(chunk) => {
+                let mut chunk = chunk.init(PoolChunk::default());
+                chunk
+                    .deref_mut()
+                    .resize_default(size)
+                    .expect("Failed to allocate guaranteed capacity");
+                self.rng.fill_bytes(chunk.deref_mut());
+                GetRandom { data: chunk }
             }
-            Err(_) => Response::Error(Error::Alloc),
         }
     }
 }
@@ -63,6 +65,7 @@ impl<E: EntropySource> Scheduler<E> {
 pub(crate) mod test {
     use crate::common::jobs::{Request, Response};
     use crate::common::limits::MAX_RANDOM_SIZE;
+    use crate::common::pool::{PoolChunk, MAX_CHUNKS, POOL_CHUNK_SIZE};
     use crate::crypto::rng::{EntropySource, Rng};
     use crate::host::scheduler::Scheduler;
     use crate::host::scheduler::{Error, Job};
@@ -78,14 +81,21 @@ pub(crate) mod test {
 
     #[futures_test::test]
     async fn get_random() {
+        static mut MEMORY: [u8; MAX_CHUNKS * POOL_CHUNK_SIZE] = [0; MAX_CHUNKS * POOL_CHUNK_SIZE];
+        let pool = heapless::pool::Pool::<PoolChunk>::new();
+        unsafe {
+            pool.grow(&mut MEMORY);
+        }
         let entropy = TestEntropySource::default();
         let rng = Rng::new(entropy, None);
-        let mut scheduler = Scheduler { rng };
+        let mut scheduler = Scheduler { pool, rng };
         let request = Request::GetRandom { size: 32 };
         let job = Job { id: 0, request };
         let result = scheduler.schedule(job).await;
         match result.response {
-            Response::GetRandom { response_data } => {
+            Response::GetRandom {
+                data: response_data,
+            } => {
                 assert_eq!(response_data.len(), 32)
             }
             _ => {
@@ -96,9 +106,14 @@ pub(crate) mod test {
 
     #[futures_test::test]
     async fn get_random_request_too_large() {
+        static mut MEMORY: [u8; MAX_CHUNKS * POOL_CHUNK_SIZE] = [0; MAX_CHUNKS * POOL_CHUNK_SIZE];
+        let pool = heapless::pool::Pool::<PoolChunk>::new();
+        unsafe {
+            pool.grow(&mut MEMORY);
+        }
         let entropy = TestEntropySource::default();
         let rng = Rng::new(entropy, None);
-        let mut scheduler = Scheduler { rng };
+        let mut scheduler = Scheduler { pool, rng };
         let request = Request::GetRandom {
             size: MAX_RANDOM_SIZE + 1,
         };

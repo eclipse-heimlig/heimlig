@@ -1,6 +1,8 @@
 use crate::common::jobs::{Request, Response};
+use crate::common::pool::PoolChunk;
 use crate::crypto::rng::{EntropySource, Rng};
 use crate::host::scheduler::{Job, Scheduler};
+use heapless::pool::Pool;
 use heapless::{LinearMap, Vec};
 
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -37,11 +39,12 @@ impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
     /// * `rng`: Random number generator (RNG) used to seed the core RNG.
     /// * `response_channels`: List of channels to send responses back to the clients.
     pub fn new(
+        pool: Pool<PoolChunk>,
         rng: Rng<E>,
         response_channels: Vec<&mut dyn Sender, MAX_CLIENTS>,
     ) -> Core<E, MAX_CLIENTS> {
         Core {
-            scheduler: Scheduler { rng },
+            scheduler: Scheduler { pool, rng },
             response_channels,
             requester_to_job_ids: Default::default(),
             request_counter: 0,
@@ -79,7 +82,7 @@ impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
     }
 
     fn new_job(&mut self, request: Request) -> Job {
-        self.request_counter += 1;
+        self.request_counter += 1; // Wrapping OK. Counter is used for IDs only.
         Job {
             id: self.request_counter,
             request,
@@ -92,6 +95,7 @@ mod tests {
     extern crate std;
 
     use crate::common::jobs::{Request, Response};
+    use crate::common::pool::{PoolChunk, MAX_CHUNKS, POOL_CHUNK_SIZE};
     use crate::crypto::rng;
     use crate::host::core::{Core, Sender};
     use heapless::spsc::{Consumer, Producer, Queue};
@@ -125,9 +129,18 @@ mod tests {
 
     #[futures_test::test]
     async fn multiple_clients() {
-        // Create core
+        // Memory pool
+        static mut MEMORY: [u8; MAX_CHUNKS * POOL_CHUNK_SIZE] = [0; MAX_CHUNKS * POOL_CHUNK_SIZE];
+        let pool = heapless::pool::Pool::<PoolChunk>::new();
+        unsafe {
+            pool.grow(&mut MEMORY);
+        }
+
+        // RNG
         let entropy = rng::test::TestEntropySource::default();
         let rng = rng::Rng::new(entropy, None);
+
+        // Queue
         let mut host_to_client1: Queue<Response, QUEUE_SIZE> = Queue::<Response, QUEUE_SIZE>::new();
         let mut host_to_client2: Queue<Response, QUEUE_SIZE> = Queue::<Response, QUEUE_SIZE>::new();
         let (h2c1_p, h2c1_c) = host_to_client1.split();
@@ -148,7 +161,9 @@ mod tests {
         {
             panic!("List of return channels not large enough");
         }
-        let mut core = Core::new(rng, response_channels);
+
+        // Create core
+        let mut core = Core::new(pool, rng, response_channels);
 
         // Send request from client 0
         let size = 32;
