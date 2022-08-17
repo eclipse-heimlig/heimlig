@@ -1,7 +1,5 @@
 name: License audit
-defaults:
-  run:
-    working-directory: ./sindri
+
 on: push
 jobs:
   security_audit:
