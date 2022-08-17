@@ -1,7 +1,7 @@
 use super::*;
 
 use crate::common::limits::{MAX_CIPHERTEXT_SIZE, MAX_PLAINTEXT_SIZE};
-use aes_gcm::{aead::NewAead, AeadInPlace, Aes128Gcm, Aes256Gcm};
+use aes_gcm::{AeadInPlace, Aes128Gcm, Aes256Gcm, KeyInit};
 use heapless::Vec;
 
 /// AES-GCM encryption: generic over an underlying AES implementation.
@@ -12,7 +12,7 @@ fn aes_gcm_encrypt<C>(
     plaintext: &[u8],
 ) -> Result<Vec<u8, { MAX_CIPHERTEXT_SIZE + GCM_TAG_SIZE }>, Error>
 where
-    C: NewAead + AeadInPlace,
+    C: KeyInit + AeadInPlace,
 {
     check_sizes(key, nonce, C::KeySize::USIZE, C::NonceSize::USIZE)?;
 
@@ -39,7 +39,7 @@ fn aes_gcm_decrypt<C>(
     ciphertext_and_tag: &[u8],
 ) -> Result<Vec<u8, MAX_PLAINTEXT_SIZE>, Error>
 where
-    C: NewAead + AeadInPlace,
+    C: KeyInit + AeadInPlace,
 {
     check_sizes(key, nonce, C::KeySize::USIZE, C::NonceSize::USIZE)?;
     if ciphertext_and_tag.len() < C::TagSize::USIZE {
