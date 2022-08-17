@@ -1,5 +1,9 @@
 name: "Rust CI/CD"
 
+defaults:
+  run:
+    working-directory: ./sindri
+
 on: [push, pull_request]
 
 env:

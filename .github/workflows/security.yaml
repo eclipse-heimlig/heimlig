@@ -1,4 +1,7 @@
 name: Security audit
+defaults:
+  run:
+    working-directory: ./sindri
 on:
   push:
     paths:
