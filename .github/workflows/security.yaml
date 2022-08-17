@@ -1,7 +1,5 @@
 name: Security audit
-defaults:
-  run:
-    working-directory: ./sindri
+
 on:
   push:
     paths:
@@ -9,6 +7,7 @@ on:
       - '**/Cargo.lock'
     schedule:
         '0 0 * * *'
+
 jobs:
   security_audit:
     runs-on: ubuntu-latest
