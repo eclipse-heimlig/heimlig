@@ -1,14 +1,13 @@
-use crate::common::limits::MAX_RANDOM_SIZE;
+use crate::common::pool::PoolChunk;
 use crate::host::scheduler;
-use heapless::Vec;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Request {
     GetRandom { size: usize },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Eq, PartialEq, Debug)]
 pub enum Response {
     Error(scheduler::Error),
-    GetRandom { data: Vec<u8, MAX_RANDOM_SIZE> },
+    GetRandom { data: PoolChunk },
 }

@@ -1,4 +1,5 @@
 use crate::common::jobs::{Request, Response};
+use crate::common::pool::Pool;
 use crate::crypto::rng::{EntropySource, Rng};
 use crate::host::scheduler::{Job, Scheduler};
 use heapless::{LinearMap, Vec};
@@ -37,11 +38,12 @@ impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
     /// * `rng`: Random number generator (RNG) used to seed the core RNG.
     /// * `response_channels`: List of channels to send responses back to the clients.
     pub fn new(
+        pool: &'static Pool,
         rng: Rng<E>,
-        response_channels: Vec<&mut dyn Sender, MAX_CLIENTS>,
-    ) -> Core<E, MAX_CLIENTS> {
+        response_channels: Vec<&'a mut dyn Sender, MAX_CLIENTS>,
+    ) -> Core<'a, E, MAX_CLIENTS> {
         Core {
-            scheduler: Scheduler { rng },
+            scheduler: Scheduler { pool, rng },
             response_channels,
             requester_to_job_ids: Default::default(),
             request_counter: 0,
@@ -79,7 +81,7 @@ impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
     }
 
     fn new_job(&mut self, request: Request) -> Job {
-        self.request_counter += 1;
+        self.request_counter += 1; // Wrapping OK. Counter is used for IDs only.
         Job {
             id: self.request_counter,
             request,
@@ -92,6 +94,7 @@ mod tests {
     extern crate std;
 
     use crate::common::jobs::{Request, Response};
+    use crate::common::pool::{Memory, Pool};
     use crate::crypto::rng;
     use crate::host::core::{Core, Sender};
     use heapless::spsc::{Consumer, Producer, Queue};
@@ -125,9 +128,16 @@ mod tests {
 
     #[futures_test::test]
     async fn multiple_clients() {
-        // Create core
+        // Memory pool
+        static mut MEMORY: Memory = [0; Pool::required_memory()];
+        static POOL: Pool = Pool::new();
+        POOL.init(unsafe { &mut MEMORY }).unwrap();
+
+        // RNG
         let entropy = rng::test::TestEntropySource::default();
         let rng = rng::Rng::new(entropy, None);
+
+        // Queue
         let mut host_to_client1: Queue<Response, QUEUE_SIZE> = Queue::<Response, QUEUE_SIZE>::new();
         let mut host_to_client2: Queue<Response, QUEUE_SIZE> = Queue::<Response, QUEUE_SIZE>::new();
         let (h2c1_p, h2c1_c) = host_to_client1.split();
@@ -148,10 +158,12 @@ mod tests {
         {
             panic!("List of return channels not large enough");
         }
-        let mut core = Core::new(rng, response_channels);
+
+        // Create core
+        let mut core = Core::new(&POOL, rng, response_channels);
 
         // Send request from client 0
-        let size = 32;
+        let size = 65; // Exceed size of a small chunk
         let request = Request::GetRandom { size };
         assert!(matches!(core.process(0, request.clone()).await, Ok(())));
         if response_receiver2.recv().is_some() {
