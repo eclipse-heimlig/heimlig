@@ -165,7 +165,7 @@ mod tests {
         // Send request from client 0
         let size = 65; // Exceed size of a small chunk
         let request = Request::GetRandom { size };
-        assert!(matches!(core.process(0, request.clone()).await, Ok(())));
+        assert!(matches!(core.process(0, request).await, Ok(())));
         if response_receiver2.recv().is_some() {
             panic!("Received unexpected response");
         }
@@ -184,6 +184,7 @@ mod tests {
         }
 
         // Send request from client 1
+        let request = Request::GetRandom { size };
         assert!(matches!(core.process(1, request).await, Ok(())));
         if response_receiver1.recv().is_some() {
             panic!("Received unexpected response");

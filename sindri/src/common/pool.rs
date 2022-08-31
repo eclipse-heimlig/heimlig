@@ -74,6 +74,8 @@ impl Default for Pool {
 }
 
 impl Pool {
+    pub const MAX_ALLOC_SIZE: usize = BIG_CHUNK_SIZE;
+
     pub const fn new() -> Self {
         let small = heapless::pool::Pool::<SmallChunk>::new();
         let medium = heapless::pool::Pool::<MediumChunk>::new();

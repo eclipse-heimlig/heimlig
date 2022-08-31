@@ -22,6 +22,7 @@ where
 {
     check_sizes(key, iv, C::KeySize::USIZE, C::BlockSize::USIZE)?;
 
+    // TODO: avoid stack allocation
     let mut ciphertext = Vec::new();
     let ciphertext_size = get_padded_size::<C, P>(plaintext.len());
     ciphertext
@@ -50,6 +51,7 @@ where
 {
     check_sizes(key, iv, C::KeySize::USIZE, C::BlockSize::USIZE)?;
 
+    // TODO: avoid stack allocation
     let mut plaintext = Vec::new();
     plaintext
         .extend_from_slice(ciphertext)

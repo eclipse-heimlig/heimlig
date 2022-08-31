@@ -16,6 +16,7 @@ where
 {
     check_sizes(key, nonce, C::KeySize::USIZE, C::NonceSize::USIZE)?;
 
+    // TODO: avoid stack allocation
     let mut ciphertext_and_tag = Vec::new();
     ciphertext_and_tag
         .extend_from_slice(plaintext)
@@ -23,7 +24,7 @@ where
 
     let tag = C::new(key.into())
         .encrypt_in_place_detached(nonce.into(), associated_data, &mut ciphertext_and_tag)
-        .map_err(|_| Error::Encryption)?;
+        .map_err(|_| Error::Encrypt)?;
     ciphertext_and_tag
         .extend_from_slice(&tag)
         .map_err(|_| Error::Alloc)?;
@@ -46,6 +47,7 @@ where
         return Err(Error::InvalidBufferSize);
     }
 
+    // TODO: avoid stack allocation
     let (ciphertext, tag) =
         ciphertext_and_tag.split_at(ciphertext_and_tag.len() - C::TagSize::USIZE);
     let mut plaintext = Vec::new();
@@ -54,7 +56,7 @@ where
         .map_err(|_| Error::Alloc)?;
     C::new(key.into())
         .decrypt_in_place_detached(nonce.into(), associated_data, &mut plaintext, tag.into())
-        .map_err(|_| Error::Decryption)?;
+        .map_err(|_| Error::Decrypt)?;
     Ok(plaintext)
 }
 
@@ -246,7 +248,7 @@ pub mod test {
                 corrupted_ciphertext[0] += 1;
                 assert_eq!(
                     aes_gcm_decrypt::<$cipher>($key, $nonce, &[], &corrupted_ciphertext),
-                    Err(Error::Decryption)
+                    Err(Error::Decrypt)
                 );
             }
         };
