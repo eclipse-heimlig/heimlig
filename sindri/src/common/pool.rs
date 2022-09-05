@@ -6,11 +6,13 @@ use heapless::pool::{Box, Init, Node};
 pub const SMALL_CHUNKS: usize = 16;
 pub const MEDIUM_CHUNKS: usize = 8;
 pub const BIG_CHUNKS: usize = 4;
-pub const SMALL_CHUNK_SIZE: usize = 64;
+pub const STACK_CHUNK_SIZE: usize = 32; // Allocated on the stack instead of the pool
+pub const SMALL_CHUNK_SIZE: usize = 128;
 pub const MEDIUM_CHUNK_SIZE: usize = 512;
 pub const BIG_CHUNK_SIZE: usize = 1500; // Ethernet MTU
 
 pub type Memory = [u8; Pool::required_memory()];
+type StackChunk = heapless::Vec<u8, STACK_CHUNK_SIZE>;
 type SmallChunk = heapless::Vec<u8, SMALL_CHUNK_SIZE>;
 type MediumChunk = heapless::Vec<u8, MEDIUM_CHUNK_SIZE>;
 type BigChunk = heapless::Vec<u8, BIG_CHUNK_SIZE>;
@@ -23,6 +25,7 @@ pub enum Error {
 
 #[derive(Eq, PartialEq, Debug)]
 pub enum PoolChunk {
+    StackChunk(StackChunk),
     SmallChunk(Box<SmallChunk, Init>),
     MediumChunk(Box<MediumChunk, Init>),
     BigChunk(Box<BigChunk, Init>),
@@ -31,6 +34,7 @@ pub enum PoolChunk {
 impl PoolChunk {
     pub fn len(&self) -> usize {
         match self {
+            PoolChunk::StackChunk(st) => st.len(),
             PoolChunk::SmallChunk(s) => s.len(),
             PoolChunk::MediumChunk(m) => m.len(),
             PoolChunk::BigChunk(b) => b.len(),
@@ -43,6 +47,7 @@ impl PoolChunk {
 
     pub fn as_slice(&self) -> &[u8] {
         match self {
+            PoolChunk::StackChunk(st) => st.as_slice(),
             PoolChunk::SmallChunk(s) => s.deref().as_slice(),
             PoolChunk::MediumChunk(m) => m.deref().as_slice(),
             PoolChunk::BigChunk(b) => b.deref().as_slice(),
@@ -51,6 +56,7 @@ impl PoolChunk {
 
     pub fn as_slice_mut(&mut self) -> &mut [u8] {
         match self {
+            PoolChunk::StackChunk(st) => st.deref_mut(),
             PoolChunk::SmallChunk(s) => &mut s.deref_mut()[..],
             PoolChunk::MediumChunk(m) => &mut m.deref_mut()[..],
             PoolChunk::BigChunk(b) => &mut b.deref_mut()[..],
@@ -74,6 +80,8 @@ impl Default for Pool {
 }
 
 impl Pool {
+    pub const MAX_ALLOC_SIZE: usize = BIG_CHUNK_SIZE;
+
     pub const fn new() -> Self {
         let small = heapless::pool::Pool::<SmallChunk>::new();
         let medium = heapless::pool::Pool::<MediumChunk>::new();
@@ -96,8 +104,18 @@ impl Pool {
         Ok(())
     }
 
-    /// Allocate and initialize a memory chunk from the pool. The size of the chunk is at least as large as the required size.
+    /// Allocate and initialize a memory chunk from the pool.
+    /// Requests for chunks smaller or equal than `STACK_CHUNK_SIZE` will not use the pool but the
+    /// stack instead as copying small chunks in memory is considered acceptable.
     pub fn alloc(&self, size: usize) -> Result<PoolChunk, Error> {
+        if size <= STACK_CHUNK_SIZE {
+            // Do not use the pool but allocate on the stack
+            let mut chunk = StackChunk::new();
+            chunk
+                .resize_default(size)
+                .expect("Failed to allocate guaranteed capacity");
+            return Ok(PoolChunk::StackChunk(chunk));
+        }
         if size <= SMALL_CHUNK_SIZE {
             if let Some(chunk) = self.small.alloc() {
                 let mut chunk = chunk.init(Default::default());

@@ -48,10 +48,10 @@ pub enum Error {
     InvalidBufferSize,
     /// Provided plaintext or ciphertext is not padded.
     InvalidPadding,
-    /// Error during the encryoption.
-    Encryption,
+    /// Error during the encryption.
+    Encrypt,
     /// Error during the decryption.
-    Decryption,
+    Decrypt,
     /// Allocation error.
     Alloc,
 }
