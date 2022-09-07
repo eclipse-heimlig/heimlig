@@ -97,28 +97,16 @@ pub mod test {
     ) => {
             #[test]
             fn $test_name() {
-                let mut plaintext_ciphertext = [0u8; PLAINTEXT.len()];
-                plaintext_ciphertext.copy_from_slice($plaintext);
+                let mut buffer = [0u8; PLAINTEXT.len()];
+                buffer.copy_from_slice($plaintext);
                 let mut tag = [0u8; TAG_SIZE];
-                $encryptor(
-                    $key,
-                    $nonce,
-                    $associated_data,
-                    &mut plaintext_ciphertext,
-                    &mut tag,
-                )
-                .expect("encryption error");
-                assert_eq!(plaintext_ciphertext, $ciphertext, "ciphertext mismatch");
+                $encryptor($key, $nonce, $associated_data, &mut buffer, &mut tag)
+                    .expect("encryption error");
+                assert_eq!(buffer, $ciphertext, "ciphertext mismatch");
                 assert_eq!(tag, $tag, "ciphertext mismatch");
-                $decryptor(
-                    $key,
-                    $nonce,
-                    $associated_data,
-                    &mut plaintext_ciphertext,
-                    &tag,
-                )
-                .expect("decryption error");
-                assert_eq!(plaintext_ciphertext, $plaintext, "plaintext mismatch");
+                $decryptor($key, $nonce, $associated_data, &mut buffer, &tag)
+                    .expect("decryption error");
+                assert_eq!(buffer, $plaintext, "plaintext mismatch");
             }
         };
     }
@@ -170,15 +158,15 @@ pub mod test {
         for size in [0, 1, 8, 16, 24, 256] {
             let mut wrong_key: Vec<u8, 256> = Vec::new();
             wrong_key.resize(size, 0).expect("Allocation error");
-            let mut plaintext_ciphertext = [0u8; PLAINTEXT.len()];
-            plaintext_ciphertext.copy_from_slice(PLAINTEXT);
+            let mut buffer = [0u8; PLAINTEXT.len()];
+            buffer.copy_from_slice(PLAINTEXT);
             let mut tag = [0u8; TAG_SIZE];
             assert_eq!(
                 chacha20poly1305_encrypt_in_place_detached(
                     &wrong_key,
                     NONCE,
                     &[],
-                    &mut plaintext_ciphertext,
+                    &mut buffer,
                     &mut tag
                 ),
                 Err(Error::InvalidKeySize)
@@ -188,7 +176,7 @@ pub mod test {
                     &wrong_key,
                     NONCE,
                     &[],
-                    &mut plaintext_ciphertext,
+                    &mut buffer,
                     &tag
                 ),
                 Err(Error::InvalidKeySize)
@@ -198,15 +186,15 @@ pub mod test {
         for size in [0, 1, 10, 16, 32] {
             let mut wrong_nonce: Vec<u8, 32> = Vec::new();
             wrong_nonce.resize(size, 0).expect("Allocation error");
-            let mut plaintext_ciphertext = [0u8; PLAINTEXT.len()];
-            plaintext_ciphertext.copy_from_slice(PLAINTEXT);
+            let mut buffer = [0u8; PLAINTEXT.len()];
+            buffer.copy_from_slice(PLAINTEXT);
             let mut tag = [0u8; TAG_SIZE];
             assert_eq!(
                 chacha20poly1305_encrypt_in_place_detached(
                     KEY,
                     &wrong_nonce,
                     &[],
-                    &mut plaintext_ciphertext,
+                    &mut buffer,
                     &mut tag
                 ),
                 Err(Error::InvalidNonceSize)
@@ -216,7 +204,7 @@ pub mod test {
                     KEY,
                     &wrong_nonce,
                     &[],
-                    &mut plaintext_ciphertext,
+                    &mut buffer,
                     &tag
                 ),
                 Err(Error::InvalidNonceSize)
