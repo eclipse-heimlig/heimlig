@@ -1,7 +1,7 @@
-use super::*;
-
+use crate::crypto::{check_sizes, check_sizes_with_tag, Error};
 use aes_gcm::aead::Tag;
 use aes_gcm::{AeadInPlace, Aes128Gcm, Aes256Gcm, KeyInit};
+use generic_array::typenum::Unsigned;
 
 /// AES-GCM encryption: generic over an underlying AES implementation.
 fn aes_gcm_encrypt<'a, C>(
@@ -74,8 +74,9 @@ define_aes_gcm_impl!(aes128gcm_encrypt, aes128gcm_decrypt, Aes128Gcm);
 define_aes_gcm_impl!(aes256gcm_encrypt, aes256gcm_decrypt, Aes256Gcm);
 
 #[cfg(test)]
-pub mod test {
+mod test {
     use super::*;
+    use crate::crypto::aes::{GCM_NONCE_SIZE, GCM_TAG_SIZE, KEY128_SIZE, KEY256_SIZE};
     use heapless::Vec;
 
     const KEY128: &[u8; KEY128_SIZE] = b"Open sesame! ...";
