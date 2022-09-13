@@ -6,7 +6,7 @@ use aes::{
     Aes128, Aes192, Aes256,
 };
 use ccm::{
-    aead::{generic_array::ArrayLength, AeadInPlace, NewAead},
+    aead::{generic_array::ArrayLength, AeadInPlace},
     consts::{U13, U16},
     Ccm, NonceSize, TagSize,
 };
