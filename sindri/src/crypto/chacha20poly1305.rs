@@ -1,10 +1,10 @@
 use chacha20poly1305::{
-    aead::{generic_array::typenum::Unsigned, AeadCore, AeadInPlace, NewAead},
-    ChaCha20Poly1305,
+    aead::{generic_array::typenum::Unsigned, AeadCore},
+    AeadInPlace, ChaCha20Poly1305, KeyInit, KeySizeUser,
 };
 
 /// Size of the key in bytes for ChaCha20-Poly1305 algorithms
-pub const KEY_SIZE: usize = <ChaCha20Poly1305 as NewAead>::KeySize::USIZE;
+pub const KEY_SIZE: usize = <ChaCha20Poly1305 as KeySizeUser>::KeySize::USIZE;
 /// Size of the supported nonce in bytes for ChaCha20-Poly1305 algorithms.
 pub const NONCE_SIZE: usize = <ChaCha20Poly1305 as AeadCore>::NonceSize::USIZE;
 /// Size of the supported authentication tag in bytes for ChaCha20-Poly1305 algorithms.
