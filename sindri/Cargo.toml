@@ -7,10 +7,8 @@ edition = "2021"
 aes = { version = "0.8", default-features = false, features = ["zeroize"]}
 aes-gcm = { version = "0.10", default-features = false, features = ["aes"] }
 cbc = { version = "0.1", default-features = false, features = ["block-padding", "zeroize"] }
-# TODO: switch to 0.5 version after ccm crate release 
-ccm = { git = "https://github.com/RustCrypto/AEADs", rev = "6b980d96962a1aadd90c7b802d591b99994d647a", default-features = false }
-# TODO: switch to 0.10 version after chacha20poly1305 crate release
-chacha20poly1305 = { git = "https://github.com/RustCrypto/AEADs", rev = "6b980d96962a1aadd90c7b802d591b99994d647a", default-features = false }
+ccm = { version = "0.5", default-features = false }
+chacha20poly1305 = { version = "0.10", default-features = false }
 ecdsa = { version = "0.14", default-features = false }
 elliptic-curve = { version = "0.12", default-features = false }
 generic-array = { version = "0.14", default-features = false, features = ["more_lengths"] }
