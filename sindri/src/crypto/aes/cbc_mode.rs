@@ -20,7 +20,6 @@ where
     P: Padding<C::BlockSize>,
 {
     check_sizes(key, iv, C::KeySize::USIZE, C::BlockSize::USIZE)?;
-
     cbc::Encryptor::<C>::new(key.into(), iv.into())
         .encrypt_padded_mut::<P>(buffer, plaintext_len)
         .map_err(|_| Error::InvalidBufferSize)
@@ -37,7 +36,6 @@ where
     P: Padding<C::BlockSize>,
 {
     check_sizes(key, iv, C::KeySize::USIZE, C::BlockSize::USIZE)?;
-
     cbc::Decryptor::<C>::new(key.into(), iv.into())
         .decrypt_padded_mut::<P>(ciphertext)
         .map_err(|_| Error::InvalidPadding)

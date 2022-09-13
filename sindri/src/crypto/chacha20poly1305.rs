@@ -37,7 +37,6 @@ pub fn chacha20poly1305_encrypt_in_place_detached(
     tag: &mut [u8],
 ) -> Result<(), Error> {
     check_sizes(key, nonce, tag)?;
-
     let computed_tag = ChaCha20Poly1305::new(key.into())
         .encrypt_in_place_detached(nonce.into(), associated_data, plaintext)
         .map_err(|_| Error::Encryption)?;
@@ -103,7 +102,7 @@ pub mod test {
                 $encryptor($key, $nonce, $associated_data, &mut buffer, &mut tag)
                     .expect("encryption error");
                 assert_eq!(buffer, $ciphertext, "ciphertext mismatch");
-                assert_eq!(tag, $tag, "ciphertext mismatch");
+                assert_eq!(tag, $tag, "tag mismatch");
                 $decryptor($key, $nonce, $associated_data, &mut buffer, &tag)
                     .expect("decryption error");
                 assert_eq!(buffer, $plaintext, "plaintext mismatch");
