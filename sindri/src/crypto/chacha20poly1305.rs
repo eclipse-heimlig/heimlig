@@ -1,3 +1,4 @@
+use crate::crypto::{check_sizes_with_tag, Error};
 use chacha20poly1305::{
     aead::{generic_array::typenum::Unsigned, AeadCore},
     AeadInPlace, ChaCha20Poly1305, KeyInit, KeySizeUser,
@@ -10,70 +11,37 @@ pub const NONCE_SIZE: usize = <ChaCha20Poly1305 as AeadCore>::NonceSize::USIZE;
 /// Size of the supported authentication tag in bytes for ChaCha20-Poly1305 algorithms.
 pub const TAG_SIZE: usize = <ChaCha20Poly1305 as AeadCore>::TagSize::USIZE;
 
-/// ChaCha20-Poly1305 errors.
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub enum Error {
-    /// Invalid size of the key.
-    InvalidKeySize,
-    /// Invalid size of the nonce.
-    InvalidNonceSize,
-    /// Invalid size of the tag.
-    InvalidTagSize,
-    /// Provided plaintext or ciphertext is not padded.
-    InvalidPadding,
-    /// Error during the encryption.
-    Encryption,
-    /// Error during the decryption.
-    Decryption,
-    /// Allocation error.
-    Alloc,
-}
-
-pub fn chacha20poly1305_encrypt_in_place_detached(
+pub fn chacha20poly1305_encrypt(
     key: &[u8],
     nonce: &[u8],
     associated_data: &[u8],
     plaintext: &mut [u8],
     tag: &mut [u8],
 ) -> Result<(), Error> {
-    check_sizes(key, nonce, tag)?;
+    check_sizes_with_tag(key, nonce, tag, KEY_SIZE, NONCE_SIZE, TAG_SIZE)?;
     let computed_tag = ChaCha20Poly1305::new(key.into())
         .encrypt_in_place_detached(nonce.into(), associated_data, plaintext)
-        .map_err(|_| Error::Encryption)?;
+        .map_err(|_| Error::Encrypt)?;
     tag.copy_from_slice(computed_tag.as_slice());
     Ok(())
 }
 
-pub fn chacha20poly1305_decrypt_in_place_detached(
+pub fn chacha20poly1305_decrypt(
     key: &[u8],
     nonce: &[u8],
     associated_data: &[u8],
     ciphertext: &mut [u8],
     tag: &[u8],
 ) -> Result<(), Error> {
-    check_sizes(key, nonce, tag)?;
+    check_sizes_with_tag(key, nonce, tag, KEY_SIZE, NONCE_SIZE, TAG_SIZE)?;
     ChaCha20Poly1305::new(key.into())
         .decrypt_in_place_detached(nonce.into(), associated_data, ciphertext, tag.into())
-        .map_err(|_| Error::Decryption)?;
-    Ok(())
-}
-
-/// Validation of key, nonce and tag sizes.
-fn check_sizes(key: &[u8], nonce: &[u8], tag: &[u8]) -> Result<(), Error> {
-    if key.len() != KEY_SIZE {
-        return Err(Error::InvalidKeySize);
-    }
-    if nonce.len() != NONCE_SIZE {
-        return Err(Error::InvalidNonceSize);
-    }
-    if tag.len() < TAG_SIZE {
-        return Err(Error::InvalidTagSize);
-    }
+        .map_err(|_| Error::Decrypt)?;
     Ok(())
 }
 
 #[cfg(test)]
-pub mod test {
+mod test {
     use super::*;
     use heapless::Vec;
 
@@ -112,8 +80,8 @@ pub mod test {
 
     define_chacha20poly1305_encrypt_decrypt_test!(
         test_chacha20poly1305_no_aad_encrypt_decrypt,
-        chacha20poly1305_encrypt_in_place_detached,
-        chacha20poly1305_decrypt_in_place_detached,
+        chacha20poly1305_encrypt,
+        chacha20poly1305_decrypt,
         KEY,
         NONCE,
         &[],
@@ -133,8 +101,8 @@ pub mod test {
 
     define_chacha20poly1305_encrypt_decrypt_test!(
         test_chacha20poly1305_with_aad_encrypt_decrypt,
-        chacha20poly1305_encrypt_in_place_detached,
-        chacha20poly1305_decrypt_in_place_detached,
+        chacha20poly1305_encrypt,
+        chacha20poly1305_decrypt,
         KEY,
         NONCE,
         AAD,
@@ -161,23 +129,11 @@ pub mod test {
             buffer.copy_from_slice(PLAINTEXT);
             let mut tag = [0u8; TAG_SIZE];
             assert_eq!(
-                chacha20poly1305_encrypt_in_place_detached(
-                    &wrong_key,
-                    NONCE,
-                    &[],
-                    &mut buffer,
-                    &mut tag
-                ),
+                chacha20poly1305_encrypt(&wrong_key, NONCE, &[], &mut buffer, &mut tag),
                 Err(Error::InvalidKeySize)
             );
             assert_eq!(
-                chacha20poly1305_decrypt_in_place_detached(
-                    &wrong_key,
-                    NONCE,
-                    &[],
-                    &mut buffer,
-                    &tag
-                ),
+                chacha20poly1305_decrypt(&wrong_key, NONCE, &[], &mut buffer, &tag),
                 Err(Error::InvalidKeySize)
             );
         }
@@ -189,24 +145,12 @@ pub mod test {
             buffer.copy_from_slice(PLAINTEXT);
             let mut tag = [0u8; TAG_SIZE];
             assert_eq!(
-                chacha20poly1305_encrypt_in_place_detached(
-                    KEY,
-                    &wrong_nonce,
-                    &[],
-                    &mut buffer,
-                    &mut tag
-                ),
-                Err(Error::InvalidNonceSize)
+                chacha20poly1305_encrypt(KEY, &wrong_nonce, &[], &mut buffer, &mut tag),
+                Err(Error::InvalidIvSize)
             );
             assert_eq!(
-                chacha20poly1305_decrypt_in_place_detached(
-                    KEY,
-                    &wrong_nonce,
-                    &[],
-                    &mut buffer,
-                    &tag
-                ),
-                Err(Error::InvalidNonceSize)
+                chacha20poly1305_decrypt(KEY, &wrong_nonce, &[], &mut buffer, &tag),
+                Err(Error::InvalidIvSize)
             );
         }
 
@@ -217,13 +161,7 @@ pub mod test {
             let mut ciphertext = [0u8; PLAINTEXT.len()];
             ciphertext.copy_from_slice(PLAINTEXT);
             assert_eq!(
-                chacha20poly1305_decrypt_in_place_detached(
-                    KEY,
-                    NONCE,
-                    &[],
-                    &mut ciphertext,
-                    &wrong_tag
-                ),
+                chacha20poly1305_decrypt(KEY, NONCE, &[], &mut ciphertext, &wrong_tag),
                 Err(Error::InvalidTagSize)
             );
         }
@@ -231,20 +169,14 @@ pub mod test {
         let mut plaintext = [0u8; PLAINTEXT.len()];
         plaintext.copy_from_slice(PLAINTEXT);
         let mut tag = [0u8; TAG_SIZE];
-        chacha20poly1305_encrypt_in_place_detached(KEY, NONCE, &[], &mut plaintext, &mut tag)
+        chacha20poly1305_encrypt(KEY, NONCE, &[], &mut plaintext, &mut tag)
             .expect("encryption error");
         let mut corrupted_ciphertext = [0u8; PLAINTEXT.len()];
         corrupted_ciphertext.copy_from_slice(&plaintext);
         corrupted_ciphertext[0] += 1;
         assert_eq!(
-            chacha20poly1305_decrypt_in_place_detached(
-                KEY,
-                NONCE,
-                &[],
-                &mut corrupted_ciphertext,
-                &tag
-            ),
-            Err(Error::Decryption)
+            chacha20poly1305_decrypt(KEY, NONCE, &[], &mut corrupted_ciphertext, &tag),
+            Err(Error::Decrypt)
         );
     }
 }

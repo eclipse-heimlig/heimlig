@@ -1,5 +1,4 @@
-use super::*;
-
+use crate::crypto::{check_sizes, Error};
 use aes::{
     cipher::{
         block_padding::Padding, BlockCipher, BlockDecryptMut, BlockEncryptMut, BlockSizeUser,
@@ -77,9 +76,9 @@ define_aes_cbc_impl!(aes192cbc_encrypt, aes192cbc_decrypt, Aes192);
 define_aes_cbc_impl!(aes256cbc_encrypt, aes256cbc_decrypt, Aes256);
 
 #[cfg(test)]
-pub mod test {
+mod test {
     use super::*;
-
+    use crate::crypto::aes::{BLOCK_SIZE, IV_SIZE, KEY128_SIZE, KEY192_SIZE, KEY256_SIZE};
     use aes::cipher::block_padding::{NoPadding, Pkcs7};
     use heapless::Vec;
 

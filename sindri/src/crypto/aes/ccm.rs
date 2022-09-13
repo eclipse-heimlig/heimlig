@@ -1,5 +1,4 @@
-use super::*;
-
+use crate::crypto::{check_sizes, check_sizes_with_tag, Error};
 use aes::{
     cipher::{BlockCipher, BlockEncrypt, BlockSizeUser, KeyInit, KeySizeUser, Unsigned},
     Aes128, Aes192, Aes256,
@@ -100,8 +99,9 @@ define_aes_ccm_impl!(
 );
 
 #[cfg(test)]
-pub mod test {
+mod test {
     use super::*;
+    use crate::crypto::aes::{CCM_NONCE_SIZE, CCM_TAG_SIZE, KEY128_SIZE, KEY192_SIZE, KEY256_SIZE};
     use heapless::Vec;
 
     const KEY128: &[u8; KEY128_SIZE] = b"Open sesame! ...";
@@ -273,7 +273,7 @@ pub mod test {
                         $encryptor(&wrong_key, $nonce, &[], &mut buffer),
                         Err(Error::InvalidKeySize)
                     );
-                    let tag = [0u8; GCM_TAG_SIZE];
+                    let tag = [0u8; CCM_TAG_SIZE];
                     assert_eq!(
                         $decryptor(&wrong_key, $nonce, &[], &mut buffer, &tag),
                         Err(Error::InvalidKeySize)
@@ -289,7 +289,7 @@ pub mod test {
                         $encryptor($key, &wrong_nonce, &[], &mut buffer),
                         Err(Error::InvalidIvSize)
                     );
-                    let tag = [0u8; GCM_TAG_SIZE];
+                    let tag = [0u8; CCM_TAG_SIZE];
                     assert_eq!(
                         $decryptor($key, &wrong_nonce, &[], &mut buffer, &tag),
                         Err(Error::InvalidIvSize)
@@ -310,7 +310,7 @@ pub mod test {
                 let mut corrupted_ciphertext = [0u8; $plaintext.len()];
                 corrupted_ciphertext.copy_from_slice($plaintext);
                 corrupted_ciphertext[0] += 1;
-                let tag = [0u8; GCM_TAG_SIZE];
+                let tag = [0u8; CCM_TAG_SIZE];
                 assert_eq!(
                     $decryptor($key, $nonce, &[], &mut corrupted_ciphertext, &tag),
                     Err(Error::Decrypt)
