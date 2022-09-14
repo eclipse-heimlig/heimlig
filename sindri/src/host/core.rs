@@ -10,6 +10,7 @@ use heapless::{LinearMap, Vec};
 pub enum Error {
     Busy,
     UnknownId,
+    SendResponse,
 }
 
 pub struct Core<
@@ -29,7 +30,7 @@ pub trait Sender {
     fn get_id(&self) -> u32;
 
     /// Send a response through this channel back to the requester.
-    fn send(&mut self, response: Response);
+    fn send(&mut self, response: Response) -> Result<(), Error>;
 }
 
 impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
@@ -56,6 +57,7 @@ impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
         }
     }
 
+    // TODO: Add request receiver trait and make process get the next request
     pub async fn process(&mut self, requester_id: u32, request: Request) -> Result<(), Error> {
         let job = self.new_job(request);
 
@@ -78,7 +80,9 @@ impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
                 .iter_mut()
                 .find(|s| s.get_id() == requester_id)
             {
-                response_channel.send(result.response);
+                response_channel
+                    .send(result.response)
+                    .expect("failed to send response");
             }
             Ok(())
         } else {
@@ -97,12 +101,10 @@ impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
 
 #[cfg(test)]
 mod tests {
-    extern crate std;
-
-    use crate::common::jobs::{Request, Response};
-    use crate::common::pool::{Memory, Pool};
+    use super::*;
+    use crate::common::pool::Memory;
     use crate::crypto::rng;
-    use crate::host::core::{Core, Sender};
+    use crate::host::core::Sender;
     use heapless::spsc::{Consumer, Producer, Queue};
 
     const QUEUE_SIZE: usize = 8;
@@ -121,8 +123,10 @@ mod tests {
             self.id
         }
 
-        fn send(&mut self, response: Response) {
-            let _response = self.sender.enqueue(response);
+        fn send(&mut self, response: Response) -> Result<(), Error> {
+            self.sender
+                .enqueue(response)
+                .map_err(|_response| Error::SendResponse)
         }
     }
 
@@ -141,9 +145,9 @@ mod tests {
 
         // RNG
         let entropy = rng::test::TestEntropySource::default();
-        let rng = rng::Rng::new(entropy, None);
+        let rng = Rng::new(entropy, None);
 
-        // Queue
+        // Queues
         let mut host_to_client1: Queue<Response, QUEUE_SIZE> = Queue::<Response, QUEUE_SIZE>::new();
         let mut host_to_client2: Queue<Response, QUEUE_SIZE> = Queue::<Response, QUEUE_SIZE>::new();
         let (h2c1_p, h2c1_c) = host_to_client1.split();
@@ -158,14 +162,14 @@ mod tests {
             id: 1,
             sender: h2c2_p,
         };
-        let mut response_channels = heapless::Vec::<&mut dyn Sender, 2>::new();
+        let mut response_channels = Vec::<&mut dyn Sender, 2>::new();
         if response_channels.push(&mut response_sender1).is_err()
             || response_channels.push(&mut response_sender2).is_err()
         {
-            panic!("List of return channels not large enough");
+            panic!("List of return channels is too small");
         }
 
-        // Create core
+        // Core
         let mut core = Core::new(&POOL, rng, response_channels);
 
         // Send request from client 0

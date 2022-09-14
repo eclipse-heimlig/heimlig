@@ -81,7 +81,7 @@ impl<E: EntropySource> rand::RngCore for Rng<E> {
 }
 
 #[cfg(test)]
-pub(crate) mod test {
+pub mod test {
     use crate::crypto::rng::{EntropySource, Rng};
     use rand::RngCore;
 
@@ -95,7 +95,7 @@ pub(crate) mod test {
             let mut dest = [0u8; 32];
             for byte in &mut dest {
                 *byte = self.counter as u8;
-                self.counter = self.counter + 1
+                self.counter += 1
             }
             dest
         }
