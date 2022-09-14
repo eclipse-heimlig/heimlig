@@ -77,9 +77,11 @@ define_aes_cbc_impl!(aes256cbc_encrypt, aes256cbc_decrypt, Aes256);
 
 #[cfg(test)]
 mod test {
+    extern crate alloc;
     use super::*;
     use crate::crypto::aes::{BLOCK_SIZE, IV_SIZE, KEY128_SIZE, KEY192_SIZE, KEY256_SIZE};
     use aes::cipher::block_padding::{NoPadding, Pkcs7};
+    use alloc::borrow::ToOwned;
     use heapless::Vec;
 
     const KEY128: &[u8; KEY128_SIZE] = b"Open sesame! ...";
@@ -270,8 +272,7 @@ mod test {
             #[test]
             fn $test_name() {
                 for size in $wrong_key_sizes {
-                    let mut buffer = [0u8; PLAINTEXT_PADDED.len()];
-                    buffer.copy_from_slice(PLAINTEXT_PADDED);
+                    let mut buffer = PLAINTEXT_PADDED.to_owned();
                     let mut wrong_key: Vec<u8, 256> = Vec::new();
                     wrong_key.resize(size, 0).expect("Allocation error");
                     assert_eq!(
@@ -290,8 +291,7 @@ mod test {
                 }
 
                 for size in [0, 1, 10, 12, 32] {
-                    let mut buffer = [0u8; PLAINTEXT_PADDED.len()];
-                    buffer.copy_from_slice(PLAINTEXT_PADDED);
+                    let mut buffer = PLAINTEXT_PADDED.to_owned();
                     let mut wrong_iv: Vec<u8, 32> = Vec::new();
                     wrong_iv.resize(size, 0).expect("Allocation error");
                     assert_eq!(

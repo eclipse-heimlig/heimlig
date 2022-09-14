@@ -75,8 +75,10 @@ define_aes_gcm_impl!(aes256gcm_encrypt, aes256gcm_decrypt, Aes256Gcm);
 
 #[cfg(test)]
 mod test {
+    extern crate alloc;
     use super::*;
     use crate::crypto::aes::{GCM_NONCE_SIZE, GCM_TAG_SIZE, KEY128_SIZE, KEY256_SIZE};
+    use alloc::borrow::ToOwned;
     use heapless::Vec;
 
     const KEY128: &[u8; KEY128_SIZE] = b"Open sesame! ...";
@@ -98,8 +100,7 @@ mod test {
     ) => {
             #[test]
             fn $test_name() {
-                let mut buffer = [0u8; $plaintext.len()];
-                buffer.copy_from_slice($plaintext);
+                let mut buffer = $plaintext.to_owned();
                 let tag = aes_gcm_encrypt::<$cipher>($key, $nonce, $associated_data, &mut buffer)
                     .expect("encryption error");
                 assert_eq!(buffer, $ciphertext, "ciphertext mismatch");
@@ -195,8 +196,7 @@ mod test {
             #[test]
             fn $test_name() {
                 for size in $wrong_key_sizes {
-                    let mut buffer = [0u8; $plaintext.len()];
-                    buffer.copy_from_slice($plaintext);
+                    let mut buffer = $plaintext.to_owned();
                     let mut wrong_key: Vec<u8, 256> = Vec::new();
                     wrong_key.resize(size, 0).expect("Allocation error");
                     assert_eq!(
@@ -211,8 +211,7 @@ mod test {
                 }
 
                 for size in [0, 1, 10, 16, 32] {
-                    let mut buffer = [0u8; $plaintext.len()];
-                    buffer.copy_from_slice($plaintext);
+                    let mut buffer = $plaintext.to_owned();
                     let mut wrong_nonce: Vec<u8, 32> = Vec::new();
                     wrong_nonce.resize(size, 0).expect("Allocation error");
                     assert_eq!(
@@ -227,8 +226,7 @@ mod test {
                 }
 
                 for size in [0, 1, GCM_TAG_SIZE - 1] {
-                    let mut buffer = [0u8; $plaintext.len()];
-                    buffer.copy_from_slice($plaintext);
+                    let mut buffer = $plaintext.to_owned();
                     let mut short_tag: Vec<u8, { GCM_TAG_SIZE - 1 }> = Vec::new();
                     short_tag.resize(size, 0).expect("Allocation error");
                     assert_eq!(
@@ -237,8 +235,7 @@ mod test {
                     );
                 }
 
-                let mut corrupted_ciphertext = [0u8; $plaintext.len()];
-                corrupted_ciphertext.copy_from_slice($plaintext);
+                let mut corrupted_ciphertext = $plaintext.to_owned();
                 corrupted_ciphertext[0] += 1;
                 let tag = [0u8; GCM_TAG_SIZE];
                 assert_eq!(
