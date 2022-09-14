@@ -85,9 +85,14 @@ impl<E: EntropySource> Scheduler<E> {
                     nonce.as_slice(),
                     aad,
                     ciphertext.as_slice_mut(),
-                    tag.as_slice_mut(),
                 ) {
-                    Ok(_) => Response::EncryptChaChaPoly { ciphertext, tag },
+                    Ok(computed_tag) => {
+                        if computed_tag.len() != tag.as_slice().len() {
+                            return Response::Error(Error::Alloc);
+                        }
+                        tag.as_slice_mut().copy_from_slice(computed_tag.as_slice());
+                        Response::EncryptChaChaPoly { ciphertext, tag }
+                    }
                     Err(_) => Response::Error(Error::Encrypt),
                 }
             }

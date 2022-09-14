@@ -1,7 +1,7 @@
-use crate::crypto::{check_sizes_with_tag, Error};
+use crate::crypto::{check_sizes, check_sizes_with_tag, Error};
 use chacha20poly1305::{
     aead::{generic_array::typenum::Unsigned, AeadCore},
-    AeadInPlace, ChaCha20Poly1305, KeyInit, KeySizeUser,
+    AeadInPlace, ChaCha20Poly1305, KeyInit, KeySizeUser, Tag,
 };
 
 /// Size of the key in bytes for ChaCha20-Poly1305 algorithms
@@ -16,14 +16,11 @@ pub fn chacha20poly1305_encrypt(
     nonce: &[u8],
     associated_data: &[u8],
     plaintext: &mut [u8],
-    tag: &mut [u8],
-) -> Result<(), Error> {
-    check_sizes_with_tag(key, nonce, tag, KEY_SIZE, NONCE_SIZE, TAG_SIZE)?;
-    let computed_tag = ChaCha20Poly1305::new(key.into())
+) -> Result<Tag, Error> {
+    check_sizes(key, nonce, KEY_SIZE, NONCE_SIZE)?;
+    ChaCha20Poly1305::new(key.into())
         .encrypt_in_place_detached(nonce.into(), associated_data, plaintext)
-        .map_err(|_| Error::Encrypt)?;
-    tag.copy_from_slice(computed_tag.as_slice());
-    Ok(())
+        .map_err(|_| Error::Encrypt)
 }
 
 pub fn chacha20poly1305_decrypt(
@@ -67,11 +64,10 @@ mod test {
             #[test]
             fn $test_name() {
                 let mut buffer = $plaintext.to_owned();
-                let mut tag = [0u8; TAG_SIZE];
-                $encryptor($key, $nonce, $associated_data, &mut buffer, &mut tag)
+                let tag = $encryptor($key, $nonce, $associated_data, &mut buffer)
                     .expect("encryption error");
                 assert_eq!(buffer, $ciphertext, "ciphertext mismatch");
-                assert_eq!(tag, $tag, "tag mismatch");
+                assert_eq!(tag.as_slice(), $tag, "tag mismatch");
                 $decryptor($key, $nonce, $associated_data, &mut buffer, &tag)
                     .expect("decryption error");
                 assert_eq!(buffer, $plaintext, "plaintext mismatch");
@@ -127,11 +123,11 @@ mod test {
             let mut wrong_key: Vec<u8, 256> = Vec::new();
             wrong_key.resize(size, 0).expect("Allocation error");
             let mut buffer = PLAINTEXT.to_owned();
-            let mut tag = [0u8; TAG_SIZE];
             assert_eq!(
-                chacha20poly1305_encrypt(&wrong_key, NONCE, &[], &mut buffer, &mut tag),
+                chacha20poly1305_encrypt(&wrong_key, NONCE, &[], &mut buffer),
                 Err(Error::InvalidKeySize)
             );
+            let tag = [0u8; TAG_SIZE];
             assert_eq!(
                 chacha20poly1305_decrypt(&wrong_key, NONCE, &[], &mut buffer, &tag),
                 Err(Error::InvalidKeySize)
@@ -142,11 +138,11 @@ mod test {
             let mut wrong_nonce: Vec<u8, 32> = Vec::new();
             wrong_nonce.resize(size, 0).expect("Allocation error");
             let mut buffer = PLAINTEXT.to_owned();
-            let mut tag = [0u8; TAG_SIZE];
             assert_eq!(
-                chacha20poly1305_encrypt(KEY, &wrong_nonce, &[], &mut buffer, &mut tag),
+                chacha20poly1305_encrypt(KEY, &wrong_nonce, &[], &mut buffer),
                 Err(Error::InvalidIvSize)
             );
+            let tag = [0u8; TAG_SIZE];
             assert_eq!(
                 chacha20poly1305_decrypt(KEY, &wrong_nonce, &[], &mut buffer, &tag),
                 Err(Error::InvalidIvSize)
@@ -165,9 +161,8 @@ mod test {
         }
 
         let mut plaintext = PLAINTEXT.to_owned();
-        let mut tag = [0u8; TAG_SIZE];
-        chacha20poly1305_encrypt(KEY, NONCE, &[], &mut plaintext, &mut tag)
-            .expect("encryption error");
+        let tag =
+            chacha20poly1305_encrypt(KEY, NONCE, &[], &mut plaintext).expect("encryption error");
         let mut corrupted_ciphertext = PLAINTEXT.to_owned();
         corrupted_ciphertext[0] += 1;
         assert_eq!(
