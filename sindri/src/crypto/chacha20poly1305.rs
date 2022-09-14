@@ -42,7 +42,9 @@ pub fn chacha20poly1305_decrypt(
 
 #[cfg(test)]
 mod test {
+    extern crate alloc;
     use super::*;
+    use alloc::borrow::ToOwned;
     use heapless::Vec;
 
     const KEY: &[u8; KEY_SIZE] = b"Fortuna Major or Oddsbodikins???";
@@ -64,8 +66,7 @@ mod test {
     ) => {
             #[test]
             fn $test_name() {
-                let mut buffer = [0u8; PLAINTEXT.len()];
-                buffer.copy_from_slice($plaintext);
+                let mut buffer = $plaintext.to_owned();
                 let mut tag = [0u8; TAG_SIZE];
                 $encryptor($key, $nonce, $associated_data, &mut buffer, &mut tag)
                     .expect("encryption error");
@@ -125,8 +126,7 @@ mod test {
         for size in [0, 1, 8, 16, 24, 256] {
             let mut wrong_key: Vec<u8, 256> = Vec::new();
             wrong_key.resize(size, 0).expect("Allocation error");
-            let mut buffer = [0u8; PLAINTEXT.len()];
-            buffer.copy_from_slice(PLAINTEXT);
+            let mut buffer = PLAINTEXT.to_owned();
             let mut tag = [0u8; TAG_SIZE];
             assert_eq!(
                 chacha20poly1305_encrypt(&wrong_key, NONCE, &[], &mut buffer, &mut tag),
@@ -141,8 +141,7 @@ mod test {
         for size in [0, 1, 10, 16, 32] {
             let mut wrong_nonce: Vec<u8, 32> = Vec::new();
             wrong_nonce.resize(size, 0).expect("Allocation error");
-            let mut buffer = [0u8; PLAINTEXT.len()];
-            buffer.copy_from_slice(PLAINTEXT);
+            let mut buffer = PLAINTEXT.to_owned();
             let mut tag = [0u8; TAG_SIZE];
             assert_eq!(
                 chacha20poly1305_encrypt(KEY, &wrong_nonce, &[], &mut buffer, &mut tag),
@@ -158,21 +157,18 @@ mod test {
             const MAX_SIZE: usize = TAG_SIZE - 1;
             let mut wrong_tag: Vec<u8, MAX_SIZE> = Vec::new();
             wrong_tag.resize(size, 0).expect("Allocation error");
-            let mut ciphertext = [0u8; PLAINTEXT.len()];
-            ciphertext.copy_from_slice(PLAINTEXT);
+            let mut ciphertext = PLAINTEXT.to_owned();
             assert_eq!(
                 chacha20poly1305_decrypt(KEY, NONCE, &[], &mut ciphertext, &wrong_tag),
                 Err(Error::InvalidTagSize)
             );
         }
 
-        let mut plaintext = [0u8; PLAINTEXT.len()];
-        plaintext.copy_from_slice(PLAINTEXT);
+        let mut plaintext = PLAINTEXT.to_owned();
         let mut tag = [0u8; TAG_SIZE];
         chacha20poly1305_encrypt(KEY, NONCE, &[], &mut plaintext, &mut tag)
             .expect("encryption error");
-        let mut corrupted_ciphertext = [0u8; PLAINTEXT.len()];
-        corrupted_ciphertext.copy_from_slice(&plaintext);
+        let mut corrupted_ciphertext = PLAINTEXT.to_owned();
         corrupted_ciphertext[0] += 1;
         assert_eq!(
             chacha20poly1305_decrypt(KEY, NONCE, &[], &mut corrupted_ciphertext, &tag),
