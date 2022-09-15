@@ -16,7 +16,7 @@ fn aes_ccm_encrypt<C, T, N>(
     key: &[u8],
     nonce: &[u8],
     associated_data: &[u8],
-    plaintext: &mut [u8],
+    buffer: &mut [u8],
 ) -> Result<Tag<T>, Error>
 where
     C: BlockCipher + BlockSizeUser<BlockSize = U16> + BlockEncrypt + KeySizeUser + KeyInit,
@@ -25,7 +25,7 @@ where
 {
     check_sizes(key, nonce, C::KeySize::USIZE, N::USIZE)?;
     Ccm::<C, T, N>::new(key.into())
-        .encrypt_in_place_detached(nonce.into(), associated_data, plaintext)
+        .encrypt_in_place_detached(nonce.into(), associated_data, buffer)
         .map_err(|_| Error::Encrypt)
 }
 
@@ -33,7 +33,7 @@ fn aes_ccm_decrypt<C, T, N>(
     key: &[u8],
     nonce: &[u8],
     associated_data: &[u8],
-    ciphertext: &mut [u8],
+    buffer: &mut [u8],
     tag: &[u8],
 ) -> Result<(), Error>
 where
@@ -43,7 +43,7 @@ where
 {
     check_sizes_with_tag(key, nonce, tag, C::KeySize::USIZE, N::USIZE, T::USIZE)?;
     Ccm::<C, T, N>::new(key.into())
-        .decrypt_in_place_detached(nonce.into(), associated_data, ciphertext, tag.into())
+        .decrypt_in_place_detached(nonce.into(), associated_data, buffer, tag.into())
         .map_err(|_| Error::Decrypt)
 }
 
@@ -59,19 +59,19 @@ macro_rules! define_aes_ccm_impl {
             key: &[u8],
             nonce: &[u8],
             aad: &[u8],
-            plaintext: &mut [u8],
+            buffer: &mut [u8],
         ) -> Result<Tag<$tag_size>, Error> {
-            aes_ccm_encrypt::<$core, $tag_size, $nonce_size>(key, nonce, aad, plaintext)
+            aes_ccm_encrypt::<$core, $tag_size, $nonce_size>(key, nonce, aad, buffer)
         }
 
         pub fn $decryptor(
             key: &[u8],
             nonce: &[u8],
             aad: &[u8],
-            ciphertext: &mut [u8],
+            buffer: &mut [u8],
             tag: &[u8],
         ) -> Result<(), Error> {
-            aes_ccm_decrypt::<$core, $tag_size, $nonce_size>(key, nonce, aad, ciphertext, tag)
+            aes_ccm_decrypt::<$core, $tag_size, $nonce_size>(key, nonce, aad, buffer, tag)
         }
     };
 }
@@ -305,11 +305,11 @@ mod test {
                     );
                 }
 
-                let mut corrupted_ciphertext = $plaintext.to_owned();
-                corrupted_ciphertext[0] += 1;
-                let tag = [0u8; CCM_TAG_SIZE];
+                let mut buffer = $plaintext.to_owned();
+                let tag = $encryptor($key, $nonce, &[], &mut buffer).expect("encryption error");
+                buffer[0] += 1; // Corrupt ciphertext
                 assert_eq!(
-                    $decryptor($key, $nonce, &[], &mut corrupted_ciphertext, &tag),
+                    $decryptor($key, $nonce, &[], &mut buffer, &tag),
                     Err(Error::Decrypt)
                 );
             }
