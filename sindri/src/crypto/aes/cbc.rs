@@ -6,6 +6,24 @@ use aes::{
     },
     Aes128, Aes192, Aes256,
 };
+use cbc::cipher::block_padding::PadType;
+
+/// Returns buffer size after padding.
+pub fn padded_size<C, P>(unpadded_size: usize) -> usize
+where
+    C: BlockSizeUser,
+    P: Padding<C::BlockSize>,
+{
+    match P::TYPE {
+        PadType::Reversible => {
+            // Add one block that includes any tail data
+            let tail = unpadded_size % C::BlockSize::USIZE;
+            (unpadded_size - tail).saturating_add(C::BlockSize::USIZE)
+        }
+        PadType::NoPadding => unpadded_size,
+        PadType::Ambiguous => unpadded_size, // Zero padding does not need to add actual data
+    }
+}
 
 /// AES-CBC encryption: generic over an underlying AES implementation.
 fn aes_cbc_encrypt<'a, C, P>(
@@ -90,6 +108,25 @@ mod test {
     const IV: &[u8; IV_SIZE] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
     const PLAINTEXT_NOT_PADDED: &[u8] = b"Hello, World!";
     const PLAINTEXT_PADDED: &[u8] = b"Greetings, Rustaceans!!!!!!!!!!!";
+
+    #[test]
+    fn padding_sizes() {
+        for size in 0..33 {
+            assert_eq!(size, padded_size::<Aes128, NoPadding>(size));
+        }
+        for size in 0..16 {
+            assert_eq!(16, padded_size::<Aes128, Pkcs7>(size));
+        }
+        for size in 16..32 {
+            assert_eq!(32, padded_size::<Aes128, Pkcs7>(size));
+        }
+        // Corner case should not overflow
+        for size in usize::MAX - 15..=usize::MAX {
+            assert_eq!(usize::MAX, padded_size::<Aes128, Pkcs7>(size));
+        }
+        padded_size::<Aes128, Pkcs7>(usize::MAX);
+        assert_eq!(48, padded_size::<Aes128, Pkcs7>(33));
+    }
 
     macro_rules! define_aes_cbc_encrypt_decrypt_test {
         (
