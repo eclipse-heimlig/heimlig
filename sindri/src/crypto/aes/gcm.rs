@@ -4,7 +4,7 @@ use aes_gcm::{AeadInPlace, Aes128Gcm, Aes256Gcm, KeyInit};
 use generic_array::typenum::Unsigned;
 
 /// AES-GCM encryption: generic over an underlying AES implementation.
-fn aes_gcm_encrypt<'a, C>(
+fn encrypt_in_place_detached<'a, C>(
     key: &[u8],
     nonce: &[u8],
     associated_data: &[u8],
@@ -20,7 +20,7 @@ where
 }
 
 /// AES-GCM decryption: generic over an underlying AES implementation.
-fn aes_gcm_decrypt<'a, C>(
+fn decrypt_in_place_detached<'a, C>(
     key: &[u8],
     nonce: &[u8],
     associated_data: &[u8],
@@ -55,7 +55,7 @@ macro_rules! define_aes_gcm_impl {
             aad: &[u8],
             buffer: &'a mut [u8],
         ) -> Result<Tag<$core>, Error> {
-            aes_gcm_encrypt::<$core>(key, nonce, aad, buffer)
+            encrypt_in_place_detached::<$core>(key, nonce, aad, buffer)
         }
 
         pub fn $decryptor(
@@ -65,13 +65,21 @@ macro_rules! define_aes_gcm_impl {
             buffer: &mut [u8],
             tag: &[u8],
         ) -> Result<(), Error> {
-            aes_gcm_decrypt::<$core>(key, nonce, aad, buffer, tag)
+            decrypt_in_place_detached::<$core>(key, nonce, aad, buffer, tag)
         }
     };
 }
 
-define_aes_gcm_impl!(aes128gcm_encrypt, aes128gcm_decrypt, Aes128Gcm);
-define_aes_gcm_impl!(aes256gcm_encrypt, aes256gcm_decrypt, Aes256Gcm);
+define_aes_gcm_impl!(
+    aes128gcm_encrypt_in_place_detached,
+    aes128gcm_decrypt_in_place_detached,
+    Aes128Gcm
+);
+define_aes_gcm_impl!(
+    aes256gcm_encrypt_in_place_detached,
+    aes256gcm_decrypt_in_place_detached,
+    Aes256Gcm
+);
 
 #[cfg(test)]
 mod test {
@@ -101,12 +109,23 @@ mod test {
             #[test]
             fn $test_name() {
                 let mut buffer = $plaintext.to_owned();
-                let tag = aes_gcm_encrypt::<$cipher>($key, $nonce, $associated_data, &mut buffer)
-                    .expect("encryption error");
+                let tag = encrypt_in_place_detached::<$cipher>(
+                    $key,
+                    $nonce,
+                    $associated_data,
+                    &mut buffer,
+                )
+                .expect("encryption error");
                 assert_eq!(buffer, $ciphertext, "ciphertext mismatch");
                 assert_eq!(tag.as_slice(), $tag, "tag mismatch");
-                aes_gcm_decrypt::<$cipher>($key, $nonce, $associated_data, &mut buffer, &tag)
-                    .expect("decryption error");
+                decrypt_in_place_detached::<$cipher>(
+                    $key,
+                    $nonce,
+                    $associated_data,
+                    &mut buffer,
+                    &tag,
+                )
+                .expect("decryption error");
                 assert_eq!(buffer, $plaintext, "plaintext mismatch");
             }
         };
@@ -200,12 +219,18 @@ mod test {
                     let mut wrong_key: Vec<u8, 256> = Vec::new();
                     wrong_key.resize(size, 0).expect("Allocation error");
                     assert_eq!(
-                        aes_gcm_encrypt::<$cipher>(&wrong_key, $nonce, &[], &mut buffer),
+                        encrypt_in_place_detached::<$cipher>(&wrong_key, $nonce, &[], &mut buffer),
                         Err(Error::InvalidKeySize)
                     );
                     let tag = [0u8; GCM_TAG_SIZE];
                     assert_eq!(
-                        aes_gcm_decrypt::<$cipher>(&wrong_key, $nonce, &[], &mut buffer, &tag),
+                        decrypt_in_place_detached::<$cipher>(
+                            &wrong_key,
+                            $nonce,
+                            &[],
+                            &mut buffer,
+                            &tag
+                        ),
                         Err(Error::InvalidKeySize)
                     );
                 }
@@ -215,12 +240,18 @@ mod test {
                     let mut wrong_nonce: Vec<u8, 32> = Vec::new();
                     wrong_nonce.resize(size, 0).expect("Allocation error");
                     assert_eq!(
-                        aes_gcm_encrypt::<$cipher>($key, &wrong_nonce, &[], &mut buffer),
+                        encrypt_in_place_detached::<$cipher>($key, &wrong_nonce, &[], &mut buffer),
                         Err(Error::InvalidIvSize)
                     );
                     let tag = [0u8; GCM_TAG_SIZE];
                     assert_eq!(
-                        aes_gcm_decrypt::<$cipher>($key, &wrong_nonce, &[], &mut buffer, &tag),
+                        decrypt_in_place_detached::<$cipher>(
+                            $key,
+                            &wrong_nonce,
+                            &[],
+                            &mut buffer,
+                            &tag
+                        ),
                         Err(Error::InvalidIvSize)
                     );
                 }
@@ -230,17 +261,23 @@ mod test {
                     let mut short_tag: Vec<u8, { GCM_TAG_SIZE - 1 }> = Vec::new();
                     short_tag.resize(size, 0).expect("Allocation error");
                     assert_eq!(
-                        aes_gcm_decrypt::<$cipher>($key, $nonce, &[], &mut buffer, &short_tag),
+                        decrypt_in_place_detached::<$cipher>(
+                            $key,
+                            $nonce,
+                            &[],
+                            &mut buffer,
+                            &short_tag
+                        ),
                         Err(Error::InvalidTagSize)
                     );
                 }
 
                 let mut buffer = $plaintext.to_owned();
-                let tag = aes_gcm_encrypt::<$cipher>($key, $nonce, &[], &mut buffer)
+                let tag = encrypt_in_place_detached::<$cipher>($key, $nonce, &[], &mut buffer)
                     .expect("encryption error");
                 buffer[0] += 1; // Corrupt ciphertext
                 assert_eq!(
-                    aes_gcm_decrypt::<$cipher>($key, $nonce, &[], &mut buffer, &tag),
+                    decrypt_in_place_detached::<$cipher>($key, $nonce, &[], &mut buffer, &tag),
                     Err(Error::Decrypt)
                 );
             }

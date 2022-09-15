@@ -2,7 +2,6 @@ use crate::common::jobs::Response::GetRandom;
 use crate::common::jobs::{Request, Response};
 use crate::common::limits::MAX_RANDOM_SIZE;
 use crate::common::pool::{Pool, PoolChunk};
-use crate::crypto::chacha20poly1305::{chacha20poly1305_decrypt, chacha20poly1305_encrypt};
 use crate::crypto::rng::{EntropySource, Rng};
 use rand_core::RngCore;
 
@@ -80,7 +79,7 @@ impl<E: EntropySource> Scheduler<E> {
                     Some(aad) => aad.as_slice(),
                     None => &[] as &[u8],
                 };
-                match chacha20poly1305_encrypt(
+                match crate::crypto::chacha20poly1305::encrypt_in_place_detached(
                     key.as_slice(),
                     nonce.as_slice(),
                     aad,
@@ -111,7 +110,7 @@ impl<E: EntropySource> Scheduler<E> {
             Some(aad) => aad.as_slice(),
             None => &[] as &[u8],
         };
-        match chacha20poly1305_decrypt(
+        match crate::crypto::chacha20poly1305::decrypt_in_place_detached(
             key.as_slice(),
             nonce.as_slice(),
             aad,
