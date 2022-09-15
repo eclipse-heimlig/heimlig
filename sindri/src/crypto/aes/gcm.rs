@@ -8,14 +8,14 @@ fn aes_gcm_encrypt<'a, C>(
     key: &[u8],
     nonce: &[u8],
     associated_data: &[u8],
-    plaintext: &'a mut [u8],
+    buffer: &'a mut [u8],
 ) -> Result<Tag<C>, Error>
 where
     C: KeyInit + AeadInPlace,
 {
     check_sizes(key, nonce, C::KeySize::USIZE, C::NonceSize::USIZE)?;
     C::new(key.into())
-        .encrypt_in_place_detached(nonce.into(), associated_data, plaintext)
+        .encrypt_in_place_detached(nonce.into(), associated_data, buffer)
         .map_err(|_| Error::Encrypt)
 }
 
@@ -24,7 +24,7 @@ fn aes_gcm_decrypt<'a, C>(
     key: &[u8],
     nonce: &[u8],
     associated_data: &[u8],
-    ciphertext: &'a mut [u8],
+    buffer: &'a mut [u8],
     tag: &[u8],
 ) -> Result<(), Error>
 where
@@ -39,7 +39,7 @@ where
         C::TagSize::USIZE,
     )?;
     C::new(key.into())
-        .decrypt_in_place_detached(nonce.into(), associated_data, ciphertext, tag.into())
+        .decrypt_in_place_detached(nonce.into(), associated_data, buffer, tag.into())
         .map_err(|_| Error::Decrypt)
 }
 
@@ -53,19 +53,19 @@ macro_rules! define_aes_gcm_impl {
             key: &[u8],
             nonce: &[u8],
             aad: &[u8],
-            plaintext: &'a mut [u8],
+            buffer: &'a mut [u8],
         ) -> Result<Tag<$core>, Error> {
-            aes_gcm_encrypt::<$core>(key, nonce, aad, plaintext)
+            aes_gcm_encrypt::<$core>(key, nonce, aad, buffer)
         }
 
         pub fn $decryptor(
             key: &[u8],
             nonce: &[u8],
             aad: &[u8],
-            ciphertext: &mut [u8],
+            buffer: &mut [u8],
             tag: &[u8],
         ) -> Result<(), Error> {
-            aes_gcm_decrypt::<$core>(key, nonce, aad, ciphertext, tag)
+            aes_gcm_decrypt::<$core>(key, nonce, aad, buffer, tag)
         }
     };
 }
@@ -235,11 +235,12 @@ mod test {
                     );
                 }
 
-                let mut corrupted_ciphertext = $plaintext.to_owned();
-                corrupted_ciphertext[0] += 1;
-                let tag = [0u8; GCM_TAG_SIZE];
+                let mut buffer = $plaintext.to_owned();
+                let tag = aes_gcm_encrypt::<$cipher>($key, $nonce, &[], &mut buffer)
+                    .expect("encryption error");
+                buffer[0] += 1; // Corrupt ciphertext
                 assert_eq!(
-                    aes_gcm_decrypt::<$cipher>($key, $nonce, &[], &mut corrupted_ciphertext, &tag),
+                    aes_gcm_decrypt::<$cipher>($key, $nonce, &[], &mut buffer, &tag),
                     Err(Error::Decrypt)
                 );
             }

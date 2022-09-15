@@ -43,18 +43,14 @@ where
 }
 
 /// AES-CBC decryption: generic over an underlying AES implementation.
-fn aes_cbc_decrypt<'a, C, P>(
-    key: &[u8],
-    iv: &[u8],
-    ciphertext: &'a mut [u8],
-) -> Result<&'a [u8], Error>
+fn aes_cbc_decrypt<'a, C, P>(key: &[u8], iv: &[u8], buffer: &'a mut [u8]) -> Result<&'a [u8], Error>
 where
     C: BlockDecryptMut + BlockCipher + KeyInit,
     P: Padding<C::BlockSize>,
 {
     check_sizes(key, iv, C::KeySize::USIZE, C::BlockSize::USIZE)?;
     cbc::Decryptor::<C>::new(key.into(), iv.into())
-        .decrypt_padded_mut::<P>(ciphertext)
+        .decrypt_padded_mut::<P>(buffer)
         .map_err(|_| Error::InvalidPadding)
 }
 
@@ -79,12 +75,12 @@ macro_rules! define_aes_cbc_impl {
         pub fn $decryptor<'a, P>(
             key: &[u8],
             iv: &[u8],
-            ciphertext: &'a mut [u8],
+            buffer: &'a mut [u8],
         ) -> Result<&'a [u8], Error>
         where
             P: Padding<<$core as BlockSizeUser>::BlockSize>,
         {
-            aes_cbc_decrypt::<$core, P>(key, iv, ciphertext)
+            aes_cbc_decrypt::<$core, P>(key, iv, buffer)
         }
     };
 }

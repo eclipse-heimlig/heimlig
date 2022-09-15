@@ -15,11 +15,11 @@ pub fn chacha20poly1305_encrypt(
     key: &[u8],
     nonce: &[u8],
     associated_data: &[u8],
-    plaintext: &mut [u8],
+    buffer: &mut [u8],
 ) -> Result<Tag, Error> {
     check_sizes(key, nonce, KEY_SIZE, NONCE_SIZE)?;
     ChaCha20Poly1305::new(key.into())
-        .encrypt_in_place_detached(nonce.into(), associated_data, plaintext)
+        .encrypt_in_place_detached(nonce.into(), associated_data, buffer)
         .map_err(|_| Error::Encrypt)
 }
 
@@ -27,12 +27,12 @@ pub fn chacha20poly1305_decrypt(
     key: &[u8],
     nonce: &[u8],
     associated_data: &[u8],
-    ciphertext: &mut [u8],
+    buffer: &mut [u8],
     tag: &[u8],
 ) -> Result<(), Error> {
     check_sizes_with_tag(key, nonce, tag, KEY_SIZE, NONCE_SIZE, TAG_SIZE)?;
     ChaCha20Poly1305::new(key.into())
-        .decrypt_in_place_detached(nonce.into(), associated_data, ciphertext, tag.into())
+        .decrypt_in_place_detached(nonce.into(), associated_data, buffer, tag.into())
         .map_err(|_| Error::Decrypt)?;
     Ok(())
 }
@@ -153,20 +153,18 @@ mod test {
             const MAX_SIZE: usize = TAG_SIZE - 1;
             let mut wrong_tag: Vec<u8, MAX_SIZE> = Vec::new();
             wrong_tag.resize(size, 0).expect("Allocation error");
-            let mut ciphertext = PLAINTEXT.to_owned();
+            let mut buffer = PLAINTEXT.to_owned();
             assert_eq!(
-                chacha20poly1305_decrypt(KEY, NONCE, &[], &mut ciphertext, &wrong_tag),
+                chacha20poly1305_decrypt(KEY, NONCE, &[], &mut buffer, &wrong_tag),
                 Err(Error::InvalidTagSize)
             );
         }
 
-        let mut plaintext = PLAINTEXT.to_owned();
-        let tag =
-            chacha20poly1305_encrypt(KEY, NONCE, &[], &mut plaintext).expect("encryption error");
-        let mut corrupted_ciphertext = PLAINTEXT.to_owned();
-        corrupted_ciphertext[0] += 1;
+        let mut buffer = PLAINTEXT.to_owned();
+        let tag = chacha20poly1305_encrypt(KEY, NONCE, &[], &mut buffer).expect("encryption error");
+        buffer[0] += 1; // Corrupt ciphertext
         assert_eq!(
-            chacha20poly1305_decrypt(KEY, NONCE, &[], &mut corrupted_ciphertext, &tag),
+            chacha20poly1305_decrypt(KEY, NONCE, &[], &mut buffer, &tag),
             Err(Error::Decrypt)
         );
     }
