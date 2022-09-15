@@ -12,7 +12,7 @@ use ccm::{
 pub type SupportedNonceSize = U13;
 pub type SupportedTagSize = U16;
 
-fn aes_ccm_encrypt<C, T, N>(
+fn encrypt_in_place_detached<C, T, N>(
     key: &[u8],
     nonce: &[u8],
     associated_data: &[u8],
@@ -29,7 +29,7 @@ where
         .map_err(|_| Error::Encrypt)
 }
 
-fn aes_ccm_decrypt<C, T, N>(
+fn decrypt_in_place_detached<C, T, N>(
     key: &[u8],
     nonce: &[u8],
     associated_data: &[u8],
@@ -61,7 +61,7 @@ macro_rules! define_aes_ccm_impl {
             aad: &[u8],
             buffer: &mut [u8],
         ) -> Result<Tag<$tag_size>, Error> {
-            aes_ccm_encrypt::<$core, $tag_size, $nonce_size>(key, nonce, aad, buffer)
+            encrypt_in_place_detached::<$core, $tag_size, $nonce_size>(key, nonce, aad, buffer)
         }
 
         pub fn $decryptor(
@@ -71,7 +71,7 @@ macro_rules! define_aes_ccm_impl {
             buffer: &mut [u8],
             tag: &[u8],
         ) -> Result<(), Error> {
-            aes_ccm_decrypt::<$core, $tag_size, $nonce_size>(key, nonce, aad, buffer, tag)
+            decrypt_in_place_detached::<$core, $tag_size, $nonce_size>(key, nonce, aad, buffer, tag)
         }
     };
 }
