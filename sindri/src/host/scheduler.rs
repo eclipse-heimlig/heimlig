@@ -1,9 +1,8 @@
-use crate::common::jobs::Response::GetRandom;
 use crate::common::jobs::{Request, Response};
-use crate::common::limits::MAX_RANDOM_SIZE;
-use crate::common::pool::{Pool, PoolChunk};
-use crate::crypto::rng::{EntropySource, Rng};
-use rand_core::RngCore;
+use crate::common::pool::Pool;
+use crate::crypto::rng::EntropySource;
+use crate::host::workers::chachapoly_worker::ChachaPolyWorker;
+use crate::host::workers::rng_worker::RngWorker;
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Error {
@@ -24,101 +23,36 @@ pub struct JobResult {
 
 pub struct Scheduler<E: EntropySource> {
     pub pool: &'static Pool,
-    pub rng: Rng<E>, // TODO: Have the RNG as a singleton available everywhere?
+    pub rng_worker: RngWorker<E>,
+    pub chachapoly_worker: ChachaPolyWorker,
 }
 
 // TODO: Async: Scheduler should communicate with worker tasks over queues
 impl<E: EntropySource> Scheduler<E> {
     pub async fn schedule(&mut self, job: Job) -> JobResult {
         let response = match job.request {
-            Request::GetRandom { size } => self.proc_random(size),
+            Request::GetRandom { size } => self.rng_worker.process(size),
             Request::EncryptChaChaPoly {
                 key,
                 nonce,
                 aad,
                 plaintext,
-            } => self.proc_chachapoly_encrypt(key, nonce, aad, plaintext),
+            } => self
+                .chachapoly_worker
+                .process_encrypt(key, nonce, aad, plaintext),
             Request::DecryptChaChaPoly {
                 key,
                 nonce,
                 aad,
                 ciphertext,
                 tag,
-            } => self.proc_chachapoly_decrypt(key, nonce, aad, ciphertext, tag),
+            } => self
+                .chachapoly_worker
+                .process_decrypt(key, nonce, aad, ciphertext, tag),
         };
         JobResult {
             id: job.id,
             response,
-        }
-    }
-
-    fn proc_random(&mut self, size: usize) -> Response {
-        if size >= MAX_RANDOM_SIZE {
-            return Response::Error(Error::RequestTooLarge);
-        }
-        match self.pool.alloc(size) {
-            Err(_) => Response::Error(Error::Alloc),
-            Ok(mut chunk) => {
-                self.rng.fill_bytes(chunk.as_slice_mut());
-                GetRandom { data: chunk }
-            }
-        }
-    }
-
-    fn proc_chachapoly_encrypt(
-        &mut self,
-        key: PoolChunk,
-        nonce: PoolChunk,
-        aad: Option<PoolChunk>,
-        mut ciphertext: PoolChunk,
-    ) -> Response {
-        match self.pool.alloc(crate::crypto::chacha20poly1305::TAG_SIZE) {
-            Err(_) => Response::Error(Error::Alloc),
-            Ok(mut tag) => {
-                let aad = match &aad {
-                    Some(aad) => aad.as_slice(),
-                    None => &[],
-                };
-                match crate::crypto::chacha20poly1305::encrypt_in_place_detached(
-                    key.as_slice(),
-                    nonce.as_slice(),
-                    aad,
-                    ciphertext.as_slice_mut(),
-                ) {
-                    Ok(computed_tag) => {
-                        if computed_tag.len() != tag.len() {
-                            return Response::Error(Error::Alloc);
-                        }
-                        tag.as_slice_mut().copy_from_slice(computed_tag.as_slice());
-                        Response::EncryptChaChaPoly { ciphertext, tag }
-                    }
-                    Err(_) => Response::Error(Error::Encrypt),
-                }
-            }
-        }
-    }
-
-    fn proc_chachapoly_decrypt(
-        &mut self,
-        key: PoolChunk,
-        nonce: PoolChunk,
-        aad: Option<PoolChunk>,
-        mut plaintext: PoolChunk,
-        tag: PoolChunk,
-    ) -> Response {
-        let aad = match &aad {
-            Some(aad) => aad.as_slice(),
-            None => &[] as &[u8],
-        };
-        match crate::crypto::chacha20poly1305::decrypt_in_place_detached(
-            key.as_slice(),
-            nonce.as_slice(),
-            aad,
-            plaintext.as_slice_mut(),
-            tag.as_slice(),
-        ) {
-            Ok(_) => Response::DecryptChaChaPoly { plaintext },
-            Err(_) => Response::Error(Error::Encrypt),
         }
     }
 }
@@ -132,6 +66,8 @@ pub(crate) mod test {
     use crate::crypto::rng::{EntropySource, Rng};
     use crate::host::scheduler::Scheduler;
     use crate::host::scheduler::{Error, Job};
+    use crate::host::workers::chachapoly_worker::ChachaPolyWorker;
+    use crate::host::workers::rng_worker::RngWorker;
 
     #[derive(Default)]
     pub struct TestEntropySource {}
@@ -149,7 +85,13 @@ pub(crate) mod test {
         pool.init(memory).unwrap();
         let entropy = TestEntropySource::default();
         let rng = Rng::new(entropy, None);
-        Scheduler { pool, rng }
+        let rng_worker = RngWorker::<TestEntropySource> { pool, rng };
+        let chachapoly_worker = ChachaPolyWorker { pool };
+        Scheduler {
+            pool,
+            rng_worker,
+            chachapoly_worker,
+        }
     }
 
     #[futures_test::test]

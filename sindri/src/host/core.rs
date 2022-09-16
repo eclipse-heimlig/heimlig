@@ -2,6 +2,8 @@ use crate::common::jobs::{Request, Response};
 use crate::common::pool::Pool;
 use crate::crypto::rng::{EntropySource, Rng};
 use crate::host::scheduler::{Job, Scheduler};
+use crate::host::workers::chachapoly_worker::ChachaPolyWorker;
+use crate::host::workers::rng_worker::RngWorker;
 use heapless::{LinearMap, Vec};
 
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -43,7 +45,11 @@ impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
         response_channels: Vec<&'a mut dyn Sender, MAX_CLIENTS>,
     ) -> Core<'a, E, MAX_CLIENTS> {
         Core {
-            scheduler: Scheduler { pool, rng },
+            scheduler: Scheduler {
+                pool,
+                rng_worker: RngWorker { pool, rng },
+                chachapoly_worker: ChachaPolyWorker { pool },
+            },
             response_channels,
             requester_to_job_ids: Default::default(),
             request_counter: 0,
