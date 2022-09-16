@@ -19,8 +19,11 @@ pub mod test {
     }
 
     struct ResponseSender<'a> {
-        id: u32,
         sender: Producer<'a, Response, QUEUE_SIZE>,
+    }
+
+    struct RequestReceiver<'a> {
+        receiver: Consumer<'a, Request, QUEUE_SIZE>,
     }
 
     #[derive(Default)]
@@ -40,15 +43,17 @@ pub mod test {
         }
     }
 
-    impl<'ch> host::core::Sender for ResponseSender<'ch> {
-        fn get_id(&self) -> u32 {
-            self.id
-        }
-
+    impl<'a> host::core::Sender for ResponseSender<'a> {
         fn send(&mut self, response: Response) -> Result<(), host::core::Error> {
             self.sender
                 .enqueue(response)
                 .map_err(|_response| host::core::Error::SendResponse)
+        }
+    }
+
+    impl<'a> host::core::Receiver for RequestReceiver<'a> {
+        fn recv(&mut self) -> Option<Request> {
+            self.receiver.dequeue()
         }
     }
 
@@ -73,37 +78,33 @@ pub mod test {
         // Queues
         let mut request_queue: Queue<Request, QUEUE_SIZE> = Queue::new();
         let mut response_queue: Queue<Response, QUEUE_SIZE> = Queue::new();
-        let (req_tx, mut req_rx) = request_queue.split();
+        let (req_tx, req_rx) = request_queue.split();
         let (resp_tx, resp_rx) = response_queue.split();
         let mut hsm = HsmApi {
             request_channel: &mut RequestSender { sender: req_tx },
             response_channel: &mut ResponseReceiver { receiver: resp_rx },
         };
-        let channel_id = 0;
-        let mut response_sender = ResponseSender {
-            id: channel_id,
-            sender: resp_tx,
-        };
-        let mut response_channels = Vec::<&mut dyn host::core::Sender, 2>::new();
-        if response_channels.push(&mut response_sender).is_err() {
+        let mut request_receiver = RequestReceiver { receiver: req_rx };
+        let mut response_sender = ResponseSender { sender: resp_tx };
+        let mut channels =
+            Vec::<(&mut dyn host::core::Sender, &mut dyn host::core::Receiver), 2>::new();
+        if channels
+            .push((&mut response_sender, &mut request_receiver))
+            .is_err()
+        {
             panic!("List of return channels is too small");
         }
 
         // Core
-        let mut core = Core::new(&POOL, rng, response_channels);
+        let mut core = Core::new(&POOL, rng, channels);
 
         // Send request
         let random_len = 16;
         hsm.get_random(random_len)
             .expect("failed to call randomness API");
-        let request = req_rx.dequeue().expect("failed to receive request");
-        match request {
-            Request::GetRandom { size } => assert_eq!(size, random_len),
-            _ => panic!("Unexpected request type"),
-        }
-        core.process(channel_id, request)
+        core.process_next()
             .await
-            .expect("failed to process request");
+            .expect("failed to process next request");
 
         // Receive response
         let response = hsm.recv_response().expect("failed to receive response");
