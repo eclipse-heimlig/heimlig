@@ -27,7 +27,7 @@ pub struct Scheduler<E: EntropySource> {
     pub chachapoly_worker: ChachaPolyWorker,
 }
 
-// TODO: Async: Scheduler should communicate with worker tasks over queues
+// TODO: Retrieve response asynchronously
 impl<E: EntropySource> Scheduler<E> {
     pub async fn schedule(&mut self, job: Job) -> JobResult {
         let response = match job.request {

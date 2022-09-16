@@ -20,17 +20,19 @@ pub struct Core<
     const MAX_PENDING_RESPONSES: usize = 16,
 > {
     scheduler: Scheduler<E>,
-    response_channels: Vec<&'a mut dyn Sender, MAX_CLIENTS>,
-    requester_to_job_ids: LinearMap<u32, u32, MAX_PENDING_RESPONSES>,
+    channels: Vec<(&'a mut dyn Sender, &'a mut dyn Receiver), MAX_CLIENTS>,
+    job_id_to_channel_index: LinearMap<u32, usize, MAX_PENDING_RESPONSES>,
     request_counter: u32,
 }
 
 pub trait Sender {
-    /// Unique ID of the sender. Used to determine the proper response channel once a request has been processed.
-    fn get_id(&self) -> u32;
-
     /// Send a response through this channel back to the requester.
     fn send(&mut self, response: Response) -> Result<(), Error>;
+}
+
+pub trait Receiver {
+    /// Receive a request from the client API through this channel.
+    fn recv(&mut self) -> Option<Request>;
 }
 
 impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
@@ -43,7 +45,7 @@ impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
     pub fn new(
         pool: &'static Pool,
         rng: Rng<E>,
-        response_channels: Vec<&'a mut dyn Sender, MAX_CLIENTS>,
+        channels: Vec<(&'a mut dyn Sender, &'a mut dyn Receiver), MAX_CLIENTS>,
     ) -> Core<'a, E, MAX_CLIENTS> {
         Core {
             scheduler: Scheduler {
@@ -51,36 +53,40 @@ impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
                 rng_worker: RngWorker { pool, rng },
                 chachapoly_worker: ChachaPolyWorker { pool },
             },
-            response_channels,
-            requester_to_job_ids: Default::default(),
+            channels,
+            job_id_to_channel_index: Default::default(),
             request_counter: 0,
         }
     }
 
-    // TODO: Add request receiver trait and make process get the next request
-    pub async fn process(&mut self, requester_id: u32, request: Request) -> Result<(), Error> {
+    pub async fn process_next(&mut self) -> Result<(), Error> {
+        for (channel_index, (_sender, receiver)) in &mut self.channels.iter_mut().enumerate() {
+            if let Some(request) = receiver.recv() {
+                return self.process(channel_index, request).await;
+            }
+        }
+        Ok(()) // Nothing to process
+    }
+
+    async fn process(&mut self, channel_index: usize, request: Request) -> Result<(), Error> {
         let job = self.new_job(request);
 
         // Associate job ID with sender ID to determine response channel later
         if self
-            .requester_to_job_ids
-            .insert(job.id, requester_id)
+            .job_id_to_channel_index
+            .insert(job.id, channel_index)
             .is_err()
         {
             return Err(Error::Busy);
         }
 
-        // TODO: retrieve response asynchronously
+        // TODO: Retrieve response asynchronously
         let result = self.scheduler.schedule(job).await;
 
         // Get sender ID for job ID and send response
-        if let Some(requester_id) = self.requester_to_job_ids.remove(&result.id) {
-            if let Some(response_channel) = self
-                .response_channels
-                .iter_mut()
-                .find(|s| s.get_id() == requester_id)
-            {
-                response_channel
+        if let Some(channel_index) = self.job_id_to_channel_index.remove(&result.id) {
+            if let Some((sender, _receiver)) = self.channels.get_mut(channel_index as usize) {
+                sender
                     .send(result.response)
                     .expect("failed to send response");
             }
@@ -109,30 +115,45 @@ mod tests {
 
     const QUEUE_SIZE: usize = 8;
 
-    struct ResponseReceiver<'a> {
+    struct RequestSender<'a, const QUEUE_SIZE: usize> {
+        sender: Producer<'a, Request, QUEUE_SIZE>,
+    }
+
+    struct ResponseReceiver<'a, const QUEUE_SIZE: usize> {
         receiver: Consumer<'a, Response, QUEUE_SIZE>,
     }
 
+    struct RequestReceiver<'a> {
+        receiver: Consumer<'a, Request, QUEUE_SIZE>,
+    }
+
     struct ResponseSender<'a> {
-        id: u32,
         sender: Producer<'a, Response, QUEUE_SIZE>,
     }
 
-    impl<'ch> Sender for ResponseSender<'ch> {
-        fn get_id(&self) -> u32 {
-            self.id
+    impl<'a> RequestSender<'a, QUEUE_SIZE> {
+        fn send(&mut self, request: Request) -> Result<(), Request> {
+            self.sender.enqueue(request)
         }
+    }
 
+    impl<'a> ResponseReceiver<'a, QUEUE_SIZE> {
+        fn recv(&mut self) -> Option<Response> {
+            self.receiver.dequeue()
+        }
+    }
+
+    impl<'a> Receiver for RequestReceiver<'a> {
+        fn recv(&mut self) -> Option<Request> {
+            self.receiver.dequeue()
+        }
+    }
+
+    impl<'a> Sender for ResponseSender<'a> {
         fn send(&mut self, response: Response) -> Result<(), Error> {
             self.sender
                 .enqueue(response)
                 .map_err(|_response| Error::SendResponse)
-        }
-    }
-
-    impl<'ch> ResponseReceiver<'ch> {
-        fn recv(&mut self) -> Option<Response> {
-            self.receiver.dequeue()
         }
     }
 
@@ -148,36 +169,57 @@ mod tests {
         let rng = Rng::new(entropy, None);
 
         // Queues
+        let mut client1_to_host: Queue<Request, QUEUE_SIZE> = Queue::<Request, QUEUE_SIZE>::new();
+        let mut client2_to_host: Queue<Request, QUEUE_SIZE> = Queue::<Request, QUEUE_SIZE>::new();
         let mut host_to_client1: Queue<Response, QUEUE_SIZE> = Queue::<Response, QUEUE_SIZE>::new();
         let mut host_to_client2: Queue<Response, QUEUE_SIZE> = Queue::<Response, QUEUE_SIZE>::new();
-        let (h2c1_p, h2c1_c) = host_to_client1.split();
-        let (h2c2_p, h2c2_c) = host_to_client2.split();
-        let mut response_receiver1 = ResponseReceiver { receiver: h2c1_c };
-        let mut response_receiver2 = ResponseReceiver { receiver: h2c2_c };
-        let mut response_sender1 = ResponseSender {
-            id: 0,
-            sender: h2c1_p,
+        let (c1_req_tx, c1_req_rx) = client1_to_host.split();
+        let (c2_req_tx, c2_req_rx) = client2_to_host.split();
+        let (c1_resp_tx, c1_resp_rx) = host_to_client1.split();
+        let (c2_resp_tx, c2_resp_rx) = host_to_client2.split();
+
+        // Channels
+        let mut request_sender1 = RequestSender { sender: c1_req_tx };
+        let mut request_sender2 = RequestSender { sender: c2_req_tx };
+        let mut response_receiver1 = ResponseReceiver {
+            receiver: c1_resp_rx,
         };
-        let mut response_sender2 = ResponseSender {
-            id: 1,
-            sender: h2c2_p,
+        let mut response_receiver2 = ResponseReceiver {
+            receiver: c2_resp_rx,
         };
-        let mut response_channels = Vec::<&mut dyn Sender, 2>::new();
-        if response_channels.push(&mut response_sender1).is_err()
-            || response_channels.push(&mut response_sender2).is_err()
+
+        let mut request_receiver1 = RequestReceiver {
+            receiver: c1_req_rx,
+        };
+        let mut response_sender1 = ResponseSender { sender: c1_resp_tx };
+        let mut request_receiver2 = RequestReceiver {
+            receiver: c2_req_rx,
+        };
+        let mut response_sender2 = ResponseSender { sender: c2_resp_tx };
+        let mut channels = Vec::<(&mut dyn Sender, &mut dyn Receiver), 2>::new();
+        if channels
+            .push((&mut response_sender1, &mut request_receiver1))
+            .is_err()
+            || channels
+                .push((&mut response_sender2, &mut request_receiver2))
+                .is_err()
         {
             panic!("List of return channels is too small");
         }
 
         // Core
-        let mut core = Core::new(&POOL, rng, response_channels);
+        let mut core = Core::new(&POOL, rng, channels);
 
-        // Send request from client 0
+        // Send request from client 1
         let size = 65; // Exceed size of a small chunk
-        let request = Request::GetRandom { size };
-        assert!(matches!(core.process(0, request).await, Ok(())));
+        request_sender1
+            .send(Request::GetRandom { size })
+            .expect("failed to send request");
+        core.process_next()
+            .await
+            .expect("failed to process next request");
         if response_receiver2.recv().is_some() {
-            panic!("Received unexpected response");
+            panic!("Received unexpected response to client 2");
         }
         match response_receiver1.recv() {
             Some(response) => match response {
@@ -193,11 +235,15 @@ mod tests {
             }
         }
 
-        // Send request from client 1
-        let request = Request::GetRandom { size };
-        assert!(matches!(core.process(1, request).await, Ok(())));
+        // Send request from client 2
+        request_sender2
+            .send(Request::GetRandom { size })
+            .expect("failed to send request");
+        core.process_next()
+            .await
+            .expect("failed to process next request");
         if response_receiver1.recv().is_some() {
-            panic!("Received unexpected response");
+            panic!("Received unexpected response to client 1");
         }
         match response_receiver2.recv() {
             Some(response) => match response {
