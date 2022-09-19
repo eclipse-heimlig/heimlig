@@ -63,20 +63,12 @@ pub(crate) mod test {
     use crate::common::limits::MAX_RANDOM_SIZE;
     use crate::common::pool::{Memory, Pool, PoolChunk};
     use crate::crypto::chacha20poly1305::{KEY_SIZE, NONCE_SIZE};
-    use crate::crypto::rng::{EntropySource, Rng};
+    use crate::crypto::rng::test::TestEntropySource;
+    use crate::crypto::rng::Rng;
     use crate::host::scheduler::Scheduler;
     use crate::host::scheduler::{Error, Job};
     use crate::host::workers::chachapoly_worker::ChachaPolyWorker;
     use crate::host::workers::rng_worker::RngWorker;
-
-    #[derive(Default)]
-    pub struct TestEntropySource {}
-
-    impl EntropySource for TestEntropySource {
-        fn random_seed(&mut self) -> [u8; 32] {
-            [0u8; 32]
-        }
-    }
 
     fn init_scheduler(
         memory: &'static mut Memory,
