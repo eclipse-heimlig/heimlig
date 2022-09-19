@@ -32,7 +32,7 @@ impl<'a> HsmApi<'a> {
 }
 
 #[cfg(test)]
-pub mod test {
+mod test {
     use crate::client::api::{Error, HsmApi, Receiver, Sender};
     use crate::common::jobs::{Request, Response};
     use crate::common::pool::{Memory, Pool};

@@ -1,4 +1,4 @@
-pub mod test {
+mod test {
     use heapless::spsc::{Consumer, Producer, Queue};
     use heapless::Vec;
     use sindri::client::api::HsmApi;
