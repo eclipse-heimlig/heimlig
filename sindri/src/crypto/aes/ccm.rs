@@ -1,6 +1,8 @@
 use crate::crypto::{check_sizes, check_sizes_with_tag, Error};
 use aes::{
-    cipher::{BlockCipher, BlockEncrypt, BlockSizeUser, KeyInit, KeySizeUser, Unsigned},
+    cipher::{
+        typenum::Same, BlockCipher, BlockEncrypt, BlockSizeUser, KeyInit, KeySizeUser, Unsigned,
+    },
     Aes128, Aes192, Aes256,
 };
 use ccm::{
@@ -20,8 +22,8 @@ fn encrypt_in_place_detached<C, T, N>(
 ) -> Result<Tag<T>, Error>
 where
     C: BlockCipher + BlockSizeUser<BlockSize = U16> + BlockEncrypt + KeySizeUser + KeyInit,
-    T: ArrayLength<u8> + TagSize,
-    N: ArrayLength<u8> + NonceSize,
+    T: ArrayLength<u8> + TagSize + Same<SupportedTagSize>,
+    N: ArrayLength<u8> + NonceSize + Same<SupportedNonceSize>,
 {
     check_sizes(key, nonce, C::KeySize::USIZE, N::USIZE)?;
     Ccm::<C, T, N>::new(key.into())
@@ -38,8 +40,8 @@ fn decrypt_in_place_detached<C, T, N>(
 ) -> Result<(), Error>
 where
     C: BlockCipher + BlockSizeUser<BlockSize = U16> + BlockEncrypt + KeySizeUser + KeyInit,
-    T: ArrayLength<u8> + TagSize,
-    N: ArrayLength<u8> + NonceSize,
+    T: ArrayLength<u8> + TagSize + Same<SupportedTagSize>,
+    N: ArrayLength<u8> + NonceSize + Same<SupportedNonceSize>,
 {
     check_sizes_with_tag(key, nonce, tag, C::KeySize::USIZE, N::USIZE, T::USIZE)?;
     Ccm::<C, T, N>::new(key.into())

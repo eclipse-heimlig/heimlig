@@ -9,19 +9,18 @@ use aes::{
 use cbc::cipher::block_padding::PadType;
 
 /// Returns buffer size after padding.
-pub fn padded_size<C, P>(unpadded_size: usize) -> usize
+pub const fn padded_size<C, P>(unpadded_size: usize) -> usize
 where
     C: BlockSizeUser,
     P: Padding<C::BlockSize>,
 {
+    let tail = unpadded_size % C::BlockSize::USIZE;
     match P::TYPE {
-        PadType::Reversible => {
-            // Add one block that includes any tail data
-            let tail = unpadded_size % C::BlockSize::USIZE;
+        PadType::NoPadding => unpadded_size,
+        PadType::Ambiguous if tail == 0 => unpadded_size,
+        PadType::Reversible | PadType::Ambiguous => {
             (unpadded_size - tail).saturating_add(C::BlockSize::USIZE)
         }
-        PadType::NoPadding => unpadded_size,
-        PadType::Ambiguous => unpadded_size, // Zero padding does not need to add actual data
     }
 }
 
@@ -140,7 +139,7 @@ mod test {
     ) => {
             #[test]
             fn $test_name() {
-                const PADDED_LEN: usize = ($plaintext.len() / BLOCK_SIZE + 1) * BLOCK_SIZE;
+                const PADDED_LEN: usize = padded_size::<$cipher, $padding>($plaintext.len());
                 let mut buffer = [0u8; PADDED_LEN];
                 buffer[..$plaintext.len()].copy_from_slice($plaintext);
                 let encrypted =
