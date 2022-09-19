@@ -4,12 +4,12 @@ use crate::crypto::rng::{EntropySource, Rng};
 use crate::host::scheduler::{Job, Scheduler};
 use crate::host::workers::chachapoly_worker::ChachaPolyWorker;
 use crate::host::workers::rng_worker::RngWorker;
-use heapless::{LinearMap, Vec};
+use heapless::Vec;
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Error {
     Busy,
-    UnknownId,
+    UnknownChannelId,
     SendResponse,
 }
 
@@ -21,8 +21,6 @@ pub struct Core<
 > {
     scheduler: Scheduler<E>,
     channels: Vec<(&'a mut dyn Sender, &'a mut dyn Receiver), MAX_CLIENTS>,
-    job_id_to_channel_index: LinearMap<u32, usize, MAX_PENDING_RESPONSES>,
-    request_counter: u32,
 }
 
 pub trait Sender {
@@ -54,54 +52,33 @@ impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
                 chachapoly_worker: ChachaPolyWorker { pool },
             },
             channels,
-            job_id_to_channel_index: Default::default(),
-            request_counter: 0,
         }
     }
 
     pub async fn process_next(&mut self) -> Result<(), Error> {
-        for (channel_index, (_sender, receiver)) in &mut self.channels.iter_mut().enumerate() {
+        for (channel_id, (_sender, receiver)) in &mut self.channels.iter_mut().enumerate() {
             if let Some(request) = receiver.recv() {
-                return self.process(channel_index, request).await;
+                return self.process(channel_id, request).await;
             }
         }
         Ok(()) // Nothing to process
     }
 
-    async fn process(&mut self, channel_index: usize, request: Request) -> Result<(), Error> {
-        let job = self.new_job(request);
-
-        // Associate job ID with sender ID to determine response channel later
-        if self
-            .job_id_to_channel_index
-            .insert(job.id, channel_index)
-            .is_err()
-        {
-            return Err(Error::Busy);
-        }
-
-        // TODO: Retrieve response asynchronously
+    async fn process(&mut self, channel_id: usize, request: Request) -> Result<(), Error> {
+        // Schedule job
+        let job = Job {
+            channel_id,
+            request,
+        };
+        // TODO: Retrieve result asynchronously
         let result = self.scheduler.schedule(job).await;
 
-        // Get sender ID for job ID and send response
-        if let Some(channel_index) = self.job_id_to_channel_index.remove(&result.id) {
-            if let Some((sender, _receiver)) = self.channels.get_mut(channel_index as usize) {
-                sender
-                    .send(result.response)
-                    .expect("failed to send response");
-            }
-            Ok(())
-        } else {
-            Err(Error::UnknownId)
-        }
-    }
-
-    fn new_job(&mut self, request: Request) -> Job {
-        self.request_counter += 1; // Wrapping OK. Counter is used for IDs only.
-        Job {
-            id: self.request_counter,
-            request,
-        }
+        // Send response
+        let (sender, _receiver) = self
+            .channels
+            .get_mut(result.channel_id)
+            .ok_or(Error::UnknownChannelId)?;
+        sender.send(result.response)
     }
 }
 
