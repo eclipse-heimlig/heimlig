@@ -12,12 +12,12 @@ pub enum Error {
 }
 
 pub struct Job {
-    pub id: u32,
+    pub channel_id: usize,
     pub request: Request,
 }
 
 pub struct JobResult {
-    pub id: u32,
+    pub channel_id: usize,
     pub response: Response,
 }
 
@@ -51,7 +51,7 @@ impl<E: EntropySource> Scheduler<E> {
                 .process_decrypt(key, nonce, aad, ciphertext, tag),
         };
         JobResult {
-            id: job.id,
+            channel_id: job.channel_id,
             response,
         }
     }
@@ -92,7 +92,10 @@ pub(crate) mod test {
         static POOL: Pool = Pool::new();
         let mut scheduler = init_scheduler(unsafe { &mut MEMORY }, &POOL);
         let request = Request::GetRandom { size: 32 };
-        let job = Job { id: 0, request };
+        let job = Job {
+            channel_id: 0,
+            request,
+        };
         match scheduler.schedule(job).await.response {
             Response::GetRandom {
                 data: response_data,
@@ -113,7 +116,10 @@ pub(crate) mod test {
         let request = Request::GetRandom {
             size: MAX_RANDOM_SIZE + 1,
         };
-        let job = Job { id: 0, request };
+        let job = Job {
+            channel_id: 0,
+            request,
+        };
         let result = scheduler.schedule(job).await;
         assert!(matches!(
             result.response,
@@ -149,7 +155,10 @@ pub(crate) mod test {
             aad: Some(aad),
             plaintext,
         };
-        let job = Job { id: 0, request };
+        let job = Job {
+            channel_id: 0,
+            request,
+        };
         match scheduler.schedule(job).await.response {
             Response::EncryptChaChaPoly { ciphertext, tag } => {
                 let (key, nonce, aad, org_plaintext) = alloc_vars();
@@ -160,7 +169,10 @@ pub(crate) mod test {
                     ciphertext,
                     tag,
                 };
-                let job = Job { id: 0, request };
+                let job = Job {
+                    channel_id: 0,
+                    request,
+                };
                 match scheduler.schedule(job).await.response {
                     Response::DecryptChaChaPoly { plaintext } => {
                         assert_eq!(plaintext.as_slice(), org_plaintext.as_slice())
