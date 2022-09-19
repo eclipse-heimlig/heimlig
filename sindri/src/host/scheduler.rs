@@ -77,7 +77,7 @@ impl<E: EntropySource> Scheduler<E> {
             Ok(mut tag) => {
                 let aad = match &aad {
                     Some(aad) => aad.as_slice(),
-                    None => &[] as &[u8],
+                    None => &[],
                 };
                 match crate::crypto::chacha20poly1305::encrypt_in_place_detached(
                     key.as_slice(),
@@ -86,7 +86,7 @@ impl<E: EntropySource> Scheduler<E> {
                     ciphertext.as_slice_mut(),
                 ) {
                     Ok(computed_tag) => {
-                        if computed_tag.len() != tag.as_slice().len() {
+                        if computed_tag.len() != tag.len() {
                             return Response::Error(Error::Alloc);
                         }
                         tag.as_slice_mut().copy_from_slice(computed_tag.as_slice());

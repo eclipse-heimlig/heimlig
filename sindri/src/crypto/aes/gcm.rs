@@ -1,7 +1,15 @@
 use crate::crypto::{check_sizes, check_sizes_with_tag, Error};
-use aes_gcm::aead::Tag;
-use aes_gcm::{AeadInPlace, Aes128Gcm, Aes256Gcm, KeyInit};
-use generic_array::typenum::Unsigned;
+use aes_gcm::{
+    aead::{
+        consts::{U12, U16},
+        Tag,
+    },
+    AeadInPlace, Aes128Gcm, Aes256Gcm, KeyInit,
+};
+use generic_array::typenum::{Same, Unsigned};
+
+pub type SupportedNonceSize = U12;
+pub type SupportedTagSize = U16;
 
 /// AES-GCM encryption: generic over an underlying AES implementation.
 fn encrypt_in_place_detached<'a, C>(
@@ -12,6 +20,8 @@ fn encrypt_in_place_detached<'a, C>(
 ) -> Result<Tag<C>, Error>
 where
     C: KeyInit + AeadInPlace,
+    C::NonceSize: Same<SupportedNonceSize>,
+    C::TagSize: Same<SupportedTagSize>,
 {
     check_sizes(key, nonce, C::KeySize::USIZE, C::NonceSize::USIZE)?;
     C::new(key.into())
@@ -29,6 +39,8 @@ fn decrypt_in_place_detached<'a, C>(
 ) -> Result<(), Error>
 where
     C: KeyInit + AeadInPlace,
+    C::NonceSize: Same<SupportedNonceSize>,
+    C::TagSize: Same<SupportedTagSize>,
 {
     check_sizes_with_tag(
         key,
