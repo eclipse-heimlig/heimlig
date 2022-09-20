@@ -7,7 +7,7 @@ pub struct ChachaPolyWorker {
 }
 
 impl ChachaPolyWorker {
-    pub fn process_encrypt(
+    pub fn encrypt(
         &mut self,
         key: PoolChunk,
         nonce: PoolChunk,
@@ -40,7 +40,7 @@ impl ChachaPolyWorker {
         }
     }
 
-    pub fn process_decrypt(
+    pub fn decrypt(
         &mut self,
         key: PoolChunk,
         nonce: PoolChunk,

@@ -31,15 +31,13 @@ pub struct Scheduler<E: EntropySource> {
 impl<E: EntropySource> Scheduler<E> {
     pub async fn schedule(&mut self, job: Job) -> JobResult {
         let response = match job.request {
-            Request::GetRandom { size } => self.rng_worker.process(size),
+            Request::GetRandom { size } => self.rng_worker.get_random(size),
             Request::EncryptChaChaPoly {
                 key,
                 nonce,
                 aad,
                 plaintext,
-            } => self
-                .chachapoly_worker
-                .process_encrypt(key, nonce, aad, plaintext),
+            } => self.chachapoly_worker.encrypt(key, nonce, aad, plaintext),
             Request::DecryptChaChaPoly {
                 key,
                 nonce,
@@ -48,7 +46,7 @@ impl<E: EntropySource> Scheduler<E> {
                 tag,
             } => self
                 .chachapoly_worker
-                .process_decrypt(key, nonce, aad, ciphertext, tag),
+                .decrypt(key, nonce, aad, ciphertext, tag),
         };
         JobResult {
             channel_id: job.channel_id,

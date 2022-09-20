@@ -12,7 +12,7 @@ pub struct RngWorker<E: EntropySource> {
 }
 
 impl<E: EntropySource> RngWorker<E> {
-    pub fn process(&mut self, size: usize) -> Response {
+    pub fn get_random(&mut self, size: usize) -> Response {
         if size >= MAX_RANDOM_SIZE {
             return Response::Error(Error::RequestTooLarge);
         }
