@@ -99,8 +99,8 @@ mod test {
         let mut core = Core::new(&POOL, rng, channels);
 
         // Send request
-        let random_len = 16;
-        hsm.get_random(random_len)
+        let random_size = 16;
+        hsm.get_random(random_size)
             .expect("failed to call randomness API");
         core.process_next()
             .await
@@ -109,7 +109,7 @@ mod test {
         // Receive response
         let response = hsm.recv_response().expect("failed to receive response");
         match response {
-            Response::GetRandom { data } => assert_eq!(data.len(), random_len),
+            Response::GetRandom { data } => assert_eq!(data.len(), random_size),
             _ => panic!("Unexpected response type"),
         }
     }

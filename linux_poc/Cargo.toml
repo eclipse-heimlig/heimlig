@@ -1,0 +1,19 @@
+[package]
+edition = "2021"
+name = "linux_poc"
+version = "0.1.0"
+
+[[bin]]
+name = "linux_poc"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "3", features = ["derive"] }
+# Embassy has no formal releases yet. This is the latest version as of 2022-06-09
+embassy = { git = "https://github.com/embassy-rs/embassy.git", rev = "db344c2bda55bd0352a43720788185cc4d3a420e", features = ["nightly", "std"] }
+heapless = "0.7"
+hex = "0.4"
+log = "0.4"
+rand = "0.8"
+simple_logger = "2"
+sindri = { path = "../sindri" }
