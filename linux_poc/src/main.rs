@@ -1,6 +1,5 @@
 #![feature(type_alias_impl_trait)] // Required for embassy
 
-use clap::Parser;
 use embassy::executor::Spawner;
 use embassy::time::Duration;
 use embassy::time::Timer;
@@ -17,7 +16,6 @@ use sindri::crypto::rng;
 use sindri::crypto::rng::Rng;
 use sindri::host;
 use sindri::host::core::Core;
-use std::path::PathBuf;
 
 // Shared memory pool
 static mut MEMORY: Memory = [0; Pool::required_memory()];
@@ -27,14 +25,6 @@ static POOL: Pool = Pool::new();
 const QUEUE_SIZE: usize = 8;
 static mut CLIENT_TO_HOST: Queue<Request, QUEUE_SIZE> = Queue::<Request, QUEUE_SIZE>::new();
 static mut HOST_TO_CLIENT: Queue<Response, QUEUE_SIZE> = Queue::<Response, QUEUE_SIZE>::new();
-
-#[derive(Parser, Debug)]
-#[clap(author, version, about, long_about = None)]
-struct Args {
-    /// Unix domain socket path
-    #[clap(short, long, default_value = "sindri.sock")]
-    socket: PathBuf,
-}
 
 struct RequestSender<'a, const QUEUE_SIZE: usize> {
     sender: Producer<'a, Request, QUEUE_SIZE>,
@@ -159,7 +149,6 @@ async fn main(spawner: Spawner) {
     simple_logger::SimpleLogger::new()
         .init()
         .expect("failed to initialize logger");
-    let _args = Args::parse();
 
     // Pool
     POOL.init(unsafe { &mut MEMORY })
