@@ -21,6 +21,7 @@ pub struct Core<
 > {
     scheduler: Scheduler<E>,
     channels: Vec<(&'a mut dyn Sender, &'a mut dyn Receiver), MAX_CLIENTS>,
+    last_channel_id: usize,
 }
 
 pub trait Sender {
@@ -52,12 +53,25 @@ impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
                 chachapoly_worker: ChachaPolyWorker { pool },
             },
             channels,
+            last_channel_id: 0,
         }
     }
 
+    /// Search all input channels for a new request and process it. Channel processing is done in a round-robin fashion.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(true)` if a request was found and successfully process
+    /// * `Ok(false)` if no request was found in any input channel
+    /// * `Err(core::Error)` if a processing error occurred
     pub async fn process_next(&mut self) -> Result<(), Error> {
-        for (channel_id, (_sender, receiver)) in &mut self.channels.iter_mut().enumerate() {
+        let total_channels = self.channels.len();
+        for channel_id in 0..total_channels {
+            // Go through channels starting after the last used channel
+            let channel_id = (channel_id + self.last_channel_id + 1) % total_channels;
+            let (_sender, receiver) = &mut self.channels[channel_id];
             if let Some(request) = receiver.recv() {
+                self.last_channel_id = channel_id;
                 return self.process(channel_id, request).await;
             }
         }
