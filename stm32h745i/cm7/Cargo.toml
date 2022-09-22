@@ -8,8 +8,8 @@ name = "rng_single_core"
 path = "src/bin/rng_single_core.rs"
 
 [[bin]]
-name = "blink"
-path = "src/bin/blink.rs"
+name = "blinky"
+path = "src/bin/blinky.rs"
 
 [dependencies]
 base64 = { version = "0.13", default-features = false }
