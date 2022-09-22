@@ -1,5 +1,0 @@
-[workspace]
-members = [
-    "sindri",
-    "linux_poc",
-]
