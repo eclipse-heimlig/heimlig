@@ -11,7 +11,7 @@ use {defmt_rtt as _, panic_probe as _};
 
 
 #[embassy::main]
-async fn main(spawner: Spawner, p: Peripherals) {
+async fn main(_spawner: Spawner, p: Peripherals) {
     // info!("Hello World!");
 
     // let mut led = Output::new(p.PK0, Level::High, Speed::Low); // LCD
