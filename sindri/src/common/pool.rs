@@ -65,7 +65,7 @@ impl PoolChunk {
 }
 
 /// Set of pools to handle different size requirements. It offers the same portability guarantees like heapless::pool
-/// (https://docs.rs/heapless/latest/heapless/pool/index.html#portability)
+/// <https://docs.rs/heapless/latest/heapless/pool/index.html#portability>
 /// TODO: Replace with a multi-core safe allocator that operates on static memory.
 pub struct Pool {
     small: heapless::pool::Pool<SmallChunk>,

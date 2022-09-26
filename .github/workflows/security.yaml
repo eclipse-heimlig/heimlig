@@ -1,5 +1,4 @@
 name: Security audit
-
 on:
   push:
     paths:
@@ -7,12 +6,22 @@ on:
       - '**/Cargo.lock'
     schedule:
         '0 0 * * *'
-
 jobs:
   security_audit:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        directory: [./sindri] # Only audit main crate
     steps:
       - uses: actions/checkout@v1
-      - uses: actions-rs/audit-check@v1
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          toolchain: nightly
+          override: true
+          profile: minimal
+          target: x86_64-unknown-linux-musl
+      - name: Security Audit
+        run: |
+          cargo install cargo-audit
+          cargo audit --file ${{ matrix.directory }}/Cargo.lock

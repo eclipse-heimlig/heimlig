@@ -9,13 +9,14 @@ use embassy_stm32::gpio::{Level, Output, Speed};
 use embassy_stm32::Peripherals;
 use {defmt_rtt as _, panic_probe as _};
 
-
 #[embassy::main]
 async fn main(_spawner: Spawner, p: Peripherals) {
     // info!("Hello World!");
 
     // let mut led = Output::new(p.PK0, Level::High, Speed::Low); // LCD
+
     let mut led = Output::new(p.PI13, Level::High, Speed::Low); // Red LED
+
     // let mut led = Output::new(p.PJ2, Level::High, Speed::Low); // Green LED
 
     loop {
