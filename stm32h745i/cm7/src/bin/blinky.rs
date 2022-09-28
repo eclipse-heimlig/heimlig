@@ -3,42 +3,25 @@
 #![feature(type_alias_impl_trait)]
 
 use defmt::*;
-use embassy::executor::Spawner;
-use embassy::time::{Duration, Timer};
+use embassy_executor::Spawner;
 use embassy_stm32::gpio::{Level, Output, Speed};
-use embassy_stm32::Peripherals;
+use embassy_time::{Duration, Timer};
 use {defmt_rtt as _, panic_probe as _};
 
-#[embassy::main]
-async fn main(_spawner: Spawner, p: Peripherals) {
-    // info!("Hello World!");
+#[embassy_executor::main]
+async fn main(_spawner: Spawner) {
+    let p = embassy_stm32::init(Default::default());
 
-    // let mut led = Output::new(p.PK0, Level::High, Speed::Low); // LCD
-
-    let mut led = Output::new(p.PI13, Level::High, Speed::Low); // Red LED
-
-    // let mut led = Output::new(p.PJ2, Level::High, Speed::Low); // Green LED
+    let mut _lcd = Output::new(p.PK0, Level::High, Speed::Low);
+    let mut red = Output::new(p.PI13, Level::High, Speed::Low);
+    let mut _green = Output::new(p.PJ2, Level::High, Speed::Low);
 
     loop {
         info!("low");
-        led.set_low();
+        red.set_low();
         Timer::after(Duration::from_millis(50)).await;
-
-        // delay
-        // let mut i : u64 = 1<<18;
-        // while i > 0 {
-        //     i = i - 1;
-        // }
-
         info!("high");
-        led.set_high();
-
+        red.set_high();
         Timer::after(Duration::from_millis(50)).await;
-
-        // delay
-        // let mut i : u64 = 1<<18;
-        // while i > 0 {
-        //     i = i - 1;
-        // }
     }
 }
