@@ -1,8 +1,8 @@
 #![feature(type_alias_impl_trait)] // Required for embassy
 
-use embassy::executor::Spawner;
-use embassy::time::Duration;
-use embassy::time::Timer;
+use embassy_executor::Spawner;
+use embassy_time::Duration;
+use embassy_time::Timer;
 use heapless::spsc::{Consumer, Producer, Queue};
 use heapless::Vec;
 use log::{error, info};
@@ -80,7 +80,7 @@ impl rng::EntropySource for EntropySource {
     }
 }
 
-#[embassy::task]
+#[embassy_executor::task]
 async fn host_task(
     req_rx: Consumer<'static, Request, QUEUE_SIZE>,
     resp_tx: Producer<'static, Response, QUEUE_SIZE>,
@@ -106,7 +106,7 @@ async fn host_task(
     }
 }
 
-#[embassy::task]
+#[embassy_executor::task]
 async fn client_task(
     resp_rx: Consumer<'static, Response, QUEUE_SIZE>,
     req_tx: Producer<'static, Request, QUEUE_SIZE>,
@@ -144,7 +144,7 @@ async fn client_task(
     }
 }
 
-#[embassy::main]
+#[embassy_executor::main]
 async fn main(spawner: Spawner) {
     simple_logger::SimpleLogger::new()
         .init()

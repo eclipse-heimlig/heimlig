@@ -18,8 +18,7 @@ embassy-time = { git = "https://github.com/embassy-rs/embassy.git", version = "0
 embassy-stm32 = { git = "https://github.com/embassy-rs/embassy.git", version = "0.1", features = ["nightly", "defmt", "stm32h745xi-cm4", "net", "time-driver-any", "exti", "unstable-pac", "unstable-traits"] }
 embassy-net = { git = "https://github.com/embassy-rs/embassy.git", version = "0.1", features = ["defmt", "tcp", "dhcpv4", "medium-ethernet", "pool-16"] }
 heapless = { version = "0.7", default-features = false }
-hex = { version = "0.4", default-features = false }
 panic-probe = { version = "0.3", features = ["print-defmt"] }
 rand = { version = "0.8", default-features = false }
-rand_core = "0.6.3"
+rand_core = { version = "0.6", default-features = false }
 sindri = { path = "../../sindri", default-features = false }
