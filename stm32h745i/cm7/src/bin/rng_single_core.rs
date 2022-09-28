@@ -5,11 +5,10 @@
 use core::cell::RefCell;
 use cortex_m::interrupt::{self, Mutex};
 use defmt::*;
-use embassy::executor::Spawner;
-use embassy::time::{Duration, Timer};
+use embassy_executor::Spawner;
 use embassy_stm32::peripherals::RNG as PeripheralRNG;
 use embassy_stm32::rng::Rng;
-use embassy_stm32::Peripherals;
+use embassy_time::{Duration, Timer};
 use heapless::spsc::{Consumer, Producer, Queue};
 use heapless::Vec;
 use rand_core::RngCore;
@@ -97,7 +96,7 @@ impl<'a> host::core::Receiver for RequestReceiver<'a> {
     }
 }
 
-#[embassy::task]
+#[embassy_executor::task]
 async fn host_task(
     req_rx: Consumer<'static, Request, QUEUE_SIZE>,
     resp_tx: Producer<'static, Response, QUEUE_SIZE>,
@@ -123,7 +122,7 @@ async fn host_task(
     }
 }
 
-#[embassy::task]
+#[embassy_executor::task]
 async fn client_task(
     resp_rx: Consumer<'static, Response, QUEUE_SIZE>,
     req_tx: Producer<'static, Request, QUEUE_SIZE>,
@@ -161,9 +160,13 @@ async fn client_task(
     }
 }
 
-#[embassy::main]
-async fn main(spawner: Spawner, p: Peripherals) {
-    interrupt::free(|cs| HW_RNG_INSTANCE.borrow(cs).replace(Some(p.RNG)));
+#[embassy_executor::main]
+async fn main(spawner: Spawner) {
+    interrupt::free(|cs| {
+        HW_RNG_INSTANCE
+            .borrow(cs)
+            .replace(Some(unsafe { embassy_stm32::peripherals::RNG::steal() }))
+    });
 
     // Pool
     POOL.init(unsafe { &mut MEMORY })
