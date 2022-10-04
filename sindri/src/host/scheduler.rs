@@ -29,7 +29,7 @@ pub struct Scheduler<E: EntropySource> {
 
 // TODO: Retrieve response asynchronously
 impl<E: EntropySource> Scheduler<E> {
-    pub async fn schedule(&mut self, job: Job) -> JobResult {
+    pub fn schedule(&mut self, job: Job) -> JobResult {
         let response = match job.request {
             Request::GetRandom { size } => self.rng_worker.get_random(size),
             Request::EncryptChaChaPoly {
@@ -84,8 +84,8 @@ pub(crate) mod test {
         }
     }
 
-    #[futures_test::test]
-    async fn get_random() {
+    #[test]
+    fn get_random() {
         static mut MEMORY: Memory = [0; Pool::required_memory()];
         static POOL: Pool = Pool::new();
         let mut scheduler = init_scheduler(unsafe { &mut MEMORY }, &POOL);
@@ -94,7 +94,7 @@ pub(crate) mod test {
             channel_id: 0,
             request,
         };
-        match scheduler.schedule(job).await.response {
+        match scheduler.schedule(job).response {
             Response::GetRandom {
                 data: response_data,
             } => {
@@ -106,8 +106,8 @@ pub(crate) mod test {
         };
     }
 
-    #[futures_test::test]
-    async fn get_random_request_too_large() {
+    #[test]
+    fn get_random_request_too_large() {
         static mut MEMORY: Memory = [0; Pool::required_memory()];
         static POOL: Pool = Pool::new();
         let mut scheduler = init_scheduler(unsafe { &mut MEMORY }, &POOL);
@@ -118,15 +118,15 @@ pub(crate) mod test {
             channel_id: 0,
             request,
         };
-        let result = scheduler.schedule(job).await;
+        let result = scheduler.schedule(job);
         assert!(matches!(
             result.response,
             Response::Error(Error::RequestTooLarge)
         ))
     }
 
-    #[futures_test::test]
-    async fn encrypt_chachapoly() {
+    #[test]
+    fn encrypt_chachapoly() {
         static mut MEMORY: Memory = [0; Pool::required_memory()];
         static POOL: Pool = Pool::new();
         let mut scheduler = init_scheduler(unsafe { &mut MEMORY }, &POOL);
@@ -157,7 +157,7 @@ pub(crate) mod test {
             channel_id: 0,
             request,
         };
-        match scheduler.schedule(job).await.response {
+        match scheduler.schedule(job).response {
             Response::EncryptChaChaPoly { ciphertext, tag } => {
                 let (key, nonce, aad, org_plaintext) = alloc_vars();
                 let request = Request::DecryptChaChaPoly {
@@ -171,7 +171,7 @@ pub(crate) mod test {
                     channel_id: 0,
                     request,
                 };
-                match scheduler.schedule(job).await.response {
+                match scheduler.schedule(job).response {
                     Response::DecryptChaChaPoly { plaintext } => {
                         assert_eq!(plaintext.as_slice(), org_plaintext.as_slice())
                     }

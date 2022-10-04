@@ -64,7 +64,7 @@ impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
     /// * `Ok(true)` if a request was found and successfully process
     /// * `Ok(false)` if no request was found in any input channel
     /// * `Err(core::Error)` if a processing error occurred
-    pub async fn process_next(&mut self) -> Result<(), Error> {
+    pub fn process_next(&mut self) -> Result<(), Error> {
         let total_channels = self.channels.len();
         for channel_id in 0..total_channels {
             // Go through channels starting after the last used channel
@@ -72,20 +72,20 @@ impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
             let (_sender, receiver) = &mut self.channels[channel_id];
             if let Some(request) = receiver.recv() {
                 self.last_channel_id = channel_id;
-                return self.process(channel_id, request).await;
+                return self.process(channel_id, request);
             }
         }
         Ok(()) // Nothing to process
     }
 
-    async fn process(&mut self, channel_id: usize, request: Request) -> Result<(), Error> {
+    fn process(&mut self, channel_id: usize, request: Request) -> Result<(), Error> {
         // Schedule job
         let job = Job {
             channel_id,
             request,
         };
         // TODO: Retrieve result asynchronously
-        let result = self.scheduler.schedule(job).await;
+        let result = self.scheduler.schedule(job);
 
         // Send response
         let (sender, _receiver) = self
@@ -148,8 +148,8 @@ mod tests {
         }
     }
 
-    #[futures_test::test]
-    async fn multiple_clients() {
+    #[test]
+    fn multiple_clients() {
         // Memory pool
         static mut MEMORY: Memory = [0; Pool::required_memory()];
         static POOL: Pool = Pool::new();
@@ -206,9 +206,7 @@ mod tests {
         request_sender1
             .send(Request::GetRandom { size })
             .expect("failed to send request");
-        core.process_next()
-            .await
-            .expect("failed to process next request");
+        core.process_next().expect("failed to process next request");
         if response_receiver2.recv().is_some() {
             panic!("Received unexpected response to client 2");
         }
@@ -230,9 +228,7 @@ mod tests {
         request_sender2
             .send(Request::GetRandom { size })
             .expect("failed to send request");
-        core.process_next()
-            .await
-            .expect("failed to process next request");
+        core.process_next().expect("failed to process next request");
         if response_receiver1.recv().is_some() {
             panic!("Received unexpected response to client 1");
         }
