@@ -63,8 +63,8 @@ mod test {
         }
     }
 
-    #[futures_test::test]
-    async fn api_core_communication() {
+    #[test]
+    fn api_core_communication() {
         // Pool
         static mut MEMORY: Memory = [0; Pool::required_memory()];
         static POOL: Pool = Pool::new();
@@ -102,9 +102,7 @@ mod test {
         let random_size = 16;
         hsm.get_random(random_size)
             .expect("failed to call randomness API");
-        core.process_next()
-            .await
-            .expect("failed to process next request");
+        core.process_next().expect("failed to process next request");
 
         // Receive response
         let response = hsm.recv_response().expect("failed to receive response");

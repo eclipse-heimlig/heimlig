@@ -99,9 +99,7 @@ async fn host_task(
     let mut core = Core::new(&POOL, rng, channels);
 
     loop {
-        core.process_next()
-            .await
-            .expect("failed to process next request");
+        core.process_next().expect("failed to process next request");
         Timer::after(Duration::from_millis(100)).await;
     }
 }
