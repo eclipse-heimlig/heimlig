@@ -1,27 +1,44 @@
 use crate::common::jobs::{Request, Response};
 use crate::common::pool::Pool;
-use crate::crypto::rng::EntropySource;
+use crate::crypto::rng::{EntropySource, Rng};
 use crate::host::workers::chachapoly_worker::ChachaPolyWorker;
 use crate::host::workers::rng_worker::RngWorker;
 
+/// A job for the HSM to compute a cryptographic task.
 pub struct Job {
+    /// ID of the channel over which this job should be answered.
     pub channel_id: usize,
+    /// The [Request] containing the details for a cryptographic task.
     pub request: Request,
 }
 
+/// The result of a cryptographic task to be sent back over a channel.
 pub struct JobResult {
+    /// ID of the channel over which this result should be transferred.
     pub channel_id: usize,
+    /// The [Response] containing the result of the cryptographic task.
     pub response: Response,
 }
 
+/// Scheduler to distribute jobs to proper workers.
 pub struct Scheduler<'a, E: EntropySource> {
-    pub pool: &'a Pool,
-    pub rng_worker: RngWorker<'a, E>,
-    pub chachapoly_worker: ChachaPolyWorker<'a>,
+    rng_worker: RngWorker<'a, E>,
+    chachapoly_worker: ChachaPolyWorker<'a>,
 }
 
-// TODO: Retrieve response asynchronously
 impl<'a, E: EntropySource> Scheduler<'a, E> {
+    /// Create a new scheduler.
+    pub fn new(pool: &'a Pool, rng: Rng<E>) -> Self {
+        Scheduler {
+            rng_worker: RngWorker { pool, rng },
+            chachapoly_worker: ChachaPolyWorker { pool },
+        }
+    }
+}
+
+impl<'a, E: EntropySource> Scheduler<'a, E> {
+    /// Schedules a [Job] to be processed by a worker.
+    // TODO: Retrieve response from worker asynchronously and notify caller
     pub fn schedule(&mut self, job: Job) -> JobResult {
         let response = match job.request {
             Request::GetRandom { size } => self.rng_worker.get_random(size),
@@ -58,19 +75,11 @@ pub(crate) mod test {
     use crate::crypto::rng::Rng;
     use crate::host::scheduler::Job;
     use crate::host::scheduler::Scheduler;
-    use crate::host::workers::chachapoly_worker::ChachaPolyWorker;
-    use crate::host::workers::rng_worker::RngWorker;
 
     fn init_scheduler(pool: &Pool) -> Scheduler<TestEntropySource> {
         let entropy = TestEntropySource::default();
         let rng = Rng::new(entropy, None);
-        let rng_worker = RngWorker::<TestEntropySource> { pool, rng };
-        let chachapoly_worker = ChachaPolyWorker { pool };
-        Scheduler {
-            pool,
-            rng_worker,
-            chachapoly_worker,
-        }
+        Scheduler::new(pool, rng)
     }
 
     #[test]

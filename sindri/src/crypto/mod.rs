@@ -19,12 +19,10 @@ pub enum Error {
     InvalidBufferSize,
     /// Provided plaintext or ciphertext is not padded.
     InvalidPadding,
-    /// Error during the encryption.
+    /// Error during encryption.
     Encrypt,
-    /// Error during the decryption.
+    /// Error during decryption.
     Decrypt,
-    /// Allocation error.
-    Alloc,
 }
 
 /// Validation of key and initialization vector/nonce sizes.

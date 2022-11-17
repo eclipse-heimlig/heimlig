@@ -8,7 +8,13 @@ use aes::{
 };
 use cbc::cipher::block_padding::PadType;
 
-/// Returns buffer size after padding.
+/// Returns buffer size after padding to a multiple of the block size of the chosen cipher.
+///
+/// # Arguments
+///
+/// * `unpadded_size`: Size of the unpadded ciphertext in bytes.
+///
+/// returns: Size of the padded ciphertext in bytes.
 pub const fn padded_size<C, P>(unpadded_size: usize) -> usize
 where
     C: BlockSizeUser,

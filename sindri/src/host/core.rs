@@ -2,17 +2,50 @@ use crate::common::jobs::{Request, Response};
 use crate::common::pool::Pool;
 use crate::crypto::rng::{EntropySource, Rng};
 use crate::host::scheduler::{Job, Scheduler};
-use crate::host::workers::chachapoly_worker::ChachaPolyWorker;
-use crate::host::workers::rng_worker::RngWorker;
 use heapless::Vec;
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Error {
-    Busy,
+    /// No [Channel] found for given ID.
     UnknownChannelId,
-    SendResponse,
+    /// Attempted to push to a full queue.
+    QueueFull,
 }
 
+pub trait Sender {
+    /// Send a [Response] to the client through this channel.
+    fn send(&mut self, response: Response) -> Result<(), Error>;
+}
+
+pub trait Receiver {
+    /// Attempt to receive a [Request] from the client through this channel.
+    fn recv(&mut self) -> Option<Request>;
+}
+
+/// The core-side of a bidirectional channel between the HSM core and a client.
+pub struct Channel<'a> {
+    sender: &'a mut dyn Sender,
+    receiver: &'a mut dyn Receiver,
+}
+
+impl<'a> Channel<'a> {
+    /// Create a new core-side end of a channel.
+    pub fn new(sender: &'a mut dyn Sender, receiver: &'a mut dyn Receiver) -> Self {
+        Channel { sender, receiver }
+    }
+
+    /// Send a [Response] to the client through this channel.
+    pub fn send(&mut self, response: Response) -> Result<(), Error> {
+        self.sender.send(response)
+    }
+
+    /// Attempt to receive a [Request] from the client through this channel.
+    pub fn recv(&mut self) -> Option<Request> {
+        self.receiver.recv()
+    }
+}
+
+/// HSM core that waits for [Request]s from [Channel]s and send [Response]s once they are ready.   
 pub struct Core<
     'a,
     E: EntropySource,
@@ -20,18 +53,8 @@ pub struct Core<
     const MAX_PENDING_RESPONSES: usize = 16,
 > {
     scheduler: Scheduler<'a, E>,
-    channels: Vec<(&'a mut dyn Sender, &'a mut dyn Receiver), MAX_CLIENTS>,
+    channels: Vec<Channel<'a>, MAX_CLIENTS>,
     last_channel_id: usize,
-}
-
-pub trait Sender {
-    /// Send a response through this channel back to the requester.
-    fn send(&mut self, response: Response) -> Result<(), Error>;
-}
-
-pub trait Receiver {
-    /// Receive a request from the client API through this channel.
-    fn recv(&mut self) -> Option<Request>;
 }
 
 impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
@@ -40,37 +63,34 @@ impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
     /// # Arguments
     ///
     /// * `rng`: Random number generator (RNG) used to seed the core RNG.
-    /// * `response_channels`: List of channels to send responses back to the clients.
+    /// * `response_channels`: List of [Channel]s to send responses back to the clients.
     pub fn new(
         pool: &'a Pool,
         rng: Rng<E>,
-        channels: Vec<(&'a mut dyn Sender, &'a mut dyn Receiver), MAX_CLIENTS>,
+        channels: Vec<Channel<'a>, MAX_CLIENTS>,
     ) -> Core<'a, E, MAX_CLIENTS> {
         Core {
-            scheduler: Scheduler {
-                pool,
-                rng_worker: RngWorker { pool, rng },
-                chachapoly_worker: ChachaPolyWorker { pool },
-            },
+            scheduler: Scheduler::new(pool, rng),
             channels,
             last_channel_id: 0,
         }
     }
 
-    /// Search all input channels for a new request and process it. Channel processing is done in a round-robin fashion.
+    /// Search all input channels for a new request and process it.
+    /// Channels are processed in a round-robin fashion.
     ///
     /// # Returns
     ///
-    /// * `Ok(true)` if a request was found and successfully process
-    /// * `Ok(false)` if no request was found in any input channel
-    /// * `Err(core::Error)` if a processing error occurred
+    /// * `Ok(true)` if a [Request] was found and successfully processed.
+    /// * `Ok(false)` if no [Request] was found in any input [Channel].
+    /// * `Err(core::Error)` if a processing error occurred.
     pub fn process_next(&mut self) -> Result<(), Error> {
         let total_channels = self.channels.len();
         for channel_id in 0..total_channels {
             // Go through channels starting after the last used channel
             let channel_id = (channel_id + self.last_channel_id + 1) % total_channels;
-            let (_sender, receiver) = &mut self.channels[channel_id];
-            if let Some(request) = receiver.recv() {
+            let channel = &mut self.channels[channel_id];
+            if let Some(request) = channel.receiver.recv() {
                 self.last_channel_id = channel_id;
                 return self.process(channel_id, request);
             }
@@ -88,11 +108,11 @@ impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
         let result = self.scheduler.schedule(job);
 
         // Send response
-        let (sender, _receiver) = self
+        let channel = self
             .channels
             .get_mut(result.channel_id)
             .ok_or(Error::UnknownChannelId)?;
-        sender.send(result.response)
+        channel.sender.send(result.response)
     }
 }
 
@@ -144,7 +164,7 @@ mod tests {
         fn send(&mut self, response: Response) -> Result<(), Error> {
             self.sender
                 .enqueue(response)
-                .map_err(|_response| Error::SendResponse)
+                .map_err(|_response| Error::QueueFull)
         }
     }
 
@@ -186,15 +206,15 @@ mod tests {
             receiver: c2_req_rx,
         };
         let mut response_sender2 = ResponseSender { sender: c2_resp_tx };
-        let mut channels = Vec::<(&mut dyn Sender, &mut dyn Receiver), 2>::new();
+        let mut channels = Vec::<Channel, 2>::new();
         if channels
-            .push((&mut response_sender1, &mut request_receiver1))
+            .push(Channel::new(&mut response_sender1, &mut request_receiver1))
             .is_err()
             || channels
-                .push((&mut response_sender2, &mut request_receiver2))
+                .push(Channel::new(&mut response_sender2, &mut request_receiver2))
                 .is_err()
         {
-            panic!("List of return channels is too small");
+            panic!("Failed to create list of channels");
         }
 
         // Core

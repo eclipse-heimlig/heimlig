@@ -6,7 +6,6 @@ use core::cell::RefCell;
 use cortex_m::interrupt::{self, Mutex};
 use defmt::*;
 use embassy_executor::Spawner;
-use embassy_stm32::peripherals::RNG as PeripheralRNG;
 use embassy_stm32::rng::Rng;
 use embassy_time::{Duration, Timer};
 use heapless::spsc::{Consumer, Producer, Queue};
@@ -29,24 +28,21 @@ const QUEUE_SIZE: usize = 8;
 static mut CLIENT_TO_HOST: Queue<Request, QUEUE_SIZE> = Queue::<Request, QUEUE_SIZE>::new();
 static mut HOST_TO_CLIENT: Queue<Response, QUEUE_SIZE> = Queue::<Response, QUEUE_SIZE>::new();
 
-static HW_RNG_INSTANCE: Mutex<RefCell<Option<PeripheralRNG>>> = Mutex::new(RefCell::new(None));
+static RNG: Mutex<RefCell<Option<Rng<embassy_stm32::peripherals::RNG>>>> =
+    Mutex::new(RefCell::new(None));
 
 struct EntropySource {}
 
 impl rng::EntropySource for EntropySource {
     fn random_seed(&mut self) -> [u8; 32] {
         let mut buf = [0u8; 32];
-
-        interrupt::free(|cs| match HW_RNG_INSTANCE.borrow(cs).borrow_mut().take() {
-            Some(p_rng) => {
-                let mut rng = Rng::new(p_rng);
+        interrupt::free(|cs| match RNG.borrow(cs).borrow_mut().take() {
+            Some(mut rng) => {
                 rng.fill_bytes(&mut buf);
             }
             None => defmt::panic!("HW_RNG_INSTANCE is not initialized"),
         });
-
         info!("New random seed (size={}, data={:02x})", buf.len(), buf);
-
         buf
     }
 }
@@ -71,7 +67,7 @@ impl<'a> client::api::Sender for RequestSender<'a, QUEUE_SIZE> {
     fn send(&mut self, request: Request) -> Result<(), client::api::Error> {
         self.sender
             .enqueue(request)
-            .map_err(|_request| client::api::Error::SendRequest)
+            .map_err(|_request| client::api::Error::QueueFull)
     }
 }
 
@@ -85,7 +81,7 @@ impl<'a> host::core::Sender for ResponseSender<'a> {
     fn send(&mut self, response: Response) -> Result<(), host::core::Error> {
         self.sender
             .enqueue(response)
-            .map_err(|_response| host::core::Error::SendResponse)
+            .map_err(|_response| host::core::Error::QueueFull)
     }
 }
 
@@ -100,12 +96,17 @@ async fn host_task(
     req_rx: Consumer<'static, Request, QUEUE_SIZE>,
     resp_tx: Producer<'static, Response, QUEUE_SIZE>,
 ) {
+    info!("Host task started");
+
+    // Channels
     let mut request_receiver = RequestReceiver { receiver: req_rx };
     let mut response_sender = ResponseSender { sender: resp_tx };
-    let mut channels =
-        Vec::<(&mut dyn host::core::Sender, &mut dyn host::core::Receiver), 2>::new();
+    let mut channels = Vec::<sindri::host::core::Channel, 2>::new();
     if channels
-        .push((&mut response_sender, &mut request_receiver))
+        .push(sindri::host::core::Channel::new(
+            &mut response_sender,
+            &mut request_receiver,
+        ))
         .is_err()
     {
         defmt::panic!("List of return channels is too small");
@@ -125,10 +126,10 @@ async fn client_task(
     resp_rx: Consumer<'static, Response, QUEUE_SIZE>,
     req_tx: Producer<'static, Request, QUEUE_SIZE>,
 ) {
-    let mut hsm = HsmApi {
-        request_channel: &mut RequestSender { sender: req_tx },
-        response_channel: &mut ResponseReceiver { receiver: resp_rx },
-    };
+    info!("Client task started");
+    let mut request_sender = RequestSender { sender: req_tx };
+    let mut response_receiver = ResponseReceiver { receiver: resp_rx };
+    let mut hsm = HsmApi::new(&mut request_sender, &mut response_receiver);
 
     loop {
         // Send requests
@@ -144,7 +145,7 @@ async fn client_task(
                 match response {
                     Response::GetRandom { data } => {
                         info!(
-                            "Received response: random data (size={}): {}",
+                            "Received response: random data (size={}): {:02x}",
                             data.len(),
                             data.as_slice()
                         );
@@ -160,11 +161,12 @@ async fn client_task(
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    interrupt::free(|cs| {
-        HW_RNG_INSTANCE
-            .borrow(cs)
-            .replace(Some(unsafe { embassy_stm32::peripherals::RNG::steal() }))
-    });
+    info!("Main task started");
+
+    // Random number generator
+    let peripherals = embassy_stm32::init(Default::default());
+    let rng = Rng::new(peripherals.RNG);
+    interrupt::free(|cs| RNG.borrow(cs).replace(Some(rng)));
 
     // Queues
     // Unsafe: Access to mutable static only happens here. Static lifetime is required by embassy tasks.
