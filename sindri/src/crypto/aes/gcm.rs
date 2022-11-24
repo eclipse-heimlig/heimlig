@@ -12,11 +12,11 @@ pub type SupportedNonceSize = U12;
 pub type SupportedTagSize = U16;
 
 /// AES-GCM encryption: generic over an underlying AES implementation.
-fn encrypt_in_place_detached<'a, C>(
+fn encrypt_in_place_detached<C>(
     key: &[u8],
     nonce: &[u8],
     associated_data: &[u8],
-    buffer: &'a mut [u8],
+    buffer: &mut [u8],
 ) -> Result<Tag<C>, Error>
 where
     C: KeyInit + AeadInPlace,
@@ -30,11 +30,11 @@ where
 }
 
 /// AES-GCM decryption: generic over an underlying AES implementation.
-fn decrypt_in_place_detached<'a, C>(
+fn decrypt_in_place_detached<C>(
     key: &[u8],
     nonce: &[u8],
     associated_data: &[u8],
-    buffer: &'a mut [u8],
+    buffer: &mut [u8],
     tag: &[u8],
 ) -> Result<(), Error>
 where
