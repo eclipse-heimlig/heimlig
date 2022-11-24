@@ -19,7 +19,6 @@ use sindri::host::core::Core;
 
 // Shared memory pool
 static mut MEMORY: Memory = [0; Pool::required_memory()];
-static POOL: Pool = Pool::new();
 
 // Request and response queues between tasks
 const QUEUE_SIZE: usize = 8;
@@ -82,6 +81,7 @@ impl rng::EntropySource for EntropySource {
 
 #[embassy_executor::task]
 async fn host_task(
+    pool: Pool,
     req_rx: Consumer<'static, Request, QUEUE_SIZE>,
     resp_tx: Producer<'static, Response, QUEUE_SIZE>,
 ) {
@@ -96,7 +96,7 @@ async fn host_task(
         panic!("List of return channels is too small");
     }
     let rng = Rng::new(EntropySource {}, None);
-    let mut core = Core::new(&POOL, rng, channels);
+    let mut core = Core::new(&pool, rng, channels);
 
     loop {
         core.process_next().expect("failed to process next request");
@@ -149,8 +149,7 @@ async fn main(spawner: Spawner) {
         .expect("failed to initialize logger");
 
     // Pool
-    POOL.init(unsafe { &mut MEMORY })
-        .expect("failed to initialize memory pool");
+    let pool = Pool::try_from(unsafe { &mut MEMORY }).expect("failed to initialize memory pool");
 
     // Queues
     // Unsafe: Access to mutable static only happens here. Static lifetime is required by embassy tasks.
@@ -159,7 +158,7 @@ async fn main(spawner: Spawner) {
 
     // Start tasks
     spawner
-        .spawn(host_task(req_rx, resp_tx))
+        .spawn(host_task(pool, req_rx, resp_tx))
         .expect("failed to spawn host task");
     spawner
         .spawn(client_task(resp_rx, req_tx))

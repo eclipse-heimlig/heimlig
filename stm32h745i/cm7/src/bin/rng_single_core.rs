@@ -24,7 +24,6 @@ use {defmt_rtt as _, panic_probe as _};
 
 // Shared memory pool
 static mut MEMORY: Memory = [0; Pool::required_memory()];
-static POOL: Pool = Pool::new();
 
 const QUEUE_SIZE: usize = 8;
 static mut CLIENT_TO_HOST: Queue<Request, QUEUE_SIZE> = Queue::<Request, QUEUE_SIZE>::new();
@@ -112,7 +111,8 @@ async fn host_task(
         defmt::panic!("List of return channels is too small");
     }
     let rng = rng::Rng::new(EntropySource {}, None);
-    let mut core = Core::new(&POOL, rng, channels);
+    let pool = Pool::try_from(unsafe { &mut MEMORY }).expect("failed to initialize memory pool");
+    let mut core = Core::new(&pool, rng, channels);
 
     loop {
         core.process_next().expect("failed to process next request");
@@ -165,10 +165,6 @@ async fn main(spawner: Spawner) {
             .borrow(cs)
             .replace(Some(unsafe { embassy_stm32::peripherals::RNG::steal() }))
     });
-
-    // Pool
-    POOL.init(unsafe { &mut MEMORY })
-        .expect("failed to initialize memory pool");
 
     // Queues
     // Unsafe: Access to mutable static only happens here. Static lifetime is required by embassy tasks.

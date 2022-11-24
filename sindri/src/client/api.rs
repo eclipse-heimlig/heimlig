@@ -65,9 +65,8 @@ mod test {
     #[test]
     fn send_request() {
         static mut MEMORY: Memory = [0; Pool::required_memory()];
-        static POOL: Pool = Pool::new();
-        POOL.init(unsafe { &mut MEMORY })
-            .expect("failed to initialize memory pool");
+        let pool =
+            Pool::try_from(unsafe { &mut MEMORY }).expect("failed to initialize memory pool");
         let mut request_queue: Queue<Request, QUEUE_SIZE> = Queue::new();
         let mut response_queue: Queue<Response, QUEUE_SIZE> = Queue::new();
         let (req_tx, mut req_rx) = request_queue.split();
@@ -88,7 +87,7 @@ mod test {
         }
 
         // Receive response
-        let data = POOL.alloc(random_len).expect("failed to allocate");
+        let data = pool.alloc(random_len).expect("failed to allocate");
         resp_tx
             .enqueue(Response::GetRandom { data })
             .expect("failed to send response");

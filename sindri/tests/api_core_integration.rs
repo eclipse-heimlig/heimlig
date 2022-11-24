@@ -67,9 +67,7 @@ mod test {
     fn api_core_communication() {
         // Pool
         static mut MEMORY: Memory = [0; Pool::required_memory()];
-        static POOL: Pool = Pool::new();
-        POOL.init(unsafe { &mut MEMORY })
-            .expect("failed to initialize memory pool");
+        let pool = Pool::try_from(unsafe { &mut MEMORY }).unwrap();
 
         // RNG
         let entropy = TestEntropySource::default();
@@ -96,7 +94,7 @@ mod test {
         }
 
         // Core
-        let mut core = Core::new(&POOL, rng, channels);
+        let mut core = Core::new(&pool, rng, channels);
 
         // Send request
         let random_size = 16;
