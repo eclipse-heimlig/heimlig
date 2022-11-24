@@ -19,7 +19,7 @@ pub struct Core<
     const MAX_CLIENTS: usize = 8,
     const MAX_PENDING_RESPONSES: usize = 16,
 > {
-    scheduler: Scheduler<E>,
+    scheduler: Scheduler<'a, E>,
     channels: Vec<(&'a mut dyn Sender, &'a mut dyn Receiver), MAX_CLIENTS>,
     last_channel_id: usize,
 }
@@ -42,7 +42,7 @@ impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
     /// * `rng`: Random number generator (RNG) used to seed the core RNG.
     /// * `response_channels`: List of channels to send responses back to the clients.
     pub fn new(
-        pool: &'static Pool,
+        pool: &'a Pool,
         rng: Rng<E>,
         channels: Vec<(&'a mut dyn Sender, &'a mut dyn Receiver), MAX_CLIENTS>,
     ) -> Core<'a, E, MAX_CLIENTS> {
@@ -152,8 +152,7 @@ mod tests {
     fn multiple_clients() {
         // Memory pool
         static mut MEMORY: Memory = [0; Pool::required_memory()];
-        static POOL: Pool = Pool::new();
-        POOL.init(unsafe { &mut MEMORY }).unwrap();
+        let pool = Pool::try_from(unsafe { &mut MEMORY }).unwrap();
 
         // RNG
         let entropy = rng::test::TestEntropySource::default();
@@ -199,7 +198,7 @@ mod tests {
         }
 
         // Core
-        let mut core = Core::new(&POOL, rng, channels);
+        let mut core = Core::new(&pool, rng, channels);
 
         // Send request from client 1
         let size = 65; // Exceed size of a small chunk

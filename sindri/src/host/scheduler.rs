@@ -21,14 +21,14 @@ pub struct JobResult {
     pub response: Response,
 }
 
-pub struct Scheduler<E: EntropySource> {
-    pub pool: &'static Pool,
-    pub rng_worker: RngWorker<E>,
-    pub chachapoly_worker: ChachaPolyWorker,
+pub struct Scheduler<'a, E: EntropySource> {
+    pub pool: &'a Pool,
+    pub rng_worker: RngWorker<'a, E>,
+    pub chachapoly_worker: ChachaPolyWorker<'a>,
 }
 
 // TODO: Retrieve response asynchronously
-impl<E: EntropySource> Scheduler<E> {
+impl<'a, E: EntropySource> Scheduler<'a, E> {
     pub fn schedule(&mut self, job: Job) -> JobResult {
         let response = match job.request {
             Request::GetRandom { size } => self.rng_worker.get_random(size),
@@ -68,11 +68,7 @@ pub(crate) mod test {
     use crate::host::workers::chachapoly_worker::ChachaPolyWorker;
     use crate::host::workers::rng_worker::RngWorker;
 
-    fn init_scheduler(
-        memory: &'static mut Memory,
-        pool: &'static Pool,
-    ) -> Scheduler<TestEntropySource> {
-        pool.init(memory).unwrap();
+    fn init_scheduler(pool: &Pool) -> Scheduler<TestEntropySource> {
         let entropy = TestEntropySource::default();
         let rng = Rng::new(entropy, None);
         let rng_worker = RngWorker::<TestEntropySource> { pool, rng };
@@ -87,8 +83,8 @@ pub(crate) mod test {
     #[test]
     fn get_random() {
         static mut MEMORY: Memory = [0; Pool::required_memory()];
-        static POOL: Pool = Pool::new();
-        let mut scheduler = init_scheduler(unsafe { &mut MEMORY }, &POOL);
+        let pool = Pool::try_from(unsafe { &mut MEMORY }).unwrap();
+        let mut scheduler = init_scheduler(&pool);
         let request = Request::GetRandom { size: 32 };
         let job = Job {
             channel_id: 0,
@@ -109,8 +105,8 @@ pub(crate) mod test {
     #[test]
     fn get_random_request_too_large() {
         static mut MEMORY: Memory = [0; Pool::required_memory()];
-        static POOL: Pool = Pool::new();
-        let mut scheduler = init_scheduler(unsafe { &mut MEMORY }, &POOL);
+        let pool = Pool::try_from(unsafe { &mut MEMORY }).unwrap();
+        let mut scheduler = init_scheduler(&pool);
         let request = Request::GetRandom {
             size: MAX_RANDOM_SIZE + 1,
         };
@@ -128,23 +124,23 @@ pub(crate) mod test {
     #[test]
     fn encrypt_chachapoly() {
         static mut MEMORY: Memory = [0; Pool::required_memory()];
-        static POOL: Pool = Pool::new();
-        let mut scheduler = init_scheduler(unsafe { &mut MEMORY }, &POOL);
+        let pool = Pool::try_from(unsafe { &mut MEMORY }).unwrap();
+        let mut scheduler = init_scheduler(&pool);
 
-        fn alloc_vars() -> (PoolChunk, PoolChunk, PoolChunk, PoolChunk) {
+        let alloc_vars = || -> (PoolChunk, PoolChunk, PoolChunk, PoolChunk) {
             const KEY: &[u8; KEY_SIZE] = b"Fortuna Major or Oddsbodikins???";
             const NONCE: &[u8; NONCE_SIZE] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
             const PLAINTEXT: &[u8] = b"I solemnly swear I am up to no good!";
             const AAD: &[u8] = b"When in doubt, go to the library.";
-            let key = POOL.alloc(KEY.len()).unwrap();
-            let mut nonce = POOL.alloc(NONCE_SIZE).unwrap();
+            let key = pool.alloc(KEY.len()).unwrap();
+            let mut nonce = pool.alloc(NONCE_SIZE).unwrap();
             nonce.as_slice_mut().copy_from_slice(NONCE);
-            let mut aad = POOL.alloc(AAD.len()).unwrap();
+            let mut aad = pool.alloc(AAD.len()).unwrap();
             aad.as_slice_mut().copy_from_slice(AAD);
-            let mut plaintext = POOL.alloc(PLAINTEXT.len()).unwrap();
+            let mut plaintext = pool.alloc(PLAINTEXT.len()).unwrap();
             plaintext.as_slice_mut().copy_from_slice(PLAINTEXT);
             (key, nonce, aad, plaintext)
-        }
+        };
 
         let (key, nonce, aad, plaintext) = alloc_vars();
         let request = Request::EncryptChaChaPoly {

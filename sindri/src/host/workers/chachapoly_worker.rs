@@ -2,11 +2,11 @@ use crate::common::jobs::Response;
 use crate::common::pool::{Pool, PoolChunk};
 use crate::host::scheduler::Error;
 
-pub struct ChachaPolyWorker {
-    pub pool: &'static Pool,
+pub struct ChachaPolyWorker<'a> {
+    pub pool: &'a Pool,
 }
 
-impl ChachaPolyWorker {
+impl<'a> ChachaPolyWorker<'a> {
     pub fn encrypt(
         &mut self,
         key: PoolChunk,
