@@ -31,6 +31,18 @@ pub enum PoolChunk {
     BigChunk(Box<BigChunk, Init>),
 }
 
+/// PoolChunk data is zeroed out when it goes out of scope
+impl Drop for PoolChunk {
+    fn drop(&mut self) {
+        match self {
+            PoolChunk::StackChunk(st) => st.fill(0),
+            PoolChunk::SmallChunk(s) => s.fill(0),
+            PoolChunk::MediumChunk(m) => m.fill(0),
+            PoolChunk::BigChunk(b) => b.fill(0),
+        }
+    }
+}
+
 impl PoolChunk {
     pub fn len(&self) -> usize {
         match self {
