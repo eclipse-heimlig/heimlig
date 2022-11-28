@@ -15,7 +15,7 @@ path = "src/bin/blinky.rs"
 cortex-m = { version = "0.7", default-features = false, features = ["critical-section-single-core"] }
 cortex-m-rt = { version = "0.7", default-features = false }
 defmt = { version = "0.3", default-features = false }
-defmt-rtt = { version = "0.3", default-features = false }
+defmt-rtt = { version = "0.4", default-features = false }
 embassy-sync = { git = "https://github.com/embassy-rs/embassy.git", version = "0.1", features = ["nightly", "defmt"] }
 embassy-executor = { git = "https://github.com/embassy-rs/embassy.git", version = "0.1", features = ["nightly", "defmt", "integrated-timers"] }
 embassy-time = { git = "https://github.com/embassy-rs/embassy.git", version = "0.1", features = ["nightly", "defmt", "defmt-timestamp-uptime", "unstable-traits", "tick-hz-32_768"] }
