@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 aes = { version = "0.8", default-features = false, features = ["zeroize"]}
 aes-gcm = { version = "0.10", default-features = false, features = ["aes"] }
+blake3 = { version = "1", default-features = false }
 cbc = { version = "0.1", default-features = false, features = ["block-padding", "zeroize"] }
 ccm = { version = "0.5", default-features = false }
 chacha20poly1305 = { version = "0.10", default-features = false }
@@ -14,10 +15,12 @@ elliptic-curve = { version = "0.12", default-features = false }
 generic-array = { version = "0.14", default-features = false, features = ["more_lengths"] }
 heapless = { version = "0.7", default-features = false, features = ["cas", "x86-sync-pool"] }
 p256 = { version = "0.11", default-features = false, features = ["ecdh", "ecdsa"] }
+p384 = { version = "0.11", default-features = false, features = ["ecdh", "ecdsa"] }
 rand = { version = "0.8", default-features = false }
 rand_chacha = { version = "0.3", default-features = false }
 rand_core = { version = "0.6", default-features = false }
 sha2 = { version = "0.10" , default-features = false }
+sha3 = { version = "0.10" , default-features = false }
 
 [dev-dependencies]
 heapless = "0.7"
