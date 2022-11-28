@@ -43,13 +43,22 @@ where
 mod test {
     use super::*;
     use crate::crypto::rng;
-    use p256::NistP256;
 
     #[test]
     fn sign_verify_p256() {
         let entropy = rng::test::TestEntropySource::default();
         let mut rng = rng::Rng::new(entropy, None);
-        let (public, private) = gen_key_pair::<_, NistP256>(&mut rng);
+        let (public, private) = gen_key_pair::<_, p256::NistP256>(&mut rng);
+        let message = "Hello, World!";
+        let signature = sign(&private, message.as_ref());
+        assert!(verify(&public, message.as_ref(), &signature));
+    }
+
+    #[test]
+    fn sign_verify_p384() {
+        let entropy = rng::test::TestEntropySource::default();
+        let mut rng = rng::Rng::new(entropy, None);
+        let (public, private) = gen_key_pair::<_, p384::NistP384>(&mut rng);
         let message = "Hello, World!";
         let signature = sign(&private, message.as_ref());
         assert!(verify(&public, message.as_ref(), &signature));

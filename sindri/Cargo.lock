@@ -471,6 +471,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "p384"
+version = "0.11.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dfc8c5bf642dde52bb9e87c0ecd8ca5a76faac2eeed98dedb7c717997e1080aa"
+dependencies = [
+ "ecdsa",
+ "elliptic-curve",
+ "sha2",
+]
+
+[[package]]
 name = "poly1305"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -667,6 +678,7 @@ dependencies = [
  "heapless",
  "hex",
  "p256",
+ "p384",
  "rand",
  "rand_chacha",
  "rand_core",
