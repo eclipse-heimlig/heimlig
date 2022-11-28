@@ -4,6 +4,7 @@ use sha3::{Sha3_256, Sha3_384, Sha3_512};
 pub const SHA256_SIZE: usize = 32;
 pub const SHA384_SIZE: usize = 48;
 pub const SHA512_SIZE: usize = 64;
+pub const BLAKE3_SIZE: usize = 32;
 
 pub fn sha256<T: AsRef<[u8]>>(input: T) -> [u8; SHA256_SIZE] {
     Sha256::digest(input.as_ref()).into()
@@ -27,6 +28,10 @@ pub fn sha3_384<T: AsRef<[u8]>>(input: T) -> [u8; SHA384_SIZE] {
 
 pub fn sha3_512<T: AsRef<[u8]>>(input: T) -> [u8; SHA512_SIZE] {
     Sha3_512::digest(input.as_ref()).into()
+}
+
+pub fn blake3<T: AsRef<[u8]>>(input: T) -> [u8; BLAKE3_SIZE] {
+    blake3::hash(input.as_ref()).into()
 }
 
 #[cfg(test)]
@@ -73,5 +78,13 @@ fn test_sha3_384() {
 fn test_sha3_512() {
     let output = sha3_512(HELLO_WORLD);
     let expected = hex::decode("38e05c33d7b067127f217d8c856e554fcff09c9320b8a5979ce2ff5d95dd27ba35d1fba50c562dfd1d6cc48bc9c5baa4390894418cc942d968f97bcb659419ed").expect("Failed to decode hex string");
+    assert_eq!(output, expected.as_slice());
+}
+
+#[test]
+fn test_blake3() {
+    let output = blake3(HELLO_WORLD);
+    let expected = hex::decode("288a86a79f20a3d6dccdca7713beaed178798296bdfa7913fa2a62d9727bf8f8")
+        .expect("Failed to decode hex string");
     assert_eq!(output, expected.as_slice());
 }
