@@ -20,6 +20,7 @@ mod test {
     use super::*;
     use crate::crypto::rng;
     use p256::NistP256;
+    use p384::NistP384;
 
     #[test]
     fn test_p256() {
@@ -27,6 +28,20 @@ mod test {
         let mut rng = rng::Rng::new(entropy, None);
         let (local_public, local_private) = gen_key_pair::<_, NistP256>(&mut rng);
         let (remote_public, remote_private) = gen_key_pair::<_, NistP256>(&mut rng);
+        let local_secret = derive_shared_secret(&local_private, &remote_public);
+        let remote_secret = derive_shared_secret(&remote_private, &local_public);
+        assert_eq!(
+            local_secret.raw_secret_bytes(),
+            remote_secret.raw_secret_bytes()
+        );
+    }
+
+    #[test]
+    fn test_p384() {
+        let entropy = rng::test::TestEntropySource::default();
+        let mut rng = rng::Rng::new(entropy, None);
+        let (local_public, local_private) = gen_key_pair::<_, NistP384>(&mut rng);
+        let (remote_public, remote_private) = gen_key_pair::<_, NistP384>(&mut rng);
         let local_secret = derive_shared_secret(&local_private, &remote_public);
         let remote_secret = derive_shared_secret(&remote_private, &local_public);
         assert_eq!(
