@@ -1,5 +1,11 @@
 use crate::common::pool::PoolChunk;
-use crate::host::scheduler;
+
+#[derive(Clone, Eq, PartialEq, Debug)]
+pub enum Error {
+    Alloc,
+    RequestTooLarge,
+    Encrypt,
+}
 
 #[derive(Eq, PartialEq, Debug)]
 pub enum Request {
@@ -23,7 +29,7 @@ pub enum Request {
 
 #[derive(Eq, PartialEq, Debug)]
 pub enum Response {
-    Error(scheduler::Error),
+    Error(Error),
     GetRandom {
         data: PoolChunk,
     },

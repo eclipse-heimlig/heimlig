@@ -4,13 +4,6 @@ use crate::crypto::rng::EntropySource;
 use crate::host::workers::chachapoly_worker::ChachaPolyWorker;
 use crate::host::workers::rng_worker::RngWorker;
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub enum Error {
-    Alloc,
-    RequestTooLarge,
-    Encrypt,
-}
-
 pub struct Job {
     pub channel_id: usize,
     pub request: Request,
@@ -57,14 +50,14 @@ impl<'a, E: EntropySource> Scheduler<'a, E> {
 
 #[cfg(test)]
 pub(crate) mod test {
-    use crate::common::jobs::{Request, Response};
+    use crate::common::jobs::{Error, Request, Response};
     use crate::common::limits::MAX_RANDOM_SIZE;
     use crate::common::pool::{Memory, Pool, PoolChunk};
     use crate::crypto::chacha20poly1305::{KEY_SIZE, NONCE_SIZE};
     use crate::crypto::rng::test::TestEntropySource;
     use crate::crypto::rng::Rng;
+    use crate::host::scheduler::Job;
     use crate::host::scheduler::Scheduler;
-    use crate::host::scheduler::{Error, Job};
     use crate::host::workers::chachapoly_worker::ChachaPolyWorker;
     use crate::host::workers::rng_worker::RngWorker;
 

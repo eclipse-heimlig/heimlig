@@ -1,6 +1,5 @@
-use crate::common::jobs::Response;
+use crate::common::jobs::{Error, Response};
 use crate::common::pool::{Pool, PoolChunk};
-use crate::host::scheduler::Error;
 
 pub struct ChachaPolyWorker<'a> {
     pub pool: &'a Pool,
