@@ -15,7 +15,7 @@ use sindri::common::pool::Pool;
 use sindri::crypto::rng;
 use sindri::crypto::rng::Rng;
 use sindri::host;
-use sindri::host::core::Core;
+use sindri::host::core::{Channel, Core};
 
 // Shared memory pool
 static mut MEMORY: Memory = [0; Pool::required_memory()];
@@ -47,7 +47,7 @@ impl<'a> client::api::Sender for RequestSender<'a, QUEUE_SIZE> {
     fn send(&mut self, request: Request) -> Result<(), client::api::Error> {
         self.sender
             .enqueue(request)
-            .map_err(|_request| client::api::Error::SendRequest)
+            .map_err(|_request| client::api::Error::QueueFull)
     }
 }
 
@@ -61,7 +61,7 @@ impl<'a> host::core::Sender for ResponseSender<'a> {
     fn send(&mut self, response: Response) -> Result<(), host::core::Error> {
         self.sender
             .enqueue(response)
-            .map_err(|_response| host::core::Error::SendResponse)
+            .map_err(|_response| host::core::Error::QueueFull)
     }
 }
 
@@ -87,10 +87,9 @@ async fn host_task(
 ) {
     let mut request_receiver = RequestReceiver { receiver: req_rx };
     let mut response_sender = ResponseSender { sender: resp_tx };
-    let mut channels =
-        Vec::<(&mut dyn host::core::Sender, &mut dyn host::core::Receiver), 2>::new();
+    let mut channels = Vec::<Channel, 2>::new();
     if channels
-        .push((&mut response_sender, &mut request_receiver))
+        .push(Channel::new(&mut response_sender, &mut request_receiver))
         .is_err()
     {
         panic!("List of return channels is too small");
@@ -109,10 +108,9 @@ async fn client_task(
     resp_rx: Consumer<'static, Response, QUEUE_SIZE>,
     req_tx: Producer<'static, Request, QUEUE_SIZE>,
 ) {
-    let mut hsm = HsmApi {
-        request_channel: &mut RequestSender { sender: req_tx },
-        response_channel: &mut ResponseReceiver { receiver: resp_rx },
-    };
+    let mut request_sender = RequestSender { sender: req_tx };
+    let mut response_receiver = ResponseReceiver { receiver: resp_rx };
+    let mut hsm = HsmApi::new(&mut request_sender, &mut response_receiver);
 
     loop {
         // Send requests

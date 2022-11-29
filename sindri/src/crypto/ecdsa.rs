@@ -11,11 +11,7 @@ use elliptic_curve::subtle::CtOption;
 
 pub use crate::crypto::ecc::gen_key_pair;
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub enum Error {
-    Sign,
-}
-
+/// Sign a message using a [SecretKey].
 pub fn sign<C>(key: &SecretKey<C>, message: &[u8]) -> Signature<C>
 where
     C: PrimeCurve + ProjectiveArithmetic + DigestPrimitive,
@@ -27,6 +23,7 @@ where
     key.sign(message)
 }
 
+/// Verify a message using a [PublicKey] and a [Signature].
 pub fn verify<C>(key: &PublicKey<C>, message: &[u8], signature: &Signature<C>) -> bool
 where
     C: PrimeCurve + ProjectiveArithmetic + DigestPrimitive,

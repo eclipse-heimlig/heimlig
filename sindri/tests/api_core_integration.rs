@@ -5,7 +5,7 @@ mod test {
     use sindri::common::jobs::{Request, Response};
     use sindri::common::pool::{Memory, Pool};
     use sindri::crypto::rng::{EntropySource, Rng};
-    use sindri::host::core::Core;
+    use sindri::host::core::{Channel, Core};
     use sindri::{client, host};
 
     const QUEUE_SIZE: usize = 8;
@@ -33,7 +33,7 @@ mod test {
         fn send(&mut self, request: Request) -> Result<(), client::api::Error> {
             self.sender
                 .enqueue(request)
-                .map_err(|_request| client::api::Error::SendRequest)
+                .map_err(|_request| client::api::Error::QueueFull)
         }
     }
 
@@ -47,7 +47,7 @@ mod test {
         fn send(&mut self, response: Response) -> Result<(), host::core::Error> {
             self.sender
                 .enqueue(response)
-                .map_err(|_response| host::core::Error::SendResponse)
+                .map_err(|_response| host::core::Error::QueueFull)
         }
     }
 
@@ -78,16 +78,14 @@ mod test {
         let mut response_queue: Queue<Response, QUEUE_SIZE> = Queue::new();
         let (req_tx, req_rx) = request_queue.split();
         let (resp_tx, resp_rx) = response_queue.split();
-        let mut hsm = HsmApi {
-            request_channel: &mut RequestSender { sender: req_tx },
-            response_channel: &mut ResponseReceiver { receiver: resp_rx },
-        };
+        let mut request_sender = RequestSender { sender: req_tx };
+        let mut response_receiver = ResponseReceiver { receiver: resp_rx };
         let mut request_receiver = RequestReceiver { receiver: req_rx };
         let mut response_sender = ResponseSender { sender: resp_tx };
-        let mut channels =
-            Vec::<(&mut dyn host::core::Sender, &mut dyn host::core::Receiver), 2>::new();
+        let mut hsm = HsmApi::new(&mut request_sender, &mut response_receiver);
+        let mut channels = Vec::<Channel, 2>::new();
         if channels
-            .push((&mut response_sender, &mut request_receiver))
+            .push(Channel::new(&mut response_sender, &mut request_receiver))
             .is_err()
         {
             panic!("List of return channels is too small");

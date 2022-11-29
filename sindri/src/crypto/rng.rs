@@ -5,6 +5,7 @@ use rand_chacha::ChaCha20Rng;
 
 /// Entropy source from which a random number generator can be seeded.
 pub trait EntropySource {
+    /// Extract a fixed-size random seed from the source.
     fn random_seed(&mut self) -> [u8; 32];
 }
 

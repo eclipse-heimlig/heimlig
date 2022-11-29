@@ -2,32 +2,63 @@ use crate::common::jobs::{Request, Response};
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Error {
-    SendRequest,
-    RecvResponse,
+    /// Attempted to push to a full queue.
+    QueueFull,
 }
 
 pub trait Sender {
-    /// Send a request to the HSM core through this channel.
+    /// Send a [Request] to the HSM core through this channel.
     fn send(&mut self, request: Request) -> Result<(), Error>;
 }
 
 pub trait Receiver {
-    /// Receive a response from the HSM core through this channel.
+    /// Attempt to receive a [Response] from the HSM core through this channel.
     fn recv(&mut self) -> Option<Response>;
 }
 
+/// The client-side of a bidirectional channel between the HSM core and a client.
+pub struct Channel<'a> {
+    sender: &'a mut dyn Sender,
+    receiver: &'a mut dyn Receiver,
+}
+
+impl<'a> Channel<'a> {
+    /// Create a new client-side end of a channel.
+    pub fn new(sender: &'a mut dyn Sender, receiver: &'a mut dyn Receiver) -> Self {
+        Channel { sender, receiver }
+    }
+
+    /// Send a [Request] to the client through this channel.
+    pub fn send(&mut self, request: Request) -> Result<(), Error> {
+        self.sender.send(request)
+    }
+
+    /// Attempt to receive a [Response] from the client through this channel.
+    pub fn recv(&mut self) -> Option<Response> {
+        self.receiver.recv()
+    }
+}
+
+/// An interface to send [Request]s to the HSM core and receive [Response]es from it.
 pub struct HsmApi<'a> {
-    pub request_channel: &'a mut dyn Sender,
-    pub response_channel: &'a mut dyn Receiver,
+    sender: &'a mut dyn Sender,
+    receiver: &'a mut dyn Receiver,
 }
 
 impl<'a> HsmApi<'a> {
-    pub fn get_random(&mut self, size: usize) -> Result<(), Error> {
-        self.request_channel.send(Request::GetRandom { size })
+    /// Create a new instance of the HSM API.
+    pub fn new(sender: &'a mut dyn Sender, receiver: &'a mut dyn Receiver) -> Self {
+        HsmApi { sender, receiver }
     }
 
+    /// Request `size` many random bytes.
+    pub fn get_random(&mut self, size: usize) -> Result<(), Error> {
+        self.sender.send(Request::GetRandom { size })
+    }
+
+    /// Attempt to poll a response and return it.
     pub fn recv_response(&mut self) -> Option<Response> {
-        self.response_channel.recv()
+        self.receiver.recv()
     }
 }
 
@@ -52,7 +83,7 @@ mod test {
         fn send(&mut self, request: Request) -> Result<(), Error> {
             self.sender
                 .enqueue(request)
-                .map_err(|_request| Error::SendRequest)
+                .map_err(|_request| Error::QueueFull)
         }
     }
 
@@ -71,10 +102,9 @@ mod test {
         let mut response_queue: Queue<Response, QUEUE_SIZE> = Queue::new();
         let (req_tx, mut req_rx) = request_queue.split();
         let (mut resp_tx, resp_rx) = response_queue.split();
-        let mut hsm = HsmApi {
-            request_channel: &mut RequestSender { sender: req_tx },
-            response_channel: &mut ResponseReceiver { receiver: resp_rx },
-        };
+        let mut request_sender = RequestSender { sender: req_tx };
+        let mut response_receiver = ResponseReceiver { receiver: resp_rx };
+        let mut hsm = HsmApi::new(&mut request_sender, &mut response_receiver);
 
         // Send request
         let random_len = 16;

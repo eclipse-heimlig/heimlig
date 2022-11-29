@@ -1,9 +1,8 @@
-use crate::common::jobs::Response;
 use crate::common::jobs::Response::GetRandom;
+use crate::common::jobs::{Error, Response};
 use crate::common::limits::MAX_RANDOM_SIZE;
 use crate::common::pool::Pool;
 use crate::crypto::rng::{EntropySource, Rng};
-use crate::host::scheduler::Error;
 use rand_core::RngCore;
 
 pub struct RngWorker<'a, E: EntropySource> {

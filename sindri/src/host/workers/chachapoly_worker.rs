@@ -1,6 +1,5 @@
-use crate::common::jobs::Response;
+use crate::common::jobs::{Error, Response};
 use crate::common::pool::{Pool, PoolChunk};
-use crate::host::scheduler::Error;
 
 pub struct ChachaPolyWorker<'a> {
     pub pool: &'a Pool,
@@ -34,7 +33,7 @@ impl<'a> ChachaPolyWorker<'a> {
                         tag.as_slice_mut().copy_from_slice(computed_tag.as_slice());
                         Response::EncryptChaChaPoly { ciphertext, tag }
                     }
-                    Err(_) => Response::Error(Error::Encrypt),
+                    Err(e) => Response::Error(Error::Crypto(e)),
                 }
             }
         }
@@ -59,8 +58,8 @@ impl<'a> ChachaPolyWorker<'a> {
             plaintext.as_slice_mut(),
             tag.as_slice(),
         ) {
-            Ok(_) => Response::DecryptChaChaPoly { plaintext },
-            Err(_) => Response::Error(Error::Encrypt),
+            Ok(()) => Response::DecryptChaChaPoly { plaintext },
+            Err(e) => Response::Error(Error::Crypto(e)),
         }
     }
 }

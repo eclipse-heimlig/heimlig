@@ -19,15 +19,22 @@ type BigChunk = heapless::Vec<u8, BIG_CHUNK_SIZE>;
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Error {
+    /// Failed to allocate memory.
     Alloc,
-    BufferSize,
+    /// The provided memory buffer was too small.
+    BufferTooSmall,
 }
 
+/// A chunk of memory allocated from a [Pool].
 #[derive(Eq, PartialEq, Debug)]
 pub enum PoolChunk {
+    /// A chunk of size [STACK_CHUNK_SIZE] allocated on the stack.
     StackChunk(StackChunk),
+    /// A chunk of size [SMALL_CHUNK_SIZE] allocated from a [Pool].
     SmallChunk(Box<SmallChunk, Init>),
+    /// A chunk of size [MEDIUM_CHUNK_SIZE] allocated from a [Pool].
     MediumChunk(Box<MediumChunk, Init>),
+    /// A chunk of size [BIG_CHUNK_SIZE] allocated from a [Pool].
     BigChunk(Box<BigChunk, Init>),
 }
 
@@ -76,10 +83,10 @@ impl PoolChunk {
     }
 }
 
-/// Memory pool providing `PoolChunk`s of different sizes.
-/// The portability guarantees are the same as heapless::pool
-/// <https://docs.rs/heapless/latest/heapless/pool/index.html#portability>.
-/// TODO: Replace with a multi-core safe allocator that operates on static memory.
+// TODO: Replace with a multi-core safe allocator that operates on static memory.
+/// Memory pool providing [PoolChunk]s of different sizes.
+/// The portability guarantees are the same as
+/// [heapless::pool](https://docs.rs/heapless/latest/heapless/pool/index.html#portability).
 pub struct Pool {
     small: heapless::pool::Pool<SmallChunk>,
     medium: heapless::pool::Pool<MediumChunk>,
@@ -89,15 +96,15 @@ pub struct Pool {
 impl TryFrom<&'static mut Memory> for Pool {
     type Error = Error;
 
-    /// Attempt to create a pool from a given static memory region.
-    /// The memory must have a size of at least `required_memory()` many bytes.
+    /// Attempt to create a pool from a given static [Memory] region.
     ///
     /// # Arguments
     ///
     /// * `memory`: Static memory region to be used by this pool.
-    ///             After this call, modifying the memory from outside the pool is unsafe.
+    /// The size must be equal or greater than the return values of [required_memory()](Pool::required_memory()).
+    /// After this call, modifying the memory from outside the pool is unsafe.
     ///
-    /// returns: Result<(), Error> If the memory region is too small, `Err(Error::BufferSize)` is returned.
+    /// returns: The created [Pool] or an [Error] if the memory region is too small.
     ///
     /// # Examples
     ///
@@ -111,7 +118,7 @@ impl TryFrom<&'static mut Memory> for Pool {
         let medium_size = Self::required_medium_memory();
         let big_size = Self::required_big_memory();
         if memory.len() < small_size + medium_size + big_size {
-            return Err(Error::BufferSize);
+            return Err(Error::BufferTooSmall);
         }
 
         let pool = Pool {
@@ -139,7 +146,7 @@ impl Pool {
     ///
     /// * `size`: The minimum number of bytes that the allocated chunk must hold.
     ///
-    /// returns: Result<PoolChunk, Error> The requested `PoolChunk` or `Err(Error::Alloc)`
+    /// returns: The requested [PoolChunk] or [Error::Alloc].
     pub fn alloc(&self, size: usize) -> Result<PoolChunk, Error> {
         if size <= STACK_CHUNK_SIZE {
             // Do not use the pool but allocate on the stack
@@ -179,7 +186,7 @@ impl Pool {
         Err(Error::Alloc)
     }
 
-    /// Returns the amount of bytes required for a successful call to `init()`
+    /// Returns the amount of bytes required for a successful call to `init()`.
     pub const fn required_memory() -> usize {
         // Account for extra space required due to element alignment
         Self::required_small_memory() + Self::required_medium_memory() + Self::required_big_memory()
