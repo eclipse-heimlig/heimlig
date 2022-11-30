@@ -4,9 +4,11 @@ mod test {
     use sindri::client::api::HsmApi;
     use sindri::common::jobs::{Request, Response};
     use sindri::common::pool::{Memory, Pool};
+    use sindri::config::keystore::{KEY1, KEY2, KEY3};
     use sindri::crypto::rng::{EntropySource, Rng};
     use sindri::host::core::{Channel, Core};
-    use sindri::{client, host};
+    use sindri::host::keystore::MemoryKeyStore;
+    use sindri::{client, config, host};
 
     const QUEUE_SIZE: usize = 8;
 
@@ -92,7 +94,13 @@ mod test {
         }
 
         // Core
-        let mut core = Core::new(&pool, rng, channels);
+        let key_infos = [KEY1, KEY2, KEY3];
+        let mut key_store = MemoryKeyStore::<
+            { config::keystore::TOTAL_SIZE },
+            { config::keystore::NUM_KEYS },
+        >::try_new(&key_infos)
+        .expect("failed to create key store");
+        let mut core = Core::new(&pool, rng, channels, Some(&mut key_store));
 
         // Send request
         let random_size = 16;

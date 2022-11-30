@@ -1,6 +1,21 @@
+use crate::host::keystore::KeyInfo;
+
 /// Maximum number of items in the key store
-pub const NUM_ITEMS: usize = 12;
-/// List of item sizes in the key store
-pub const ITEM_SIZES: [usize; NUM_ITEMS] = [16, 16, 16, 32, 32, 32, 64, 64, 64, 128, 128, 128];
+pub const NUM_KEYS: usize = 3;
+/// Maximum size of a key in the key store
+pub const MAX_KEY_SIZE: usize = 128;
 /// Total size of the key store
-pub const TOTAL_SIZE: usize = 3 * 16 + 3 * 32 + 3 * 64 + 3 * 128;
+pub const TOTAL_SIZE: usize = 16 + 32 + 128;
+
+pub const KEY1: KeyInfo = KeyInfo {
+    id: 0,
+    max_size: 16,
+};
+pub const KEY2: KeyInfo = KeyInfo {
+    id: 1,
+    max_size: 32,
+};
+pub const KEY3: KeyInfo = KeyInfo {
+    id: 2,
+    max_size: 128,
+};

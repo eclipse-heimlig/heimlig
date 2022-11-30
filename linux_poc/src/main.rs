@@ -95,7 +95,7 @@ async fn host_task(
         panic!("List of return channels is too small");
     }
     let rng = Rng::new(EntropySource {}, None);
-    let mut core = Core::new(&pool, rng, channels);
+    let mut core = Core::new_without_key_store(&pool, rng, channels);
 
     loop {
         core.process_next().expect("failed to process next request");
