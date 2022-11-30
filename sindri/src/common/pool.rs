@@ -1,21 +1,13 @@
+use crate::config;
 use core::mem;
 use core::ops::{Deref, DerefMut};
 use heapless::pool::{Box, Init, Node};
 
-// TODO: Make configurable by integration code
-pub const SMALL_CHUNKS: usize = 16;
-pub const MEDIUM_CHUNKS: usize = 8;
-pub const BIG_CHUNKS: usize = 4;
-pub const STACK_CHUNK_SIZE: usize = 32; // Allocated on the stack instead of the pool
-pub const SMALL_CHUNK_SIZE: usize = 128;
-pub const MEDIUM_CHUNK_SIZE: usize = 512;
-pub const BIG_CHUNK_SIZE: usize = 1500; // Ethernet MTU
-
 pub type Memory = [u8; Pool::required_memory()];
-type StackChunk = heapless::Vec<u8, STACK_CHUNK_SIZE>;
-type SmallChunk = heapless::Vec<u8, SMALL_CHUNK_SIZE>;
-type MediumChunk = heapless::Vec<u8, MEDIUM_CHUNK_SIZE>;
-type BigChunk = heapless::Vec<u8, BIG_CHUNK_SIZE>;
+type StackChunk = heapless::Vec<u8, { config::pool::STACK_CHUNK_SIZE }>;
+type SmallChunk = heapless::Vec<u8, { config::pool::SMALL_CHUNK_SIZE }>;
+type MediumChunk = heapless::Vec<u8, { config::pool::MEDIUM_CHUNK_SIZE }>;
+type BigChunk = heapless::Vec<u8, { config::pool::BIG_CHUNK_SIZE }>;
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Error {
@@ -136,7 +128,7 @@ impl TryFrom<&'static mut Memory> for Pool {
 }
 
 impl Pool {
-    pub const MAX_ALLOC_SIZE: usize = BIG_CHUNK_SIZE;
+    pub const MAX_ALLOC_SIZE: usize = config::pool::BIG_CHUNK_SIZE;
 
     /// Allocate and initialize a memory chunk from the pool.
     /// Requests for chunks smaller or equal than `STACK_CHUNK_SIZE` will use the stack instead of
@@ -148,7 +140,7 @@ impl Pool {
     ///
     /// returns: The requested [PoolChunk] or [Error::Alloc].
     pub fn alloc(&self, size: usize) -> Result<PoolChunk, Error> {
-        if size <= STACK_CHUNK_SIZE {
+        if size <= config::pool::STACK_CHUNK_SIZE {
             // Do not use the pool but allocate on the stack
             let mut chunk = StackChunk::new();
             chunk
@@ -156,7 +148,7 @@ impl Pool {
                 .expect("Failed to allocate guaranteed capacity");
             return Ok(PoolChunk::StackChunk(chunk));
         }
-        if size <= SMALL_CHUNK_SIZE {
+        if size <= config::pool::SMALL_CHUNK_SIZE {
             if let Some(chunk) = self.small.alloc() {
                 let mut chunk = chunk.init(Default::default());
                 chunk
@@ -165,7 +157,7 @@ impl Pool {
                 return Ok(PoolChunk::SmallChunk(chunk));
             }
         }
-        if size <= MEDIUM_CHUNK_SIZE {
+        if size <= config::pool::MEDIUM_CHUNK_SIZE {
             if let Some(chunk) = self.medium.alloc() {
                 let mut chunk = chunk.init(Default::default());
                 chunk
@@ -174,7 +166,7 @@ impl Pool {
                 return Ok(PoolChunk::MediumChunk(chunk));
             }
         }
-        if size <= BIG_CHUNK_SIZE {
+        if size <= config::pool::BIG_CHUNK_SIZE {
             if let Some(chunk) = self.big.alloc() {
                 let mut chunk = chunk.init(Default::default());
                 chunk
@@ -193,23 +185,27 @@ impl Pool {
     }
 
     const fn required_small_memory() -> usize {
-        SMALL_CHUNKS * mem::size_of::<Node<SmallChunk>>() + mem::align_of::<Node<SmallChunk>>()
+        config::pool::SMALL_CHUNKS * mem::size_of::<Node<SmallChunk>>()
+            + mem::align_of::<Node<SmallChunk>>()
     }
 
     const fn required_medium_memory() -> usize {
-        MEDIUM_CHUNKS * mem::size_of::<Node<MediumChunk>>() + mem::align_of::<Node<MediumChunk>>()
+        config::pool::MEDIUM_CHUNKS * mem::size_of::<Node<MediumChunk>>()
+            + mem::align_of::<Node<MediumChunk>>()
     }
 
     const fn required_big_memory() -> usize {
-        BIG_CHUNKS * mem::size_of::<Node<BigChunk>>() + mem::align_of::<Node<BigChunk>>()
+        config::pool::BIG_CHUNKS * mem::size_of::<Node<BigChunk>>()
+            + mem::align_of::<Node<BigChunk>>()
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::common::pool::{
-        Memory, Pool, PoolChunk, BIG_CHUNKS, BIG_CHUNK_SIZE, MEDIUM_CHUNKS, MEDIUM_CHUNK_SIZE,
-        SMALL_CHUNKS, SMALL_CHUNK_SIZE,
+    use crate::common::pool::{Memory, Pool, PoolChunk};
+    use crate::config::pool::{
+        BIG_CHUNKS, BIG_CHUNK_SIZE, MEDIUM_CHUNKS, MEDIUM_CHUNK_SIZE, SMALL_CHUNKS,
+        SMALL_CHUNK_SIZE,
     };
 
     #[test]

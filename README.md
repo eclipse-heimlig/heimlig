@@ -37,7 +37,7 @@ Sindri implements common cryptographic algorithms:
 The current main limitations include:
 
 - Most cryptographic algorithms are implemented in software only.
-- A storage interface for persisting key material is missing.
+- Persistence storage for key material is missing.
 - The code has not been audited by security experts.
 
 An example implementation is available for the
