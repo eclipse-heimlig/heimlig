@@ -6,9 +6,19 @@ pub struct ChachaPolyWorker<'a> {
 }
 
 impl<'a> ChachaPolyWorker<'a> {
-    pub fn encrypt(
+    pub fn encrypt_external_key(
         &mut self,
         key: PoolChunk,
+        nonce: PoolChunk,
+        aad: Option<PoolChunk>,
+        ciphertext: PoolChunk,
+    ) -> Response {
+        self.encrypt(key.as_slice(), nonce, aad, ciphertext)
+    }
+
+    pub fn encrypt(
+        &mut self,
+        key: &[u8],
         nonce: PoolChunk,
         aad: Option<PoolChunk>,
         mut ciphertext: PoolChunk,
@@ -21,7 +31,7 @@ impl<'a> ChachaPolyWorker<'a> {
                     None => &[] as &[u8],
                 };
                 match crate::crypto::chacha20poly1305::encrypt_in_place_detached(
-                    key.as_slice(),
+                    key,
                     nonce.as_slice(),
                     aad,
                     ciphertext.as_slice_mut(),
@@ -39,9 +49,20 @@ impl<'a> ChachaPolyWorker<'a> {
         }
     }
 
-    pub fn decrypt(
+    pub fn decrypt_external_key(
         &mut self,
         key: PoolChunk,
+        nonce: PoolChunk,
+        aad: Option<PoolChunk>,
+        plaintext: PoolChunk,
+        tag: PoolChunk,
+    ) -> Response {
+        self.decrypt(key.as_slice(), nonce, aad, plaintext, tag)
+    }
+
+    pub fn decrypt(
+        &mut self,
+        key: &[u8],
         nonce: PoolChunk,
         aad: Option<PoolChunk>,
         mut plaintext: PoolChunk,
@@ -52,7 +73,7 @@ impl<'a> ChachaPolyWorker<'a> {
             None => &[] as &[u8],
         };
         match crate::crypto::chacha20poly1305::decrypt_in_place_detached(
-            key.as_slice(),
+            key,
             nonce.as_slice(),
             aad,
             plaintext.as_slice_mut(),

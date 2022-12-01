@@ -1,6 +1,7 @@
 use crate::common::jobs::{Request, Response};
 use crate::common::pool::Pool;
 use crate::crypto::rng::{EntropySource, Rng};
+use crate::host::keystore::KeyStore;
 use crate::host::scheduler::{Job, Scheduler};
 use heapless::Vec;
 
@@ -58,22 +59,41 @@ pub struct Core<
 }
 
 impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
-    /// Create a new HSM core. The core accepts requests and forwards the responses once they are ready.
+    /// Create a new HSM core.
+    /// The core accepts requests and forwards the responses once they are ready.
     ///
     /// # Arguments
     ///
     /// * `rng`: Random number generator (RNG) used to seed the core RNG.
     /// * `response_channels`: List of [Channel]s to send responses back to the clients.
+    /// * `key_store`: The [KeyStore] to hold cryptographic key material.
     pub fn new(
         pool: &'a Pool,
         rng: Rng<E>,
         channels: Vec<Channel<'a>, MAX_CLIENTS>,
+        key_store: Option<&'a mut dyn KeyStore>,
     ) -> Core<'a, E, MAX_CLIENTS> {
         Core {
-            scheduler: Scheduler::new(pool, rng),
+            scheduler: Scheduler::new(pool, rng, key_store),
             channels,
             last_channel_id: 0,
         }
+    }
+
+    /// Create a new HSM core.
+    /// This variant does not configure a [KeyStore] so this core will not be able to store
+    /// cryptographic material.
+    ///
+    /// # Arguments
+    ///
+    /// * `rng`: Random number generator (RNG) used to seed the core RNG.
+    /// * `response_channels`: List of [Channel]s to send responses back to the clients.
+    pub fn new_without_key_store(
+        pool: &'a Pool,
+        rng: Rng<E>,
+        channels: Vec<Channel<'a>, MAX_CLIENTS>,
+    ) -> Core<'a, E, MAX_CLIENTS> {
+        Self::new(pool, rng, channels, None)
     }
 
     /// Search all input channels for a new request and process it.
@@ -120,8 +140,11 @@ impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
 mod tests {
     use super::*;
     use crate::common::pool::Memory;
+    use crate::config;
+    use crate::config::keystore::{KEY1, KEY2, KEY3};
     use crate::crypto::rng;
     use crate::host::core::Sender;
+    use crate::host::keystore::MemoryKeyStore;
     use heapless::spsc::{Consumer, Producer, Queue};
 
     const QUEUE_SIZE: usize = 8;
@@ -179,10 +202,10 @@ mod tests {
         let rng = Rng::new(entropy, None);
 
         // Queues
-        let mut client1_to_host: Queue<Request, QUEUE_SIZE> = Queue::<Request, QUEUE_SIZE>::new();
-        let mut client2_to_host: Queue<Request, QUEUE_SIZE> = Queue::<Request, QUEUE_SIZE>::new();
-        let mut host_to_client1: Queue<Response, QUEUE_SIZE> = Queue::<Response, QUEUE_SIZE>::new();
-        let mut host_to_client2: Queue<Response, QUEUE_SIZE> = Queue::<Response, QUEUE_SIZE>::new();
+        let mut client1_to_host: Queue<Request, QUEUE_SIZE> = Queue::new();
+        let mut client2_to_host: Queue<Request, QUEUE_SIZE> = Queue::new();
+        let mut host_to_client1: Queue<Response, QUEUE_SIZE> = Queue::new();
+        let mut host_to_client2: Queue<Response, QUEUE_SIZE> = Queue::new();
         let (c1_req_tx, c1_req_rx) = client1_to_host.split();
         let (c2_req_tx, c2_req_rx) = client2_to_host.split();
         let (c1_resp_tx, c1_resp_rx) = host_to_client1.split();
@@ -218,7 +241,13 @@ mod tests {
         }
 
         // Core
-        let mut core = Core::new(&pool, rng, channels);
+        let key_infos = [KEY1, KEY2, KEY3];
+        let mut key_store = MemoryKeyStore::<
+            { config::keystore::TOTAL_SIZE },
+            { config::keystore::NUM_KEYS },
+        >::try_new(&key_infos)
+        .expect("failed to create key store");
+        let mut core = Core::new(&pool, rng, channels, Some(&mut key_store));
 
         // Send request from client 1
         let size = 65; // Exceed size of a small chunk

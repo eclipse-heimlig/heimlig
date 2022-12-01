@@ -42,8 +42,8 @@ pub trait KeyStore {
 
 #[derive(Debug)]
 pub struct KeyInfo {
-    id: Id,
-    max_size: usize,
+    pub id: Id,
+    pub max_size: usize,
 }
 
 #[derive(Debug)]
@@ -54,22 +54,22 @@ struct KeyInfoInternal {
     actual_size: usize,
 }
 
-pub struct MemoryKeyStore<const STORAGE_SIZE: usize, const MAX_ITEMS: usize> {
+pub struct MemoryKeyStore<const STORAGE_SIZE: usize, const MAX_KEYS: usize> {
     storage: [u8; STORAGE_SIZE],
-    items: heapless::Vec<KeyInfoInternal, MAX_ITEMS>,
+    infos: heapless::Vec<KeyInfoInternal, MAX_KEYS>,
 }
 
-impl<const STORAGE_SIZE: usize, const MAX_ITEMS: usize> MemoryKeyStore<STORAGE_SIZE, MAX_ITEMS> {
-    pub fn try_new(ids_and_sizes: &[KeyInfo]) -> Result<Self, Error> {
+impl<const STORAGE_SIZE: usize, const MAX_KEYS: usize> MemoryKeyStore<STORAGE_SIZE, MAX_KEYS> {
+    pub fn try_new(key_infos: &[KeyInfo]) -> Result<Self, Error> {
         // Check input sizes
-        let total_size: usize = ids_and_sizes.iter().map(|key_info| key_info.max_size).sum();
-        if ids_and_sizes.len() > MAX_ITEMS || total_size > STORAGE_SIZE {
+        let total_size: usize = key_infos.iter().map(|key_info| key_info.max_size).sum();
+        if key_infos.len() > MAX_KEYS || total_size > STORAGE_SIZE {
             return Err(Error::KeyStoreTooSmall);
         }
 
         // Check for duplicate IDs
-        let mut sorted_ids_and_sizes: heapless::Vec<&KeyInfo, MAX_ITEMS> =
-            ids_and_sizes.iter().collect();
+        let mut sorted_ids_and_sizes: heapless::Vec<&KeyInfo, MAX_KEYS> =
+            key_infos.iter().collect();
         sorted_ids_and_sizes.sort_unstable_by_key(|key_info| key_info.id);
         let sorted_ids1 = sorted_ids_and_sizes.iter().map(|key_info| key_info.id);
         let sorted_ids2 = sorted_ids_and_sizes.iter().map(|key_info| key_info.id);
@@ -82,12 +82,12 @@ impl<const STORAGE_SIZE: usize, const MAX_ITEMS: usize> MemoryKeyStore<STORAGE_S
         // Create new key store
         let mut key_store = MemoryKeyStore {
             storage: [0u8; STORAGE_SIZE],
-            items: Default::default(),
+            infos: Default::default(),
         };
         let mut offset = 0;
         for key_info in sorted_ids_and_sizes.iter() {
             key_store
-                .items
+                .infos
                 .push(KeyInfoInternal {
                     id: key_info.id,
                     offset,
@@ -101,18 +101,18 @@ impl<const STORAGE_SIZE: usize, const MAX_ITEMS: usize> MemoryKeyStore<STORAGE_S
     }
 }
 
-impl<const STORAGE_SIZE: usize, const NUM_ITEMS: usize> KeyStore
-    for MemoryKeyStore<STORAGE_SIZE, NUM_ITEMS>
+impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
+    for MemoryKeyStore<STORAGE_SIZE, NUM_KEYS>
 {
     fn is_stored(&self, id: Id) -> bool {
-        match self.items.iter().find(|key_info| key_info.id == id) {
+        match self.infos.iter().find(|key_info| key_info.id == id) {
             None => false,
             Some(key_info) => key_info.actual_size > 0,
         }
     }
 
     fn size(&self, id: Id) -> Result<usize, Error> {
-        match self.items.iter().find(|key_info| key_info.id == id) {
+        match self.infos.iter().find(|key_info| key_info.id == id) {
             None => Err(Error::InvalidKeyId),
             Some(key_info) => {
                 if key_info.actual_size == 0 {
@@ -124,7 +124,7 @@ impl<const STORAGE_SIZE: usize, const NUM_ITEMS: usize> KeyStore
     }
 
     fn store(&mut self, id: Id, src: &[u8]) -> Result<(), Error> {
-        match self.items.iter_mut().find(|key_info| key_info.id == id) {
+        match self.infos.iter_mut().find(|key_info| key_info.id == id) {
             None => Err(Error::InvalidKeyId),
             Some(key_info) => {
                 if src.len() > key_info.max_size {
@@ -144,7 +144,7 @@ impl<const STORAGE_SIZE: usize, const NUM_ITEMS: usize> KeyStore
     }
 
     fn get(&self, id: Id, dest: &mut [u8]) -> Result<usize, Error> {
-        match self.items.iter().find(|key_info| key_info.id == id) {
+        match self.infos.iter().find(|key_info| key_info.id == id) {
             None => Err(Error::InvalidKeyId),
             Some(key_info) => {
                 if key_info.actual_size == 0 {
