@@ -8,7 +8,7 @@ use heapless::Vec;
 use log::{error, info};
 use rand::RngCore;
 use sindri::client;
-use sindri::client::api::HsmApi;
+use sindri::client::api::Api;
 use sindri::common::jobs::{Request, Response};
 use sindri::common::pool::Memory;
 use sindri::common::pool::Pool;
@@ -110,10 +110,10 @@ async fn client_task(
 ) {
     let mut request_sender = RequestSender { sender: req_tx };
     let mut response_receiver = ResponseReceiver { receiver: resp_rx };
-    let mut hsm = HsmApi::new(&mut request_sender, &mut response_receiver);
+    let mut hsm = Api::new(&mut request_sender, &mut response_receiver);
 
     loop {
-        // Send requests
+        // Send request
         Timer::after(Duration::from_millis(1000)).await;
         let random_size = 16;
         info!(target: "CLIENT", "Sending request: random data (size={})", random_size);
@@ -122,20 +122,22 @@ async fn client_task(
 
         // Receive response
         loop {
-            if let Some(response) = hsm.recv_response() {
-                match response {
-                    Response::GetRandom { data } => {
-                        info!(target: "CLIENT",
-                            "Received response: random data (size={}): {}",
-                            data.len(),
-                            hex::encode(data.as_slice())
-                        );
-                        break;
-                    }
-                    _ => error!(target: "CLIENT", "Unexpected response type"),
+            match hsm.recv_response() {
+                None => Timer::after(Duration::from_millis(10)).await, // Continue waiting for response
+                Some(response) => {
+                    match response {
+                        Response::GetRandom { data } => {
+                            info!(target: "CLIENT",
+                                "Received response: random data (size={}): {}",
+                                data.len(),
+                                hex::encode(data.as_slice())
+                            );
+                            break; // Send next request
+                        }
+                        _ => error!(target: "CLIENT", "Unexpected response type"),
+                    };
                 }
             }
-            Timer::after(Duration::from_millis(10)).await;
         }
     }
 }
