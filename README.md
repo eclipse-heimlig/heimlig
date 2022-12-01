@@ -103,6 +103,23 @@ This has implications on the security requirements on the applications running a
 Sindri as they have access to internals of the HSM.
 Nevertheless, such a setup can be useful if the security requirements of the project allow for it.
 
+## Integration
+
+To add Sindri to a project, several hardware-specific components have to be provided.
+These include:
+
+- Communication channels between clients and the Sindri core.
+- An instance of a memory `Pool`.
+This usually requires a statically allocated memory region.
+- An entropy source to instantiate a random number generator (`Rng`) instance.
+- Optionally a key store that implements the `KeyStore` interface.
+A RAM-based `MemoryKeyStore` is provided for testing purposes.
+If no key store is provided, necessary keys must be sent by the clients as part of their requests.
+
+The integrator can then go on to instantiate a `host::Core` on the HSM side
+and one or more `client::Api` instances for the different clients.
+Instantiating these structs requires the previously mentioned components.
+
 ## License
 
 Sindri is dual-licensed under the

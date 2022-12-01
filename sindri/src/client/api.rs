@@ -40,15 +40,15 @@ impl<'a> Channel<'a> {
 }
 
 /// An interface to send [Request]s to the HSM core and receive [Response]es from it.
-pub struct HsmApi<'a> {
+pub struct Api<'a> {
     sender: &'a mut dyn Sender,
     receiver: &'a mut dyn Receiver,
 }
 
-impl<'a> HsmApi<'a> {
+impl<'a> Api<'a> {
     /// Create a new instance of the HSM API.
     pub fn new(sender: &'a mut dyn Sender, receiver: &'a mut dyn Receiver) -> Self {
-        HsmApi { sender, receiver }
+        Api { sender, receiver }
     }
 
     /// Request `size` many random bytes.
@@ -64,7 +64,7 @@ impl<'a> HsmApi<'a> {
 
 #[cfg(test)]
 mod test {
-    use crate::client::api::{Error, HsmApi, Receiver, Sender};
+    use crate::client::api::{Api, Error, Receiver, Sender};
     use crate::common::jobs::{Request, Response};
     use crate::common::pool::{Memory, Pool};
     use heapless::spsc::{Consumer, Producer, Queue};
@@ -104,7 +104,7 @@ mod test {
         let (mut resp_tx, resp_rx) = response_queue.split();
         let mut request_sender = RequestSender { sender: req_tx };
         let mut response_receiver = ResponseReceiver { receiver: resp_rx };
-        let mut hsm = HsmApi::new(&mut request_sender, &mut response_receiver);
+        let mut hsm = Api::new(&mut request_sender, &mut response_receiver);
 
         // Send request
         let random_len = 16;

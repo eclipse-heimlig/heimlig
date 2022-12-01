@@ -1,7 +1,7 @@
 mod test {
     use heapless::spsc::{Consumer, Producer, Queue};
     use heapless::Vec;
-    use sindri::client::api::HsmApi;
+    use sindri::client::api::Api;
     use sindri::common::jobs::{Request, Response};
     use sindri::common::pool::{Memory, Pool};
     use sindri::config::keystore::{KEY1, KEY2, KEY3};
@@ -84,7 +84,7 @@ mod test {
         let mut response_receiver = ResponseReceiver { receiver: resp_rx };
         let mut request_receiver = RequestReceiver { receiver: req_rx };
         let mut response_sender = ResponseSender { sender: resp_tx };
-        let mut hsm = HsmApi::new(&mut request_sender, &mut response_receiver);
+        let mut hsm = Api::new(&mut request_sender, &mut response_receiver);
         let mut channels = Vec::<Channel, 2>::new();
         if channels
             .push(Channel::new(&mut response_sender, &mut request_receiver))

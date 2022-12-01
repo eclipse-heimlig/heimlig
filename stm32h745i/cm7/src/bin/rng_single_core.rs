@@ -12,7 +12,7 @@ use heapless::spsc::{Consumer, Producer, Queue};
 use heapless::Vec;
 use rand_core::RngCore;
 use sindri::client;
-use sindri::client::api::HsmApi;
+use sindri::client::api::Api;
 use sindri::common::jobs::{Request, Response};
 use sindri::common::pool::Memory;
 use sindri::common::pool::Pool;
@@ -129,7 +129,7 @@ async fn client_task(
     info!("Client task started");
     let mut request_sender = RequestSender { sender: req_tx };
     let mut response_receiver = ResponseReceiver { receiver: resp_rx };
-    let mut hsm = HsmApi::new(&mut request_sender, &mut response_receiver);
+    let mut hsm = Api::new(&mut request_sender, &mut response_receiver);
 
     loop {
         // Send requests
