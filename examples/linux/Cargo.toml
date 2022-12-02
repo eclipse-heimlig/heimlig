@@ -1,10 +1,12 @@
 [package]
+name = "linux"
 edition = "2021"
-name = "linux_poc"
+authors = ["ESRLabs"]
 version = "0.1.0"
+license = "MIT OR Apache-2.0"
 
 [[bin]]
-name = "linux_poc"
+name = "linux"
 path = "src/main.rs"
 
 [dependencies]
@@ -17,4 +19,4 @@ hex = "0.4"
 log = "0.4"
 rand = "0.8"
 simple_logger = "4"
-sindri = { path = "../sindri" }
+sindri = { path = "../../sindri" }

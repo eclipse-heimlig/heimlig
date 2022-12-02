@@ -1,7 +1,9 @@
 [package]
-edition = "2021"
 name = "stm32h745i-cm4"
+edition = "2021"
+authors = ["ESRLabs"]
 version = "0.1.0"
+license = "MIT OR Apache-2.0"
 
 [[bin]]
 name = "blinky"
@@ -21,4 +23,4 @@ heapless = { version = "0.7", default-features = false }
 panic-probe = { version = "0.3", features = ["print-defmt"] }
 rand = { version = "0.8", default-features = false }
 rand_core = { version = "0.6", default-features = false }
-sindri = { path = "../../sindri", default-features = false }
+sindri = { path = "../../../sindri", default-features = false }

@@ -34,7 +34,7 @@ Sindri implements common cryptographic algorithms:
 - Random number generation
   ([ChaCha20Rng](https://docs.rs/rand_chacha/latest/rand_chacha/struct.ChaCha20Rng.html))
 
-The current main limitations include:
+Current main limitations include:
 
 - Most cryptographic algorithms are implemented in software only.
 - Persistence storage for key material is missing.
@@ -51,7 +51,7 @@ discovery board as well as Linux (for development).
 The fastest seeing Sindri working is to run the Linux example:
 
 ```bash
-cd linux_poc
+cd examples/linux
 cargo run
 ```
 
@@ -59,7 +59,7 @@ Example output:
 
 ```output
     Finished dev [unoptimized + debuginfo] target(s) in 0.07s
-     Running `target/debug/linux_poc`
+     Running `target/debug/linux`
 2022-11-24T13:30:19.419Z INFO  [CLIENT] Sending request: random data (size=16)
 2022-11-24T13:30:19.429Z INFO  [CLIENT] Received response: random data (size=16): 2831804f4db41f98b2fe24bdde36372f
 ```
