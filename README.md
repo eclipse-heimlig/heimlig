@@ -34,7 +34,7 @@ Sindri implements common cryptographic algorithms:
 - Random number generation
   ([ChaCha20Rng](https://docs.rs/rand_chacha/latest/rand_chacha/struct.ChaCha20Rng.html))
 
-The current main limitations include:
+Current main limitations include:
 
 - Most cryptographic algorithms are implemented in software only.
 - Persistence storage for key material is missing.

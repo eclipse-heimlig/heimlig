@@ -1,5 +1,11 @@
 # STM32H745I-DISCO
 
+This example runs a Sindri core and a client in separate
+[Embassy](https://embassy.dev/)
+tasks on the Cortex-M7 of a
+[STM32H745I-DISCO](https://www.st.com/en/evaluation-tools/stm32h745i-disco.html)
+discovery board.
+
 ## Quickstart
 
 1. Obtain a
@@ -36,6 +42,15 @@ cargo run --bin rng_single_core
 1.028442 INFO  Received response: random data (size=16): [6f, df, 12, d2, ce, 89, 80, 13, 92, 17, 43, 6c, af, 53, 89, 18]
 └─ rng_single_core::__client_task_task::{async_fn#0} @ src/bin/rng_single_core.rs:146
 ```
+
+## Limitations
+
+The motivation for the choice of the
+[STM32H745I-DISCO](https://www.st.com/en/evaluation-tools/stm32h745i-disco.html)
+board is the fact that it features both a Cortex-M4 and a Cortex-M7 microprocessor.
+This allows for a setup where one processor runs the Sindri core and the other one acts as a client.
+However, due to the limited multi-core support, the current setup runs both as separate tasks on a
+single core.
 
 ## Debugging on STM32H745I-DISCO
 
