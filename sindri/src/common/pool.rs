@@ -20,13 +20,13 @@ pub enum Error {
 /// A chunk of memory allocated from a [Pool].
 #[derive(Eq, PartialEq, Debug)]
 pub enum PoolChunk {
-    /// A chunk of size [STACK_CHUNK_SIZE] allocated on the stack.
+    /// A memory chunk allocated on the stack.
     StackChunk(StackChunk),
-    /// A chunk of size [SMALL_CHUNK_SIZE] allocated from a [Pool].
+    /// A small memory chunk allocated from a [Pool].
     SmallChunk(Box<SmallChunk, Init>),
-    /// A chunk of size [MEDIUM_CHUNK_SIZE] allocated from a [Pool].
+    /// A medium sized memory chunk allocated from a [Pool].
     MediumChunk(Box<MediumChunk, Init>),
-    /// A chunk of size [BIG_CHUNK_SIZE] allocated from a [Pool].
+    /// A big memory chunk allocated from a [Pool].
     BigChunk(Box<BigChunk, Init>),
 }
 
