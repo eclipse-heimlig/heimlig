@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        directory: [./sindri, ./examples/linux, ./stm32h745i/cm4, ./stm32h745i/cm7]
+        directory: [./sindri, ./examples/linux, ./examples/stm32h745i/cm4, ./examples/stm32h745i/cm7]
     steps:
       - uses: actions/checkout@v2
       - name: Install Rust toolchain
@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        directory: [./sindri, ./examples/linux, ./stm32h745i/cm4, ./stm32h745i/cm7]
+        directory: [./sindri, ./examples/linux, ./examples/stm32h745i/cm4, ./examples/stm32h745i/cm7]
     steps:
       - uses: actions/checkout@v1
       - name: Install Rust toolchain
@@ -90,9 +90,9 @@ jobs:
           target: thumbv7em-none-eabihf
       - name: Build Cortex-M4 Binary
         run: |
-          cd ./stm32h745i/cm4
+          cd ./examples/stm32h745i/cm4
           cargo build --release
       - name: Build Cortex-M7 Binary
         run: |
-          cd ./stm32h745i/cm7
+          cd ./examples/stm32h745i/cm7
           cargo build --release
