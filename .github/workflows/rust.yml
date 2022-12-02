@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        directory: [./sindri, ./linux_poc, ./stm32h745i/cm4, ./stm32h745i/cm7]
+        directory: [./sindri, ./examples/linux, ./stm32h745i/cm4, ./stm32h745i/cm7]
     steps:
       - uses: actions/checkout@v2
       - name: Install Rust toolchain
@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        directory: [./sindri, ./linux_poc, ./stm32h745i/cm4, ./stm32h745i/cm7]
+        directory: [./sindri, ./examples/linux, ./stm32h745i/cm4, ./stm32h745i/cm7]
     steps:
       - uses: actions/checkout@v1
       - name: Install Rust toolchain
@@ -63,7 +63,7 @@ jobs:
         run: |
           cd ./sindri
           cargo test --release
-  build_linux_poc:
+  build_linux_example:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -75,9 +75,9 @@ jobs:
           default: true
       - name: Build Binary
         run: |
-          cd ./linux_poc
+          cd ./examples/linux
           cargo build --release
-  build_stm32h745i:
+  build_stm32h745i_example:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2

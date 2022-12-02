@@ -88,11 +88,11 @@ dependencies = [
 
 [[package]]
 name = "atomic-polyfill"
-version = "0.1.10"
+version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c041a8d9751a520ee19656232a18971f18946a7900f1520ee4400002244dd89"
+checksum = "e3ff7eb3f316534d83a8a2c3d1674ace8a5a71198eba31e2e2b597833f699b28"
 dependencies = [
- "critical-section 0.2.7",
+ "critical-section 1.1.1",
 ]
 
 [[package]]
@@ -153,12 +153,6 @@ name = "base16ct"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "349a06037c7bf932dd7e7d1f653678b2038b9ad46a74102f1fc7bd7872678cce"
-
-[[package]]
-name = "bit_field"
-version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dcb6dd1c2376d2e096796e234a70e17e94cc2d5d54ff8ce42b28cef1d0d359a4"
 
 [[package]]
 name = "bitfield"
@@ -403,14 +397,12 @@ dependencies = [
 
 [[package]]
 name = "critical-section"
-version = "0.2.7"
+version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95da181745b56d4bd339530ec393508910c909c784e8962d15d722bacf0bcbcd"
+checksum = "c1706d332edc22aef4d9f23a6bb1c92360a403013c291af51247a737472dcae6"
 dependencies = [
  "bare-metal 1.0.0",
- "cfg-if",
- "cortex-m",
- "riscv",
+ "critical-section 1.1.1",
 ]
 
 [[package]]
@@ -559,11 +551,11 @@ checksum = "0db23d29972d99baa3de2ee2ae3f104c10564a6d05a346eb3f4c4f2c0525a06e"
 
 [[package]]
 name = "defmt-rtt"
-version = "0.4.0"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "609923761264dd99ed9c7d209718cda4631c5fe84668e0f0960124cbb844c49f"
+checksum = "1d2cbbbd58847d508d97629b32cd9730a2d28532f71e219714614406029f18b1"
 dependencies = [
- "critical-section 1.1.1",
+ "critical-section 0.2.8",
  "defmt",
 ]
 
@@ -628,7 +620,7 @@ dependencies = [
 [[package]]
 name = "embassy-cortex-m"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy.git#cea29d7de3169cf2212128e0386e5d57053cc12d"
+source = "git+https://github.com/embassy-rs/embassy.git#f109e73c6d7ef2ad93102b7c8223f5cef30ef36f"
 dependencies = [
  "atomic-polyfill 1.0.1",
  "cfg-if",
@@ -643,7 +635,7 @@ dependencies = [
 [[package]]
 name = "embassy-embedded-hal"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy.git#cea29d7de3169cf2212128e0386e5d57053cc12d"
+source = "git+https://github.com/embassy-rs/embassy.git#f109e73c6d7ef2ad93102b7c8223f5cef30ef36f"
 dependencies = [
  "defmt",
  "embassy-sync",
@@ -658,7 +650,7 @@ dependencies = [
 [[package]]
 name = "embassy-executor"
 version = "0.1.1"
-source = "git+https://github.com/embassy-rs/embassy.git#cea29d7de3169cf2212128e0386e5d57053cc12d"
+source = "git+https://github.com/embassy-rs/embassy.git#f109e73c6d7ef2ad93102b7c8223f5cef30ef36f"
 dependencies = [
  "atomic-polyfill 1.0.1",
  "cfg-if",
@@ -673,12 +665,12 @@ dependencies = [
 [[package]]
 name = "embassy-futures"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy.git#cea29d7de3169cf2212128e0386e5d57053cc12d"
+source = "git+https://github.com/embassy-rs/embassy.git#f109e73c6d7ef2ad93102b7c8223f5cef30ef36f"
 
 [[package]]
 name = "embassy-hal-common"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy.git#cea29d7de3169cf2212128e0386e5d57053cc12d"
+source = "git+https://github.com/embassy-rs/embassy.git#f109e73c6d7ef2ad93102b7c8223f5cef30ef36f"
 dependencies = [
  "defmt",
  "num-traits",
@@ -687,7 +679,7 @@ dependencies = [
 [[package]]
 name = "embassy-macros"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy.git#cea29d7de3169cf2212128e0386e5d57053cc12d"
+source = "git+https://github.com/embassy-rs/embassy.git#f109e73c6d7ef2ad93102b7c8223f5cef30ef36f"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -698,7 +690,7 @@ dependencies = [
 [[package]]
 name = "embassy-net"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy.git#cea29d7de3169cf2212128e0386e5d57053cc12d"
+source = "git+https://github.com/embassy-rs/embassy.git#f109e73c6d7ef2ad93102b7c8223f5cef30ef36f"
 dependencies = [
  "as-slice 0.2.1",
  "atomic-polyfill 1.0.1",
@@ -717,7 +709,7 @@ dependencies = [
 [[package]]
 name = "embassy-stm32"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy.git#cea29d7de3169cf2212128e0386e5d57053cc12d"
+source = "git+https://github.com/embassy-rs/embassy.git#f109e73c6d7ef2ad93102b7c8223f5cef30ef36f"
 dependencies = [
  "atomic-polyfill 1.0.1",
  "bxcan",
@@ -757,7 +749,7 @@ dependencies = [
 [[package]]
 name = "embassy-sync"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy.git#cea29d7de3169cf2212128e0386e5d57053cc12d"
+source = "git+https://github.com/embassy-rs/embassy.git#f109e73c6d7ef2ad93102b7c8223f5cef30ef36f"
 dependencies = [
  "atomic-polyfill 1.0.1",
  "cfg-if",
@@ -771,7 +763,7 @@ dependencies = [
 [[package]]
 name = "embassy-time"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy.git#cea29d7de3169cf2212128e0386e5d57053cc12d"
+source = "git+https://github.com/embassy-rs/embassy.git#f109e73c6d7ef2ad93102b7c8223f5cef30ef36f"
 dependencies = [
  "atomic-polyfill 1.0.1",
  "cfg-if",
@@ -788,7 +780,7 @@ dependencies = [
 [[package]]
 name = "embassy-usb-driver"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy.git#cea29d7de3169cf2212128e0386e5d57053cc12d"
+source = "git+https://github.com/embassy-rs/embassy.git#f109e73c6d7ef2ad93102b7c8223f5cef30ef36f"
 dependencies = [
  "defmt",
 ]
@@ -1024,7 +1016,7 @@ version = "0.7.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db04bc24a18b9ea980628ecf00e6c0264f3c1426dac36c00cb49b6fbad8b0743"
 dependencies = [
- "atomic-polyfill 0.1.10",
+ "atomic-polyfill 0.1.11",
  "hash32",
  "rustc_version 0.4.0",
  "spin",
@@ -1116,12 +1108,6 @@ checksum = "3afef3b6eff9ce9d8ff9b3601125eec7f0c8cbac7abd14f355d053fa56c98768"
 dependencies = [
  "cpufeatures",
 ]
-
-[[package]]
-name = "lazy_static"
-version = "1.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "libc"
@@ -1419,27 +1405,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "riscv"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6907ccdd7a31012b70faf2af85cd9e5ba97657cc3987c4f13f8e4d2c2a088aba"
-dependencies = [
- "bare-metal 1.0.0",
- "bit_field",
- "riscv-target",
-]
-
-[[package]]
-name = "riscv-target"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88aa938cda42a0cf62a20cfe8d139ff1af20c2e681212b5b34adb5a58333f222"
-dependencies = [
- "lazy_static",
- "regex",
-]
-
-[[package]]
 name = "rustc_version"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1661,7 +1626,7 @@ dependencies = [
 [[package]]
 name = "stm32-metapac"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy.git#cea29d7de3169cf2212128e0386e5d57053cc12d"
+source = "git+https://github.com/embassy-rs/embassy.git#f109e73c6d7ef2ad93102b7c8223f5cef30ef36f"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",
@@ -1672,7 +1637,7 @@ dependencies = [
 [[package]]
 name = "stm32-metapac-gen"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/embassy.git#cea29d7de3169cf2212128e0386e5d57053cc12d"
+source = "git+https://github.com/embassy-rs/embassy.git#f109e73c6d7ef2ad93102b7c8223f5cef30ef36f"
 dependencies = [
  "chiptool",
  "proc-macro2",
@@ -1683,7 +1648,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "stm32h745i-cm7"
+name = "stm32h745i-cm4"
 version = "0.1.0"
 dependencies = [
  "cortex-m",
@@ -1730,9 +1695,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "1.0.104"
+version = "1.0.105"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ae548ec36cf198c0ef7710d3c230987c2d6d7bd98ad6edc0274462724c585ce"
+checksum = "60b9b43d45702de4c839cb9b51d9f529c5dd26a4aff255b42b1ebc03e88ee908"
 dependencies = [
  "proc-macro2",
  "quote",

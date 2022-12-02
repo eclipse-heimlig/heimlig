@@ -8,7 +8,7 @@ discovery board.
 2. Install
 [probe-run](https://crates.io/crates/probe-run):
 `cargo install probe-run`.
-3. Switch to the example directory: `cd stm32h745i/cm7`
+3. Switch to the example directory: `cd examples/stm32h745i/cm7`
 4. Run the example: `cargo run --bin rng_single_core`
 
 The output should look similar to the following:
@@ -52,7 +52,7 @@ Connect the board and run the following commands
 ([source](https://docs.rust-embedded.org/book/start/hardware.html#debugging)):
 
 ```sh
-cd stm32h745i
+cd examples/stm32h745i
 openocd
 ```
 
@@ -82,6 +82,6 @@ Info : Listening on port 3333 for gdb connections<br>
 In a second terminal run:
 
 ```sh
-cd stm32h745i
+cd examples/stm32h745i
 arm-none-eabi-gdb -x openocd.gdb cm7/target/thumbv7em-none-eabihf/debug/rng_single_core [--tui]
 ```
