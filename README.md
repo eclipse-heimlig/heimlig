@@ -6,10 +6,13 @@ for
 [embedded platforms](https://docs.rust-embedded.org/book/intro/no-std.html)
 written in Rust.
 
-Sindri is supposed to run on dedicated (embedded) hardware and provides cryptographic services to clients running on other cores:
+Sindri typically runs on dedicated hardware and provides cryptographic services to clients running
+on other cores.
+These include:
 
 - Generation and secure storage of cryptographic keys.
-- Key use (encryption, decryption, signing, verification) without revealing key material to the user.
+- Key use (encryption, decryption, signing, verification) without revealing key material to the
+client.
 - Generation of cryptographically secure random numbers
   ([CSPRNG](https://en.wikipedia.org/wiki/Cryptographically_secure_pseudorandom_number_generator)).
 
@@ -21,7 +24,7 @@ Sindri implements common cryptographic algorithms:
 
 - Symmetric encryption and decryption
   ([AES-CBC](https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Cipher_block_chaining_(CBC)),
-   [AES-GCM](https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Galois/counter_(GCM)), 
+   [AES-GCM](https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Galois/counter_(GCM)),
    [AES-CCM](https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Counter_with_cipher_block_chaining_message_authentication_code_(CCM)),
    [Chacha20Poly1305](https://en.wikipedia.org/wiki/ChaCha20-Poly1305))
 - Signing and verification
@@ -38,7 +41,7 @@ Current main limitations include:
 
 - Most cryptographic algorithms are implemented in software only.
 - Persistence storage for key material is missing.
-- The code has not been audited by security experts.
+- The code has not been independently audited by security experts.
 
 An example implementation is available for the
 [STM32H745XI](https://www.st.com/en/evaluation-tools/stm32h745i-disco.html)
