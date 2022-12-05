@@ -24,14 +24,14 @@ pub trait Receiver {
 }
 
 /// The core-side of a bidirectional channel between the HSM core and a client.
-pub struct Channel<'a> {
-    sender: &'a mut dyn Sender,
-    receiver: &'a mut dyn Receiver,
+pub struct Channel<'a, S: Sender, R: Receiver> {
+    sender: &'a mut S,
+    receiver: &'a mut R,
 }
 
-impl<'a> Channel<'a> {
+impl<'a, S: Sender, R: Receiver> Channel<'a, S, R> {
     /// Create a new core-side end of a channel.
-    pub fn new(sender: &'a mut dyn Sender, receiver: &'a mut dyn Receiver) -> Self {
+    pub fn new(sender: &'a mut S, receiver: &'a mut R) -> Self {
         Channel { sender, receiver }
     }
 
@@ -50,15 +50,19 @@ impl<'a> Channel<'a> {
 pub struct Core<
     'a,
     E: EntropySource,
+    S: Sender,
+    R: Receiver,
     const MAX_CLIENTS: usize = 8,
     const MAX_PENDING_RESPONSES: usize = 16,
 > {
     scheduler: Scheduler<'a, E>,
-    channels: Vec<Channel<'a>, MAX_CLIENTS>,
+    channels: Vec<Channel<'a, S, R>, MAX_CLIENTS>,
     last_channel_id: usize,
 }
 
-impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
+impl<'a, E: EntropySource, S: Sender, R: Receiver, const MAX_CLIENTS: usize>
+    Core<'a, E, S, R, MAX_CLIENTS>
+{
     /// Create a new HSM core.
     /// The core accepts requests and forwards the responses once they are ready.
     ///
@@ -70,9 +74,9 @@ impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
     pub fn new(
         pool: &'a Pool,
         rng: Rng<E>,
-        channels: Vec<Channel<'a>, MAX_CLIENTS>,
+        channels: Vec<Channel<'a, S, R>, MAX_CLIENTS>,
         key_store: Option<&'a mut dyn KeyStore>,
-    ) -> Core<'a, E, MAX_CLIENTS> {
+    ) -> Core<'a, E, S, R, MAX_CLIENTS> {
         Core {
             scheduler: Scheduler::new(pool, rng, key_store),
             channels,
@@ -91,8 +95,8 @@ impl<'a, E: EntropySource, const MAX_CLIENTS: usize> Core<'a, E, MAX_CLIENTS> {
     pub fn new_without_key_store(
         pool: &'a Pool,
         rng: Rng<E>,
-        channels: Vec<Channel<'a>, MAX_CLIENTS>,
-    ) -> Core<'a, E, MAX_CLIENTS> {
+        channels: Vec<Channel<'a, S, R>, MAX_CLIENTS>,
+    ) -> Core<'a, E, S, R, MAX_CLIENTS> {
         Self::new(pool, rng, channels, None)
     }
 
@@ -229,7 +233,7 @@ mod tests {
             receiver: c2_req_rx,
         };
         let mut response_sender2 = ResponseSender { sender: c2_resp_tx };
-        let mut channels = Vec::<Channel, 2>::new();
+        let mut channels = Vec::<Channel<_, _>, 2>::new();
         if channels
             .push(Channel::new(&mut response_sender1, &mut request_receiver1))
             .is_err()

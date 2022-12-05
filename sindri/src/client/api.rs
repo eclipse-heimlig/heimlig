@@ -17,14 +17,14 @@ pub trait Receiver {
 }
 
 /// The client-side of a bidirectional channel between the HSM core and a client.
-pub struct Channel<'a> {
-    sender: &'a mut dyn Sender,
-    receiver: &'a mut dyn Receiver,
+pub struct Channel<'a, S: Sender, R: Receiver> {
+    sender: &'a mut S,
+    receiver: &'a mut R,
 }
 
-impl<'a> Channel<'a> {
+impl<'a, S: Sender, R: Receiver> Channel<'a, S, R> {
     /// Create a new client-side end of a channel.
-    pub fn new(sender: &'a mut dyn Sender, receiver: &'a mut dyn Receiver) -> Self {
+    pub fn new(sender: &'a mut S, receiver: &'a mut R) -> Self {
         Channel { sender, receiver }
     }
 
@@ -40,14 +40,14 @@ impl<'a> Channel<'a> {
 }
 
 /// An interface to send [Request]s to the HSM core and receive [Response]es from it.
-pub struct Api<'a> {
-    sender: &'a mut dyn Sender,
-    receiver: &'a mut dyn Receiver,
+pub struct Api<'a, S: Sender, R: Receiver> {
+    sender: &'a mut S,
+    receiver: &'a mut R,
 }
 
-impl<'a> Api<'a> {
+impl<'a, S: Sender, R: Receiver> Api<'a, S, R> {
     /// Create a new instance of the HSM API.
-    pub fn new(sender: &'a mut dyn Sender, receiver: &'a mut dyn Receiver) -> Self {
+    pub fn new(sender: &'a mut S, receiver: &'a mut R) -> Self {
         Api { sender, receiver }
     }
 

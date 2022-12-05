@@ -102,7 +102,7 @@ async fn host_task(
     // Channels
     let mut request_receiver = RequestReceiver { receiver: req_rx };
     let mut response_sender = ResponseSender { sender: resp_tx };
-    let mut channels = Vec::<sindri::host::core::Channel, 2>::new();
+    let mut channels = Vec::<sindri::host::core::Channel<_, _>, 2>::new();
     if channels
         .push(sindri::host::core::Channel::new(
             &mut response_sender,

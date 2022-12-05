@@ -6,13 +6,16 @@ use crate::config::keystore::{KEY1, KEY2, KEY3};
 use crate::crypto::chacha20poly1305::{KEY_SIZE, NONCE_SIZE};
 use crate::crypto::rng::test::TestEntropySource;
 use crate::crypto::rng::Rng;
-use crate::host::keystore::{KeyStore, MemoryKeyStore};
+use crate::host::keystore::MemoryKeyStore;
 use crate::host::scheduler::Job;
 use crate::host::scheduler::Scheduler;
 
 fn init_scheduler<'a>(
     pool: &'a Pool,
-    key_store: &'a mut dyn KeyStore,
+    key_store: &'a mut MemoryKeyStore<
+        { config::keystore::TOTAL_SIZE },
+        { config::keystore::NUM_KEYS },
+    >,
 ) -> Scheduler<'a, TestEntropySource> {
     let entropy = TestEntropySource::default();
     let rng = Rng::new(entropy, None);

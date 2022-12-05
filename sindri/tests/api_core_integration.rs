@@ -85,7 +85,7 @@ mod test {
         let mut request_receiver = RequestReceiver { receiver: req_rx };
         let mut response_sender = ResponseSender { sender: resp_tx };
         let mut hsm = Api::new(&mut request_sender, &mut response_receiver);
-        let mut channels = Vec::<Channel, 2>::new();
+        let mut channels = Vec::<Channel<_, _>, 2>::new();
         if channels
             .push(Channel::new(&mut response_sender, &mut request_receiver))
             .is_err()
