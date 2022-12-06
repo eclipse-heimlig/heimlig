@@ -10,7 +10,6 @@ use embassy_stm32::gpio::{Level, Output, Speed};
 use embassy_stm32::rng::Rng;
 use embassy_time::{Duration, Timer};
 use heapless::spsc::{Consumer, Producer, Queue};
-use heapless::Vec;
 use rand_core::RngCore;
 use sindri::client;
 use sindri::client::api::Api;
@@ -48,45 +47,35 @@ impl rng::EntropySource for EntropySource {
     }
 }
 
-struct RequestSender<'a, const QUEUE_SIZE: usize> {
+struct ChannelClientSide<'a, const QUEUE_SIZE: usize> {
     sender: Producer<'a, Request, QUEUE_SIZE>,
-}
-
-struct ResponseReceiver<'a, const QUEUE_SIZE: usize> {
     receiver: Consumer<'a, Response, QUEUE_SIZE>,
 }
 
-struct ResponseSender<'a> {
+struct ChannelCoreSide<'a> {
     sender: Producer<'a, Response, QUEUE_SIZE>,
-}
-
-struct RequestReceiver<'a> {
     receiver: Consumer<'a, Request, QUEUE_SIZE>,
 }
 
-impl<'a> client::api::Sender for RequestSender<'a, QUEUE_SIZE> {
+impl<'a> client::api::Channel for ChannelClientSide<'a, QUEUE_SIZE> {
     fn send(&mut self, request: Request) -> Result<(), client::api::Error> {
         self.sender
             .enqueue(request)
             .map_err(|_request| client::api::Error::QueueFull)
     }
-}
 
-impl<'a> client::api::Receiver for ResponseReceiver<'a, QUEUE_SIZE> {
     fn recv(&mut self) -> Option<Response> {
         self.receiver.dequeue()
     }
 }
 
-impl<'a> host::core::Sender for ResponseSender<'a> {
+impl<'a> host::core::Channel for ChannelCoreSide<'a> {
     fn send(&mut self, response: Response) -> Result<(), host::core::Error> {
         self.sender
             .enqueue(response)
             .map_err(|_response| host::core::Error::QueueFull)
     }
-}
 
-impl<'a> host::core::Receiver for RequestReceiver<'a> {
     fn recv(&mut self) -> Option<Request> {
         self.receiver.dequeue()
     }
@@ -99,19 +88,14 @@ async fn host_task(
 ) {
     info!("Host task started");
 
-    // Channels
-    let mut request_receiver = RequestReceiver { receiver: req_rx };
-    let mut response_sender = ResponseSender { sender: resp_tx };
-    let mut channels = Vec::<sindri::host::core::Channel<_, _>, 2>::new();
-    if channels
-        .push(sindri::host::core::Channel::new(
-            &mut response_sender,
-            &mut request_receiver,
-        ))
-        .is_err()
-    {
-        defmt::panic!("List of return channels is too small");
-    }
+    // Channel
+    let core_side = ChannelCoreSide {
+        sender: resp_tx,
+        receiver: req_rx,
+    };
+    let mut channels = heapless::Vec::<_, 1>::new();
+    let _ = channels.push(core_side);
+
     let rng = rng::Rng::new(EntropySource {}, None);
     let pool = Pool::try_from(unsafe { &mut MEMORY }).expect("failed to initialize memory pool");
     let mut core = Core::new_without_key_store(&pool, rng, channels);
@@ -129,9 +113,15 @@ async fn client_task(
     mut led: Output<'static, embassy_stm32::peripherals::PJ2>,
 ) {
     info!("Client task started");
-    let mut request_sender = RequestSender { sender: req_tx };
-    let mut response_receiver = ResponseReceiver { receiver: resp_rx };
-    let mut hsm = Api::new(&mut request_sender, &mut response_receiver);
+
+    // Channel
+    let mut core_side = ChannelClientSide {
+        sender: req_tx,
+        receiver: resp_rx,
+    };
+
+    // Api
+    let mut api = Api::new(&mut core_side);
 
     loop {
         // Send requests
@@ -139,12 +129,12 @@ async fn client_task(
         led.set_high();
         let random_size = 16;
         info!("Sending request: random data (size={})", random_size);
-        hsm.get_random(random_size)
+        api.get_random(random_size)
             .expect("failed to call randomness API");
 
         // Receive response
         loop {
-            if let Some(response) = hsm.recv_response() {
+            if let Some(response) = api.recv_response() {
                 match response {
                     Response::GetRandom { data } => {
                         info!(

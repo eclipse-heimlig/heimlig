@@ -13,56 +13,28 @@ pub enum Error {
     QueueFull,
 }
 
-pub trait Sender {
+/// Core-side of a bidirectional channel between a client and the HSM core.
+pub trait Channel {
     /// Send a [Response] to the client through this channel.
     fn send(&mut self, response: Response) -> Result<(), Error>;
-}
-
-pub trait Receiver {
     /// Attempt to receive a [Request] from the client through this channel.
     fn recv(&mut self) -> Option<Request>;
-}
-
-/// The core-side of a bidirectional channel between the HSM core and a client.
-pub struct Channel<'a, S: Sender, R: Receiver> {
-    sender: &'a mut S,
-    receiver: &'a mut R,
-}
-
-impl<'a, S: Sender, R: Receiver> Channel<'a, S, R> {
-    /// Create a new core-side end of a channel.
-    pub fn new(sender: &'a mut S, receiver: &'a mut R) -> Self {
-        Channel { sender, receiver }
-    }
-
-    /// Send a [Response] to the client through this channel.
-    pub fn send(&mut self, response: Response) -> Result<(), Error> {
-        self.sender.send(response)
-    }
-
-    /// Attempt to receive a [Request] from the client through this channel.
-    pub fn recv(&mut self) -> Option<Request> {
-        self.receiver.recv()
-    }
 }
 
 /// HSM core that waits for [Request]s from [Channel]s and send [Response]s once they are ready.   
 pub struct Core<
     'a,
     E: EntropySource,
-    S: Sender,
-    R: Receiver,
+    C: Channel,
     const MAX_CLIENTS: usize = 8,
     const MAX_PENDING_RESPONSES: usize = 16,
 > {
     scheduler: Scheduler<'a, E>,
-    channels: Vec<Channel<'a, S, R>, MAX_CLIENTS>,
+    channels: Vec<C, MAX_CLIENTS>,
     last_channel_id: usize,
 }
 
-impl<'a, E: EntropySource, S: Sender, R: Receiver, const MAX_CLIENTS: usize>
-    Core<'a, E, S, R, MAX_CLIENTS>
-{
+impl<'a, E: EntropySource, C: Channel, const MAX_CLIENTS: usize> Core<'a, E, C, MAX_CLIENTS> {
     /// Create a new HSM core.
     /// The core accepts requests and forwards the responses once they are ready.
     ///
@@ -74,9 +46,9 @@ impl<'a, E: EntropySource, S: Sender, R: Receiver, const MAX_CLIENTS: usize>
     pub fn new(
         pool: &'a Pool,
         rng: Rng<E>,
-        channels: Vec<Channel<'a, S, R>, MAX_CLIENTS>,
+        channels: Vec<C, MAX_CLIENTS>,
         key_store: Option<&'a mut dyn KeyStore>,
-    ) -> Core<'a, E, S, R, MAX_CLIENTS> {
+    ) -> Core<'a, E, C, MAX_CLIENTS> {
         Core {
             scheduler: Scheduler::new(pool, rng, key_store),
             channels,
@@ -95,8 +67,8 @@ impl<'a, E: EntropySource, S: Sender, R: Receiver, const MAX_CLIENTS: usize>
     pub fn new_without_key_store(
         pool: &'a Pool,
         rng: Rng<E>,
-        channels: Vec<Channel<'a, S, R>, MAX_CLIENTS>,
-    ) -> Core<'a, E, S, R, MAX_CLIENTS> {
+        channels: Vec<C, MAX_CLIENTS>,
+    ) -> Core<'a, E, C, MAX_CLIENTS> {
         Self::new(pool, rng, channels, None)
     }
 
@@ -114,7 +86,7 @@ impl<'a, E: EntropySource, S: Sender, R: Receiver, const MAX_CLIENTS: usize>
             // Go through channels starting after the last used channel
             let channel_id = (channel_id + self.last_channel_id + 1) % total_channels;
             let channel = &mut self.channels[channel_id];
-            if let Some(request) = channel.receiver.recv() {
+            if let Some(request) = channel.recv() {
                 self.last_channel_id = channel_id;
                 return self.process(channel_id, request);
             }
@@ -136,62 +108,55 @@ impl<'a, E: EntropySource, S: Sender, R: Receiver, const MAX_CLIENTS: usize>
             .channels
             .get_mut(result.channel_id)
             .ok_or(Error::UnknownChannelId)?;
-        channel.sender.send(result.response)
+        channel.send(result.response)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client::api::Channel as ApiChannel;
     use crate::common::pool::Memory;
     use crate::config;
     use crate::config::keystore::{KEY1, KEY2, KEY3};
     use crate::crypto::rng;
-    use crate::host::core::Sender;
+    use crate::host::core::Channel as CoreChannel;
     use crate::host::keystore::MemoryKeyStore;
     use heapless::spsc::{Consumer, Producer, Queue};
 
     const QUEUE_SIZE: usize = 8;
 
-    struct RequestSender<'a, const QUEUE_SIZE: usize> {
+    struct ChannelClientSide<'a, const QUEUE_SIZE: usize> {
         sender: Producer<'a, Request, QUEUE_SIZE>,
-    }
-
-    struct ResponseReceiver<'a, const QUEUE_SIZE: usize> {
         receiver: Consumer<'a, Response, QUEUE_SIZE>,
     }
 
-    struct RequestReceiver<'a> {
+    struct ChannelCoreSide<'a, const QUEUE_SIZE: usize> {
+        sender: Producer<'a, Response, QUEUE_SIZE>,
         receiver: Consumer<'a, Request, QUEUE_SIZE>,
     }
 
-    struct ResponseSender<'a> {
-        sender: Producer<'a, Response, QUEUE_SIZE>,
-    }
-
-    impl<'a> RequestSender<'a, QUEUE_SIZE> {
-        fn send(&mut self, request: Request) -> Result<(), Request> {
-            self.sender.enqueue(request)
+    impl<'a> ApiChannel for ChannelClientSide<'a, QUEUE_SIZE> {
+        fn send(&mut self, request: Request) -> Result<(), crate::client::api::Error> {
+            self.sender
+                .enqueue(request)
+                .map_err(|_| crate::client::api::Error::QueueFull)
         }
-    }
 
-    impl<'a> ResponseReceiver<'a, QUEUE_SIZE> {
         fn recv(&mut self) -> Option<Response> {
             self.receiver.dequeue()
         }
     }
 
-    impl<'a> Receiver for RequestReceiver<'a> {
-        fn recv(&mut self) -> Option<Request> {
-            self.receiver.dequeue()
-        }
-    }
-
-    impl<'a> Sender for ResponseSender<'a> {
+    impl<'a> CoreChannel for ChannelCoreSide<'a, QUEUE_SIZE> {
         fn send(&mut self, response: Response) -> Result<(), Error> {
             self.sender
                 .enqueue(response)
                 .map_err(|_response| Error::QueueFull)
+        }
+
+        fn recv(&mut self) -> Option<Request> {
+            self.receiver.dequeue()
         }
     }
 
@@ -206,43 +171,35 @@ mod tests {
         let rng = Rng::new(entropy, None);
 
         // Queues
-        let mut client1_to_host: Queue<Request, QUEUE_SIZE> = Queue::new();
-        let mut client2_to_host: Queue<Request, QUEUE_SIZE> = Queue::new();
-        let mut host_to_client1: Queue<Response, QUEUE_SIZE> = Queue::new();
-        let mut host_to_client2: Queue<Response, QUEUE_SIZE> = Queue::new();
-        let (c1_req_tx, c1_req_rx) = client1_to_host.split();
-        let (c2_req_tx, c2_req_rx) = client2_to_host.split();
-        let (c1_resp_tx, c1_resp_rx) = host_to_client1.split();
-        let (c2_resp_tx, c2_resp_rx) = host_to_client2.split();
+        let mut client1_to_core: Queue<Request, QUEUE_SIZE> = Queue::new();
+        let mut client2_to_core: Queue<Request, QUEUE_SIZE> = Queue::new();
+        let mut core_to_client1: Queue<Response, QUEUE_SIZE> = Queue::new();
+        let mut core_to_client2: Queue<Response, QUEUE_SIZE> = Queue::new();
+        let (c1_req_tx, c1_req_rx) = client1_to_core.split();
+        let (c2_req_tx, c2_req_rx) = client2_to_core.split();
+        let (c1_resp_tx, c1_resp_rx) = core_to_client1.split();
+        let (c2_resp_tx, c2_resp_rx) = core_to_client2.split();
 
         // Channels
-        let mut request_sender1 = RequestSender { sender: c1_req_tx };
-        let mut request_sender2 = RequestSender { sender: c2_req_tx };
-        let mut response_receiver1 = ResponseReceiver {
+        let mut client1_side = ChannelClientSide {
+            sender: c1_req_tx,
             receiver: c1_resp_rx,
         };
-        let mut response_receiver2 = ResponseReceiver {
+        let mut client2_side = ChannelClientSide {
+            sender: c2_req_tx,
             receiver: c2_resp_rx,
         };
-
-        let mut request_receiver1 = RequestReceiver {
+        let client1_core_side = ChannelCoreSide {
+            sender: c1_resp_tx,
             receiver: c1_req_rx,
         };
-        let mut response_sender1 = ResponseSender { sender: c1_resp_tx };
-        let mut request_receiver2 = RequestReceiver {
+        let client2_core_side = ChannelCoreSide {
+            sender: c2_resp_tx,
             receiver: c2_req_rx,
         };
-        let mut response_sender2 = ResponseSender { sender: c2_resp_tx };
-        let mut channels = Vec::<Channel<_, _>, 2>::new();
-        if channels
-            .push(Channel::new(&mut response_sender1, &mut request_receiver1))
-            .is_err()
-            || channels
-                .push(Channel::new(&mut response_sender2, &mut request_receiver2))
-                .is_err()
-        {
-            panic!("Failed to create list of channels");
-        }
+        let mut channels = Vec::<_, 2>::new();
+        let _ = channels.push(client1_core_side);
+        let _ = channels.push(client2_core_side);
 
         // Core
         let key_infos = [KEY1, KEY2, KEY3];
@@ -255,14 +212,14 @@ mod tests {
 
         // Send request from client 1
         let size = 65; // Exceed size of a small chunk
-        request_sender1
+        client1_side
             .send(Request::GetRandom { size })
             .expect("failed to send request");
         core.process_next().expect("failed to process next request");
-        if response_receiver2.recv().is_some() {
+        if client2_side.recv().is_some() {
             panic!("Received unexpected response to client 2");
         }
-        match response_receiver1.recv() {
+        match client1_side.recv() {
             Some(response) => match response {
                 Response::GetRandom { data } => {
                     assert_eq!(data.len(), size)
@@ -277,14 +234,14 @@ mod tests {
         }
 
         // Send request from client 2
-        request_sender2
+        client2_side
             .send(Request::GetRandom { size })
             .expect("failed to send request");
         core.process_next().expect("failed to process next request");
-        if response_receiver1.recv().is_some() {
+        if client1_side.recv().is_some() {
             panic!("Received unexpected response to client 1");
         }
-        match response_receiver2.recv() {
+        match client2_side.recv() {
             Some(response) => match response {
                 Response::GetRandom { data } => {
                     assert_eq!(data.len(), size)
