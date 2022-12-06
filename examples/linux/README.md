@@ -1,4 +1,4 @@
-# Demonstrating Sindri on a local Linux machine
+# Demonstrating Sindri on a Local Linux Machine
 
 This directory contains an example setup of a Sindri core and a client running in separate
 [Embassy](https://embassy.dev/)
@@ -6,8 +6,8 @@ tasks.
 
 The client continuously sends requests for random data to the core and prints the response to
 standard output.
-The communication between client and core is implemented using heapless
-[queues](https://docs.rs/heapless/latest/heapless/spsc/struct.Queue.html).
+The communication between client and core is implemented using
+[heapless queues](https://docs.rs/heapless/latest/heapless/spsc/struct.Queue.html).
 
 ## Quickstart
 

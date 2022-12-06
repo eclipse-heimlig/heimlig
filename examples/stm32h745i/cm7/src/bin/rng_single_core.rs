@@ -6,6 +6,7 @@ use core::cell::RefCell;
 use cortex_m::interrupt::{self, Mutex};
 use defmt::*;
 use embassy_executor::Spawner;
+use embassy_stm32::gpio::{Level, Output, Speed};
 use embassy_stm32::rng::Rng;
 use embassy_time::{Duration, Timer};
 use heapless::spsc::{Consumer, Producer, Queue};
@@ -125,6 +126,7 @@ async fn host_task(
 async fn client_task(
     resp_rx: Consumer<'static, Response, QUEUE_SIZE>,
     req_tx: Producer<'static, Request, QUEUE_SIZE>,
+    mut led: Output<'static, embassy_stm32::peripherals::PJ2>,
 ) {
     info!("Client task started");
     let mut request_sender = RequestSender { sender: req_tx };
@@ -134,6 +136,7 @@ async fn client_task(
     loop {
         // Send requests
         Timer::after(Duration::from_millis(1000)).await;
+        led.set_high();
         let random_size = 16;
         info!("Sending request: random data (size={})", random_size);
         hsm.get_random(random_size)
@@ -154,7 +157,8 @@ async fn client_task(
                     _ => error!("Unexpected response type"),
                 }
             }
-            Timer::after(Duration::from_millis(10)).await;
+            Timer::after(Duration::from_millis(100)).await;
+            led.set_low();
         }
     }
 }
@@ -166,6 +170,7 @@ async fn main(spawner: Spawner) {
     // Random number generator
     let peripherals = embassy_stm32::init(Default::default());
     let rng = Rng::new(peripherals.RNG);
+    let led = Output::new(peripherals.PJ2, Level::High, Speed::Low);
     interrupt::free(|cs| RNG.borrow(cs).replace(Some(rng)));
 
     // Queues
@@ -178,6 +183,6 @@ async fn main(spawner: Spawner) {
         .spawn(host_task(req_rx, resp_tx))
         .expect("failed to spawn host task");
     spawner
-        .spawn(client_task(resp_rx, req_tx))
+        .spawn(client_task(resp_rx, req_tx, led))
         .expect("failed to spawn client task");
 }

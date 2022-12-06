@@ -1,7 +1,7 @@
 # Sindri
 
 Sindri is a
-[Hardware Security Modules (HSM)](https://en.wikipedia.org/wiki/Hardware_security_module)
+[Hardware Security Module (HSM)](https://en.wikipedia.org/wiki/Hardware_security_module)
 for
 [embedded platforms](https://docs.rust-embedded.org/book/intro/no-std.html)
 written in Rust.
@@ -40,7 +40,7 @@ Sindri implements common cryptographic algorithms:
 Current main limitations include:
 
 - Most cryptographic algorithms are implemented in software only.
-- Persistence storage for key material is missing.
+- Persistent storage for key material is missing.
 - The code has not been independently audited by security experts.
 
 An example implementation is available for the
@@ -49,9 +49,9 @@ discovery board as well as Linux (for development).
 
 ## Quickstart
 
-### Linux example
+### Linux Example
 
-The fastest seeing Sindri working is to run the Linux example:
+The fastest to seeing Sindri working is to run the Linux example:
 
 ```bash
 cd examples/linux
@@ -68,41 +68,44 @@ Example output:
 ```
 
 The example instantiates a Sindri core and a client.
-Both communicate via two heapless
-[queues](https://docs.rs/heapless/latest/heapless/spsc/struct.Queue.html).
+Both communicate via two
+[heapless queues](https://docs.rs/heapless/latest/heapless/spsc/struct.Queue.html).
 One for requests to the core and one for responses from it.
 The client continuously requests random numbers from the core and prints the results to the console.
 
-### Hardware example
+See
+[Linux example](examples/linux/README.md).
+
+### Hardware Example
 
 See the
-[STM32H745I example](stm32h745i/README.md).
+[STM32H745I example](examples/stm32h745i/README.md).
 
 ## Architecture
 
 Sindri is intended to run on a dedicated microprocessor with access to an exclusive memory region.
 Neither Sindri nor any of its dependencies need an allocator or use the Rust standard library
-[no_std](https://docs.rust-embedded.org/book/intro/no-std.html).
+([no_std](https://docs.rust-embedded.org/book/intro/no-std.html)).
 
-![Architecture](./doc/img/architecture.png)
+![Architecture](doc/img/architecture.png)
 
 The core of Sindri consists of a scheduler that accepts requests from clients and schedules these
 requests to different workers.
 These workers can be implemented in software or in hardware.
-Once a result is ready, the core send it back to the client in a response.
+Once a result is ready, the core sends it back to the client in a response.
 
 Communication between the different clients and the core is typically done via shared memory queues
 (based on
 [heapless::spsc::Queue](https://docs.rs/heapless/latest/heapless/spsc/struct.Queue.html)).
-This mechanisms can be found in the examples.
+These mechanisms can be found in the examples.
 However, this is just one implementation of the more general communication interface Sindri assumes.
-Custom hardware-specific mechanism can be used as well.
+Custom hardware-specific mechanisms can be used as well.
 
 This architecture makes it possible to run most of the cryptographic algorithms in software and
 later switch individual workers to hardware implementations.
 
 It is also possible to run Sindri alongside other applications on the same microprocessor.
-This has implications on the security requirements on the applications running alongside
+This has implications on the security requirements regarding the applications running alongside
 Sindri as they have access to internals of the HSM.
 Nevertheless, such a setup can be useful if the security requirements of the project allow for it.
 
