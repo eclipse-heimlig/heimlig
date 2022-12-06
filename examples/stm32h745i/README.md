@@ -10,12 +10,13 @@ discovery board.
 
 1. Obtain a
 [STM32H745I-DISCO](https://www.st.com/en/evaluation-tools/stm32h745i-disco.html)
-discovery board.
+discovery board
 2. Install
 [probe-run](https://crates.io/crates/probe-run):
-`cargo install probe-run`.
+`cargo install probe-run`
 3. Switch to the example directory: `cd examples/stm32h745i/cm7`
-4. Run the example: `cargo run --bin rng_single_core`
+4. Connect the board via its `STLK` (`CN14`) Micro USB socket
+5. Run the example: `cargo run --bin rng_single_core`
 
 The output should look similar to the following:
 
