@@ -43,15 +43,20 @@ Current main limitations include:
 - Persistent storage for key material is missing.
 - The code has not been independently audited by security experts.
 
-An example implementation is available for the
+An
+[example implementation](examples/stm32h745i/README.md)
+is available for the
 [STM32H745XI](https://www.st.com/en/evaluation-tools/stm32h745i-disco.html)
-discovery board as well as Linux (for development).
+discovery board as well as for
+[Linux](examples/linux/README.md)
+(for development).
 
 ## Quickstart
 
 ### Linux Example
 
-The fastest to seeing Sindri working is to run the Linux example:
+The fastest way to see Sindri working is to run the
+[Linux example](examples/linux/README.md):
 
 ```bash
 cd examples/linux
@@ -72,9 +77,6 @@ Both communicate via two
 [heapless queues](https://docs.rs/heapless/latest/heapless/spsc/struct.Queue.html).
 One for requests to the core and one for responses from it.
 The client continuously requests random numbers from the core and prints the results to the console.
-
-See
-[Linux example](examples/linux/README.md).
 
 ### Hardware Example
 
@@ -97,7 +99,7 @@ Once a result is ready, the core sends it back to the client in a response.
 Communication between the different clients and the core is typically done via shared memory queues
 (based on
 [heapless::spsc::Queue](https://docs.rs/heapless/latest/heapless/spsc/struct.Queue.html)).
-These mechanisms can be found in the examples.
+This approach can be found in the [Linux example](examples/linux/README.md).
 However, this is just one implementation of the more general communication interface Sindri assumes.
 Custom hardware-specific mechanisms can be used as well.
 
@@ -125,6 +127,11 @@ If no key store is provided, necessary keys must be sent by the clients as part 
 The integrator can then go on to instantiate a `host::Core` on the HSM side
 and one or more `client::Api` instances for the different clients.
 Instantiating these structs requires the previously mentioned components.
+
+## Contributing
+
+Contributions are welcome!
+Please file issues and create pull requests here on GitHub.
 
 ## License
 
