@@ -1,8 +1,8 @@
 [package]
 name = "stm32h745i-cm4"
-edition = "2021"
-authors = ["ESRLabs"]
 version = "0.1.0"
+authors = ["ESRLabs"]
+edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [[bin]]
