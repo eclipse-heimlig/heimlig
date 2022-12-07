@@ -2,7 +2,7 @@
 
 Sindri is a
 [Hardware Security Module (HSM)](https://en.wikipedia.org/wiki/Hardware_security_module)
-for
+firmware for embedded platforms.
 [embedded platforms](https://docs.rust-embedded.org/book/intro/no-std.html)
 written in Rust.
 
