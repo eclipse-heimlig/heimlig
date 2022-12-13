@@ -2,7 +2,7 @@
 
 Sindri is a
 [Hardware Security Module (HSM)](https://en.wikipedia.org/wiki/Hardware_security_module)
-firmware for embedded platforms.
+firmware for
 [embedded platforms](https://docs.rust-embedded.org/book/intro/no-std.html)
 written in Rust.
 
@@ -98,8 +98,9 @@ Once a result is ready, the core sends it back to the client in a response.
 
 Communication between the different clients and the core is typically done via shared memory queues
 (based on
-[heapless::spsc::Queue](https://docs.rs/heapless/latest/heapless/spsc/struct.Queue.html)).
-This approach can be found in the [Linux example](examples/linux/README.md).
+[heapless queues](https://docs.rs/heapless/latest/heapless/spsc/struct.Queue.html)).
+This approach can be found in the
+[Linux example](examples/linux/README.md).
 However, this is just one implementation of the more general communication interface Sindri assumes.
 Custom hardware-specific mechanisms can be used as well.
 
@@ -130,8 +131,8 @@ Instantiating these structs requires the previously mentioned components.
 
 ## Contributing
 
-Contributions are welcome!
-Please file issues and create pull requests here on GitHub.
+Contributions are very welcome.
+Feel free to file issues and create pull requests here on GitHub.
 
 ## License
 

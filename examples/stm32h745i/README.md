@@ -50,8 +50,7 @@ The motivation for the choice of the
 [STM32H745I-DISCO](https://www.st.com/en/evaluation-tools/stm32h745i-disco.html)
 board is the fact that it features both a Cortex-M4 and a Cortex-M7 microprocessor.
 This allows for a setup where one processor runs the Sindri core and the other one acts as a client.
-However, due to the limited multi-core support, the current setup runs both as separate tasks on a
-single core.
+However, the current setup runs both as separate tasks on a single core.
 
 ## Debugging on STM32H745I-DISCO
 
