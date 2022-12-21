@@ -2,11 +2,10 @@
 #![no_main]
 #![feature(type_alias_impl_trait)]
 
-use core::cell::RefCell;
-use cortex_m::interrupt::{self, Mutex};
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_stm32::gpio::{Level, Output, Speed};
+use embassy_stm32::peripherals::RNG;
 use embassy_stm32::rng::Rng;
 use embassy_time::{Duration, Timer};
 use heapless::spsc::{Consumer, Producer, Queue};
@@ -28,20 +27,14 @@ const QUEUE_SIZE: usize = 8;
 static mut CLIENT_TO_HOST: Queue<Request, QUEUE_SIZE> = Queue::<Request, QUEUE_SIZE>::new();
 static mut HOST_TO_CLIENT: Queue<Response, QUEUE_SIZE> = Queue::<Response, QUEUE_SIZE>::new();
 
-static RNG: Mutex<RefCell<Option<Rng<embassy_stm32::peripherals::RNG>>>> =
-    Mutex::new(RefCell::new(None));
-
-struct EntropySource {}
+struct EntropySource {
+    rng: Rng<'static, RNG>,
+}
 
 impl rng::EntropySource for EntropySource {
     fn random_seed(&mut self) -> [u8; 32] {
         let mut buf = [0u8; 32];
-        interrupt::free(|cs| match RNG.borrow(cs).borrow_mut().take() {
-            Some(mut rng) => {
-                rng.fill_bytes(&mut buf);
-            }
-            None => defmt::panic!("HW_RNG_INSTANCE is not initialized"),
-        });
+        self.rng.fill_bytes(&mut buf);
         info!("New random seed (size={}, data={:02x})", buf.len(), buf);
         buf
     }
@@ -85,6 +78,7 @@ impl<'a> host::core::Channel for ChannelCoreSide<'a> {
 async fn host_task(
     req_rx: Consumer<'static, Request, QUEUE_SIZE>,
     resp_tx: Producer<'static, Response, QUEUE_SIZE>,
+    rng: Rng<'static, RNG>,
 ) {
     info!("Host task started");
 
@@ -96,7 +90,7 @@ async fn host_task(
     let mut channels = heapless::Vec::<_, 1>::new();
     let _ = channels.push(core_side);
 
-    let rng = rng::Rng::new(EntropySource {}, None);
+    let rng = rng::Rng::new(EntropySource { rng }, None);
     let pool = Pool::try_from(unsafe { &mut MEMORY }).expect("failed to initialize memory pool");
     let mut core = Core::new_without_key_store(&pool, rng, channels);
 
@@ -161,7 +155,6 @@ async fn main(spawner: Spawner) {
     let peripherals = embassy_stm32::init(Default::default());
     let rng = Rng::new(peripherals.RNG);
     let led = Output::new(peripherals.PJ2, Level::High, Speed::Low);
-    interrupt::free(|cs| RNG.borrow(cs).replace(Some(rng)));
 
     // Queues
     // Unsafe: Access to mutable static only happens here. Static lifetime is required by embassy tasks.
@@ -170,7 +163,7 @@ async fn main(spawner: Spawner) {
 
     // Start tasks
     spawner
-        .spawn(host_task(req_rx, resp_tx))
+        .spawn(host_task(req_rx, resp_tx, rng))
         .expect("failed to spawn host task");
     spawner
         .spawn(client_task(resp_rx, req_tx, led))
