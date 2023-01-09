@@ -13,7 +13,7 @@ path = "src/main.rs"
 embassy-sync = { git = "https://github.com/embassy-rs/embassy.git", version = "0.1", features = ["log"] }
 embassy-executor = { git = "https://github.com/embassy-rs/embassy.git", version = "0.1", features = ["log", "std", "nightly", "integrated-timers"] }
 embassy-time = { git = "https://github.com/embassy-rs/embassy.git", version = "0.1", features = ["log", "std", "nightly"] }
-embassy-net = { git = "https://github.com/embassy-rs/embassy.git", version = "0.1", features=[ "std", "nightly", "log", "medium-ethernet", "tcp", "udp", "dhcpv4", "pool-16"] }
+embassy-net = { git = "https://github.com/embassy-rs/embassy.git", version = "0.1", features=[ "std", "nightly", "log", "medium-ethernet", "tcp", "udp", "dhcpv4"] }
 heapless = "0.7"
 hex = "0.4"
 log = "0.4"
