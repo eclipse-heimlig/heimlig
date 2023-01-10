@@ -1,4 +1,4 @@
-use crate::host::keystore::KeyInfo;
+use crate::hsm::keystore::KeyInfo;
 
 /// Maximum number of items in the key store
 pub const NUM_KEYS: usize = 3;

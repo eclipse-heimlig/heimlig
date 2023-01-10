@@ -34,8 +34,8 @@ cargo run --bin rng_single_core
 └─ rng_single_core::____embassy_main_task::{async_fn#0} @ src/bin/rng_single_core.rs:163
 0.000518 INFO  Client task started
 └─ rng_single_core::__client_task_task::{async_fn#0} @ src/bin/rng_single_core.rs:127
-0.001037 INFO  Host task started
-└─ rng_single_core::__host_task_task::{async_fn#0} @ src/bin/rng_single_core.rs:99
+0.001037 INFO  HSM task started
+└─ rng_single_core::__hsm_task_task::{async_fn#0} @ src/bin/rng_single_core.rs:99
 0.002075 INFO  New random seed (size=32, data=[11, e1, 39, a3, 16, 13, 38, 3c, bb, b5, 7c, 38, 26, 5c, 54, 1a, ee, d5, f1, c9, 58, a2, 3c, 47, dd, 0f, b6, bd, d3, 71, 9a, 82])
 └─ rng_single_core::{impl#0}::random_seed::{closure#0} @ src/bin/rng_single_core.rs:45
 1.001129 INFO  Sending request: random data (size=16)

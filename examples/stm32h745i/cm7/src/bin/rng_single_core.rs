@@ -16,16 +16,16 @@ use sindri::common::jobs::{Request, Response};
 use sindri::common::pool::Memory;
 use sindri::common::pool::Pool;
 use sindri::crypto::rng;
-use sindri::host;
-use sindri::host::core::Core;
+use sindri::hsm;
+use sindri::hsm::core::Core;
 use {defmt_rtt as _, panic_probe as _};
 
 // Shared memory pool
 static mut MEMORY: Memory = [0; Pool::required_memory()];
 
 const QUEUE_SIZE: usize = 8;
-static mut CLIENT_TO_HOST: Queue<Request, QUEUE_SIZE> = Queue::<Request, QUEUE_SIZE>::new();
-static mut HOST_TO_CLIENT: Queue<Response, QUEUE_SIZE> = Queue::<Response, QUEUE_SIZE>::new();
+static mut CLIENT_TO_HSM: Queue<Request, QUEUE_SIZE> = Queue::<Request, QUEUE_SIZE>::new();
+static mut HSM_TO_CLIENT: Queue<Response, QUEUE_SIZE> = Queue::<Response, QUEUE_SIZE>::new();
 
 struct EntropySource {
     rng: Rng<'static, RNG>,
@@ -62,11 +62,11 @@ impl<'a> client::api::Channel for ChannelClientSide<'a, QUEUE_SIZE> {
     }
 }
 
-impl<'a> host::core::Channel for ChannelCoreSide<'a> {
-    fn send(&mut self, response: Response) -> Result<(), host::core::Error> {
+impl<'a> hsm::core::Channel for ChannelCoreSide<'a> {
+    fn send(&mut self, response: Response) -> Result<(), hsm::core::Error> {
         self.sender
             .enqueue(response)
-            .map_err(|_response| host::core::Error::QueueFull)
+            .map_err(|_response| hsm::core::Error::QueueFull)
     }
 
     fn recv(&mut self) -> Option<Request> {
@@ -75,12 +75,12 @@ impl<'a> host::core::Channel for ChannelCoreSide<'a> {
 }
 
 #[embassy_executor::task]
-async fn host_task(
+async fn hsm_task(
     req_rx: Consumer<'static, Request, QUEUE_SIZE>,
     resp_tx: Producer<'static, Response, QUEUE_SIZE>,
     rng: Rng<'static, RNG>,
 ) {
-    info!("Host task started");
+    info!("HSM task started");
 
     // Channel
     let core_side = ChannelCoreSide {
@@ -158,13 +158,13 @@ async fn main(spawner: Spawner) {
 
     // Queues
     // Unsafe: Access to mutable static only happens here. Static lifetime is required by embassy tasks.
-    let (req_tx, req_rx) = unsafe { CLIENT_TO_HOST.split() };
-    let (resp_tx, resp_rx) = unsafe { HOST_TO_CLIENT.split() };
+    let (req_tx, req_rx) = unsafe { CLIENT_TO_HSM.split() };
+    let (resp_tx, resp_rx) = unsafe { HSM_TO_CLIENT.split() };
 
     // Start tasks
     spawner
-        .spawn(host_task(req_rx, resp_tx, rng))
-        .expect("failed to spawn host task");
+        .spawn(hsm_task(req_rx, resp_tx, rng))
+        .expect("failed to spawn HSM task");
     spawner
         .spawn(client_task(resp_rx, req_tx, led))
         .expect("failed to spawn client task");

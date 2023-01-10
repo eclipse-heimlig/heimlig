@@ -6,9 +6,8 @@ use crate::config::keystore::{KEY1, KEY2, KEY3};
 use crate::crypto::chacha20poly1305::{KEY_SIZE, NONCE_SIZE};
 use crate::crypto::rng::test::TestEntropySource;
 use crate::crypto::rng::Rng;
-use crate::host::keystore::MemoryKeyStore;
-use crate::host::scheduler::Job;
-use crate::host::scheduler::Scheduler;
+use crate::hsm::keystore::MemoryKeyStore;
+use crate::hsm::scheduler::{Job, Scheduler};
 
 fn init_scheduler<'a>(
     pool: &'a Pool,
