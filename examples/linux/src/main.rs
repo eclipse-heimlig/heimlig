@@ -12,16 +12,16 @@ use sindri::common::pool::Memory;
 use sindri::common::pool::Pool;
 use sindri::crypto::rng;
 use sindri::crypto::rng::Rng;
-use sindri::host;
-use sindri::host::core::Core;
+use sindri::hsm::core::Core;
+use sindri::{client, hsm};
 
 // Shared memory pool
 static mut MEMORY: Memory = [0; Pool::required_memory()];
 
 // Request and response queues between tasks
 const QUEUE_SIZE: usize = 8;
-static mut CLIENT_TO_HOST: Queue<Request, QUEUE_SIZE> = Queue::new();
-static mut HOST_TO_CLIENT: Queue<Response, QUEUE_SIZE> = Queue::new();
+static mut CLIENT_TO_HSM: Queue<Request, QUEUE_SIZE> = Queue::new();
+static mut HSM_TO_CLIENT: Queue<Response, QUEUE_SIZE> = Queue::new();
 
 struct EntropySource {}
 
@@ -43,11 +43,11 @@ struct ChannelCoreSide<'a, const QUEUE_SIZE: usize> {
     receiver: Consumer<'a, Request, QUEUE_SIZE>,
 }
 
-impl<'a> sindri::client::api::Channel for ChannelClientSide<'a, QUEUE_SIZE> {
-    fn send(&mut self, request: Request) -> Result<(), sindri::client::api::Error> {
+impl<'a> client::api::Channel for ChannelClientSide<'a, QUEUE_SIZE> {
+    fn send(&mut self, request: Request) -> Result<(), client::api::Error> {
         self.sender
             .enqueue(request)
-            .map_err(|_| sindri::client::api::Error::QueueFull)
+            .map_err(|_| client::api::Error::QueueFull)
     }
 
     fn recv(&mut self) -> Option<Response> {
@@ -55,11 +55,11 @@ impl<'a> sindri::client::api::Channel for ChannelClientSide<'a, QUEUE_SIZE> {
     }
 }
 
-impl<'a> host::core::Channel for ChannelCoreSide<'a, QUEUE_SIZE> {
-    fn send(&mut self, response: Response) -> Result<(), host::core::Error> {
+impl<'a> hsm::core::Channel for ChannelCoreSide<'a, QUEUE_SIZE> {
+    fn send(&mut self, response: Response) -> Result<(), hsm::core::Error> {
         self.sender
             .enqueue(response)
-            .map_err(|_response| host::core::Error::QueueFull)
+            .map_err(|_response| hsm::core::Error::QueueFull)
     }
 
     fn recv(&mut self) -> Option<Request> {
@@ -68,7 +68,7 @@ impl<'a> host::core::Channel for ChannelCoreSide<'a, QUEUE_SIZE> {
 }
 
 #[embassy_executor::task]
-async fn host_task(
+async fn hsm_task(
     pool: Pool,
     req_rx: Consumer<'static, Request, QUEUE_SIZE>,
     resp_tx: Producer<'static, Response, QUEUE_SIZE>,
@@ -145,13 +145,13 @@ async fn main(spawner: Spawner) {
 
     // Queues
     // Unsafe: Access to mutable static only happens here. Static lifetime is required by embassy tasks.
-    let (req_tx, req_rx) = unsafe { CLIENT_TO_HOST.split() };
-    let (resp_tx, resp_rx) = unsafe { HOST_TO_CLIENT.split() };
+    let (req_tx, req_rx) = unsafe { CLIENT_TO_HSM.split() };
+    let (resp_tx, resp_rx) = unsafe { HSM_TO_CLIENT.split() };
 
     // Start tasks
     spawner
-        .spawn(host_task(pool, req_rx, resp_tx))
-        .expect("failed to spawn host task");
+        .spawn(hsm_task(pool, req_rx, resp_tx))
+        .expect("failed to spawn HSM task");
     spawner
         .spawn(client_task(resp_rx, req_tx))
         .expect("failed to spawn client task");

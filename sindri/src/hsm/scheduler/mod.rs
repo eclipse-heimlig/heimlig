@@ -7,10 +7,10 @@ use crate::common::pool::Pool;
 use crate::common::scrub_on_drop::ScrubOnDrop;
 use crate::config::keystore::MAX_KEY_SIZE;
 use crate::crypto::rng::{EntropySource, Rng};
-use crate::host::keystore;
-use crate::host::keystore::KeyStore;
-use crate::host::workers::chachapoly_worker::ChachaPolyWorker;
-use crate::host::workers::rng_worker::RngWorker;
+use crate::hsm::keystore;
+use crate::hsm::keystore::KeyStore;
+use crate::hsm::workers::chachapoly_worker::ChachaPolyWorker;
+use crate::hsm::workers::rng_worker::RngWorker;
 
 /// A job for the HSM to compute a cryptographic task.
 pub struct Job {

@@ -5,9 +5,9 @@ mod test {
     use sindri::common::pool::{Memory, Pool};
     use sindri::config::keystore::{KEY1, KEY2, KEY3};
     use sindri::crypto::rng::{EntropySource, Rng};
-    use sindri::host::core::Core;
-    use sindri::host::keystore::MemoryKeyStore;
-    use sindri::{client, config, host};
+    use sindri::hsm::core::Core;
+    use sindri::hsm::keystore::MemoryKeyStore;
+    use sindri::{client, config, hsm};
 
     const QUEUE_SIZE: usize = 8;
 
@@ -42,11 +42,11 @@ mod test {
         }
     }
 
-    impl<'a> host::core::Channel for ChannelCoreSide<'a> {
-        fn send(&mut self, response: Response) -> Result<(), host::core::Error> {
+    impl<'a> hsm::core::Channel for ChannelCoreSide<'a> {
+        fn send(&mut self, response: Response) -> Result<(), hsm::core::Error> {
             self.sender
                 .enqueue(response)
-                .map_err(|_response| host::core::Error::QueueFull)
+                .map_err(|_response| hsm::core::Error::QueueFull)
         }
 
         fn recv(&mut self) -> Option<Request> {

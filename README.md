@@ -125,7 +125,7 @@ This usually requires a statically allocated memory region.
 A RAM-based `MemoryKeyStore` is provided for testing purposes.
 If no key store is provided, necessary keys must be sent by the clients as part of their requests.
 
-The integrator can then go on to instantiate a `host::Core` on the HSM side
+The integrator can then go on to instantiate a `hsm::Core` on the HSM side
 and one or more `client::Api` instances for the different clients.
 Instantiating these structs requires the previously mentioned components.
 

@@ -1,8 +1,8 @@
 use crate::common::jobs::{Request, Response};
 use crate::common::pool::Pool;
 use crate::crypto::rng::{EntropySource, Rng};
-use crate::host::keystore::KeyStore;
-use crate::host::scheduler::{Job, Scheduler};
+use crate::hsm::keystore::KeyStore;
+use crate::hsm::scheduler::{Job, Scheduler};
 use heapless::Vec;
 
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -120,8 +120,8 @@ mod tests {
     use crate::config;
     use crate::config::keystore::{KEY1, KEY2, KEY3};
     use crate::crypto::rng;
-    use crate::host::core::Channel as CoreChannel;
-    use crate::host::keystore::MemoryKeyStore;
+    use crate::hsm::core::Channel as CoreChannel;
+    use crate::hsm::keystore::MemoryKeyStore;
     use heapless::spsc::{Consumer, Producer, Queue};
 
     const QUEUE_SIZE: usize = 8;

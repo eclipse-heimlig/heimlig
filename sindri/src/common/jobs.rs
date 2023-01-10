@@ -1,6 +1,6 @@
 use crate::common::pool::PoolChunk;
-use crate::host::keystore;
-use crate::host::keystore::Id;
+use crate::hsm::keystore;
+use crate::hsm::keystore::Id;
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Error {

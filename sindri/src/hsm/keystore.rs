@@ -164,7 +164,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
 #[cfg(test)]
 pub(crate) mod test {
     use crate::config;
-    use crate::host::keystore::{Error, Id, KeyInfo, KeyStore, MemoryKeyStore};
+    use crate::hsm::keystore::{Error, Id, KeyInfo, KeyStore, MemoryKeyStore};
 
     #[test]
     fn store_get_delete() {
