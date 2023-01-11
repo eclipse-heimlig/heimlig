@@ -16,6 +16,8 @@ client.
 - Generation of cryptographically secure random numbers
   ([CSPRNG](https://en.wikipedia.org/wiki/Cryptographically_secure_pseudorandom_number_generator)).
 
+![Sindri running on a Cortex-M7](./doc/img/rng_cm7.gif)
+
 ## Status
 
 __Warning: Sindri is still under development and is not production ready__.
@@ -37,7 +39,7 @@ Sindri implements common cryptographic algorithms:
 - Random number generation
   ([ChaCha20Rng](https://docs.rs/rand_chacha/latest/rand_chacha/struct.ChaCha20Rng.html))
 
-Current main limitations include:
+Current limitations include:
 
 - Most cryptographic algorithms are implemented in software only.
 - Persistent storage for key material is missing.
