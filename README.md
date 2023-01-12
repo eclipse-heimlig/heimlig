@@ -35,7 +35,8 @@ Sindri implements common cryptographic algorithms:
   ([ECDH](https://en.wikipedia.org/wiki/Elliptic-curve_Diffie%E2%80%93Hellman))
 - Hashing
   ([SHA-2](https://en.wikipedia.org/wiki/SHA-2),
-   [SHA-3](https://en.wikipedia.org/wiki/SHA-3))
+   [SHA-3](https://en.wikipedia.org/wiki/SHA-3),
+   [BLAKE3](https://en.wikipedia.org/wiki/BLAKE_(hash_function)#BLAKE3))
 - Random number generation
   ([ChaCha20Rng](https://docs.rs/rand_chacha/latest/rand_chacha/struct.ChaCha20Rng.html))
 
