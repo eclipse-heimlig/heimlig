@@ -6,6 +6,24 @@ firmware for
 [embedded platforms](https://docs.rust-embedded.org/book/intro/no-std.html)
 written in Rust.
 
+![Sindri running on a Cortex-M7](./doc/img/rng_cm7.gif)
+
+## Table of Contents
+
+- [About](#about)
+- [Status](#status)
+- [Quickstart](#quickstart)
+  - [Linux Example](#linux-example)
+  - [Hardware Example](#hardware-example)
+- [Architecture](#architecture)
+- [Integration](#integration)
+- [Contributing](#contributing)
+- [License](#license)
+
+## About
+
+As an
+[HSM](https://en.wikipedia.org/wiki/Hardware_security_module),
 Sindri typically runs on dedicated hardware and provides cryptographic services to clients running
 on other cores.
 These include:
@@ -15,8 +33,6 @@ These include:
 client.
 - Generation of cryptographically secure random numbers
   ([CSPRNG](https://en.wikipedia.org/wiki/Cryptographically_secure_pseudorandom_number_generator)).
-
-![Sindri running on a Cortex-M7](./doc/img/rng_cm7.gif)
 
 ## Status
 
@@ -35,7 +51,8 @@ Sindri implements common cryptographic algorithms:
   ([ECDH](https://en.wikipedia.org/wiki/Elliptic-curve_Diffie%E2%80%93Hellman))
 - Hashing
   ([SHA-2](https://en.wikipedia.org/wiki/SHA-2),
-   [SHA-3](https://en.wikipedia.org/wiki/SHA-3))
+   [SHA-3](https://en.wikipedia.org/wiki/SHA-3),
+   [BLAKE3](https://en.wikipedia.org/wiki/BLAKE_(hash_function)#BLAKE3))
 - Random number generation
   ([ChaCha20Rng](https://docs.rs/rand_chacha/latest/rand_chacha/struct.ChaCha20Rng.html))
 
