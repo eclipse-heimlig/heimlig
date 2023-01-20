@@ -1,0 +1,29 @@
+name: License check
+on: [push, pull_request]
+jobs:
+  cargo-deny:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        directory: 
+          [./sindri] # Only check main crate
+        checks:
+          - advisories
+          - bans licenses sources
+
+    # Prevent sudden announcement of a new advisory from failing ci:
+    continue-on-error: ${{ matrix.checks == 'advisories' }}
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+          profile: minimal
+          target: x86_64-unknown-linux-musl
+      - name: License check
+        run: |
+          cargo install cargo-deny
+          cargo deny --manifest-path=${{ matrix.directory }}/Cargo.toml check
