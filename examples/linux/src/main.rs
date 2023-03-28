@@ -4,16 +4,16 @@ use embassy_executor::Spawner;
 use embassy_time::Duration;
 use embassy_time::Timer;
 use heapless::spsc::{Consumer, Producer, Queue};
+use heimlig::client::api::Api;
+use heimlig::common::jobs::{Request, Response};
+use heimlig::common::pool::Memory;
+use heimlig::common::pool::Pool;
+use heimlig::crypto::rng;
+use heimlig::crypto::rng::Rng;
+use heimlig::hsm::core::Core;
+use heimlig::{client, hsm};
 use log::{error, info};
 use rand::RngCore;
-use sindri::client::api::Api;
-use sindri::common::jobs::{Request, Response};
-use sindri::common::pool::Memory;
-use sindri::common::pool::Pool;
-use sindri::crypto::rng;
-use sindri::crypto::rng::Rng;
-use sindri::hsm::core::Core;
-use sindri::{client, hsm};
 
 // Shared memory pool
 static mut MEMORY: Memory = [0; Pool::required_memory()];

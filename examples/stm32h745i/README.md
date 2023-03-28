@@ -1,6 +1,6 @@
 # STM32H745I-DISCO
 
-This example runs a Sindri core and a client in separate
+This example runs a Heimlig core and a client in separate
 [Embassy](https://embassy.dev/)
 tasks on the Cortex-M7 of a
 [STM32H745I-DISCO](https://www.st.com/en/evaluation-tools/stm32h745i-disco.html)
@@ -49,7 +49,7 @@ cargo run --bin rng_single_core
 The motivation for the choice of the
 [STM32H745I-DISCO](https://www.st.com/en/evaluation-tools/stm32h745i-disco.html)
 board is the fact that it features both a Cortex-M4 and a Cortex-M7 microprocessor.
-This allows for a setup where one processor runs the Sindri core and the other one acts as a client.
+This allows for a setup where one processor runs the Heimlig core and the other one acts as a client.
 However, the current setup runs both as separate tasks on a single core.
 
 ## Debugging on STM32H745I-DISCO

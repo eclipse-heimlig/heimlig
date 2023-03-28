@@ -1,12 +1,12 @@
 [package]
-name = "sindri"
+name = "heimlig"
 version = "0.1.0"
 authors = ["ESRLabs"]
-description = "Sindri is a Hardware Security Module (HSM) firmware for embedded platforms"
+description = "Heimlig is a Hardware Security Module (HSM) firmware for embedded platforms"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 readme = "../README.md"
-repository = "https://github.com/esrlabs/sindri"
+repository = "https://github.com/esrlabs/heimlig"
 
 [dependencies]
 aes = { version = "0.8", default-features = false, features = ["zeroize"]}

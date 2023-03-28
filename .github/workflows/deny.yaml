@@ -6,7 +6,7 @@ jobs:
     strategy:
       matrix:
         directory: 
-          [./sindri] # Only check main crate
+          [./heimlig] # Only check main crate
         checks:
           - advisories
           - bans licenses sources

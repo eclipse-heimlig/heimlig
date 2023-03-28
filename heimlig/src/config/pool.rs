@@ -1,4 +1,4 @@
-// Configuration of sizes used in sindri::common::Pool
+// Configuration of sizes used in heimlig::common::Pool
 
 /// Maximum number of allocatable small chunks
 pub const SMALL_CHUNKS: usize = 16;

@@ -1,6 +1,6 @@
-# Demonstrating Sindri on a Local Linux Machine
+# Demonstrating Heimlig on a Local Linux Machine
 
-This directory contains an example setup of a Sindri core and a client running in separate
+This directory contains an example setup of a Heimlig core and a client running in separate
 [Embassy](https://embassy.dev/)
 tasks.
 

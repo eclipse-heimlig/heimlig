@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        directory: [./sindri, ./examples/linux, ./examples/stm32h745i/cm4, ./examples/stm32h745i/cm7]
+        directory: [./heimlig, ./examples/linux, ./examples/stm32h745i/cm4, ./examples/stm32h745i/cm7]
     steps:
       - uses: actions/checkout@v2
       - name: Install Rust toolchain
@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        directory: [./sindri, ./examples/linux, ./examples/stm32h745i/cm4, ./examples/stm32h745i/cm7]
+        directory: [./heimlig, ./examples/linux, ./examples/stm32h745i/cm4, ./examples/stm32h745i/cm7]
     steps:
       - uses: actions/checkout@v1
       - name: Install Rust toolchain
@@ -41,7 +41,7 @@ jobs:
         run: |
           cd ${{ matrix.directory }}
           cargo clippy
-  build_sindri:
+  build_heimlig:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -57,11 +57,11 @@ jobs:
           target: ${{ matrix.platform }}
       - name: Build Binary
         run: |
-          cd ./sindri
+          cd ./heimlig
           cargo build --release
       - name: Run Tests
         run: |
-          cd ./sindri
+          cd ./heimlig
           cargo test --release
   build_linux_example:
     runs-on: ubuntu-latest
