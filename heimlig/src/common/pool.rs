@@ -101,7 +101,7 @@ impl TryFrom<&'static mut Memory> for Pool {
     /// # Examples
     ///
     /// ```
-    /// use sindri::common::pool::{Memory, Pool};
+    /// use heimlig::common::pool::{Memory, Pool};
     /// static mut MEMORY: Memory = [0; Pool::required_memory()];
     /// let pool = Pool::try_from(unsafe { &mut MEMORY }).expect("failed to initialize memory pool");
     /// ```

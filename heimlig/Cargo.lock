@@ -350,6 +350,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "heimlig"
+version = "0.1.0"
+dependencies = [
+ "aes",
+ "aes-gcm",
+ "blake3",
+ "cbc",
+ "ccm",
+ "chacha20poly1305",
+ "ecdsa",
+ "elliptic-curve",
+ "generic-array",
+ "heapless",
+ "hex",
+ "p256",
+ "p384",
+ "rand",
+ "rand_chacha",
+ "rand_core",
+ "sha2",
+ "sha3",
+]
+
+[[package]]
 name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -564,30 +588,6 @@ checksum = "74233d3b3b2f6d4b006dc19dee745e73e2a6bfb6f93607cd3b02bd5b00797d7c"
 dependencies = [
  "digest",
  "rand_core",
-]
-
-[[package]]
-name = "sindri"
-version = "0.1.0"
-dependencies = [
- "aes",
- "aes-gcm",
- "blake3",
- "cbc",
- "ccm",
- "chacha20poly1305",
- "ecdsa",
- "elliptic-curve",
- "generic-array",
- "heapless",
- "hex",
- "p256",
- "p384",
- "rand",
- "rand_chacha",
- "rand_core",
- "sha2",
- "sha3",
 ]
 
 [[package]]

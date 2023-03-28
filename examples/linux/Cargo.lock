@@ -699,6 +699,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "heimlig"
+version = "0.1.0"
+dependencies = [
+ "aes",
+ "aes-gcm",
+ "blake3",
+ "cbc",
+ "ccm",
+ "chacha20poly1305",
+ "ecdsa",
+ "elliptic-curve",
+ "generic-array 0.14.6",
+ "heapless",
+ "p256",
+ "p384",
+ "rand",
+ "rand_chacha",
+ "rand_core",
+ "sha2",
+ "sha3",
+]
+
+[[package]]
 name = "hermit-abi"
 version = "0.1.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -783,11 +806,11 @@ dependencies = [
  "embassy-sync",
  "embassy-time",
  "heapless",
+ "heimlig",
  "hex",
  "log",
  "rand",
  "simple_logger",
- "sindri",
 ]
 
 [[package]]
@@ -1061,29 +1084,6 @@ dependencies = [
  "log",
  "time",
  "windows-sys",
-]
-
-[[package]]
-name = "sindri"
-version = "0.1.0"
-dependencies = [
- "aes",
- "aes-gcm",
- "blake3",
- "cbc",
- "ccm",
- "chacha20poly1305",
- "ecdsa",
- "elliptic-curve",
- "generic-array 0.14.6",
- "heapless",
- "p256",
- "p384",
- "rand",
- "rand_chacha",
- "rand_core",
- "sha2",
- "sha3",
 ]
 
 [[package]]

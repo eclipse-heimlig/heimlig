@@ -1,13 +1,13 @@
 mod test {
     use heapless::spsc::{Consumer, Producer, Queue};
-    use sindri::client::api::Api;
-    use sindri::common::jobs::{Request, Response};
-    use sindri::common::pool::{Memory, Pool};
-    use sindri::config::keystore::{KEY1, KEY2, KEY3};
-    use sindri::crypto::rng::{EntropySource, Rng};
-    use sindri::hsm::core::Core;
-    use sindri::hsm::keystore::MemoryKeyStore;
-    use sindri::{client, config, hsm};
+    use heimlig::client::api::Api;
+    use heimlig::common::jobs::{Request, Response};
+    use heimlig::common::pool::{Memory, Pool};
+    use heimlig::config::keystore::{KEY1, KEY2, KEY3};
+    use heimlig::crypto::rng::{EntropySource, Rng};
+    use heimlig::hsm::core::Core;
+    use heimlig::hsm::keystore::MemoryKeyStore;
+    use heimlig::{client, config, hsm};
 
     const QUEUE_SIZE: usize = 8;
 

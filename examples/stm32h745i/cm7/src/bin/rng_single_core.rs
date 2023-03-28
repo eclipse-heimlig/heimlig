@@ -9,15 +9,15 @@ use embassy_stm32::peripherals::RNG;
 use embassy_stm32::rng::Rng;
 use embassy_time::{Duration, Timer};
 use heapless::spsc::{Consumer, Producer, Queue};
+use heimlig::client;
+use heimlig::client::api::Api;
+use heimlig::common::jobs::{Request, Response};
+use heimlig::common::pool::Memory;
+use heimlig::common::pool::Pool;
+use heimlig::crypto::rng;
+use heimlig::hsm;
+use heimlig::hsm::core::Core;
 use rand_core::RngCore;
-use sindri::client;
-use sindri::client::api::Api;
-use sindri::common::jobs::{Request, Response};
-use sindri::common::pool::Memory;
-use sindri::common::pool::Pool;
-use sindri::crypto::rng;
-use sindri::hsm;
-use sindri::hsm::core::Core;
 use {defmt_rtt as _, panic_probe as _};
 
 // Shared memory pool
