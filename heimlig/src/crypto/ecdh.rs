@@ -1,5 +1,5 @@
 use elliptic_curve::ecdh::{diffie_hellman, SharedSecret};
-use elliptic_curve::{Curve, ProjectiveArithmetic, PublicKey, SecretKey};
+use elliptic_curve::{Curve, CurveArithmetic, PublicKey, SecretKey};
 
 pub use crate::crypto::ecc::gen_key_pair;
 
@@ -14,7 +14,7 @@ pub use crate::crypto::ecc::gen_key_pair;
 /// ```
 pub fn derive_shared_secret<C>(private: &SecretKey<C>, public: &PublicKey<C>) -> SharedSecret<C>
 where
-    C: Curve + ProjectiveArithmetic,
+    C: Curve + CurveArithmetic,
 {
     diffie_hellman(private.to_nonzero_scalar(), public.as_affine())
 }
