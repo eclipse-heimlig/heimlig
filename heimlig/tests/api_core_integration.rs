@@ -9,8 +9,6 @@ mod test {
     use heimlig::hsm::keystore::MemoryKeyStore;
     use heimlig::{client, config, hsm};
 
-    const QUEUE_SIZE: usize = 8;
-
     #[derive(Default)]
     pub struct TestEntropySource {}
 
@@ -25,10 +23,12 @@ mod test {
         receiver: Consumer<'a, Response, QUEUE_SIZE>,
     }
 
-    struct ChannelCoreSide<'a> {
+    struct ChannelCoreSide<'a, const QUEUE_SIZE: usize> {
         sender: Producer<'a, Response, QUEUE_SIZE>,
         receiver: Consumer<'a, Request, QUEUE_SIZE>,
     }
+
+    const QUEUE_SIZE: usize = 8;
 
     impl<'a> client::api::Channel for ChannelClientSide<'a, QUEUE_SIZE> {
         fn send(&mut self, request: Request) -> Result<(), client::api::Error> {
@@ -42,7 +42,7 @@ mod test {
         }
     }
 
-    impl<'a> hsm::core::Channel for ChannelCoreSide<'a> {
+    impl<'a> hsm::core::Channel for ChannelCoreSide<'a, QUEUE_SIZE> {
         fn send(&mut self, response: Response) -> Result<(), hsm::core::Error> {
             self.sender
                 .enqueue(response)
