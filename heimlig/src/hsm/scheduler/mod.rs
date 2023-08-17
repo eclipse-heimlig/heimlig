@@ -58,19 +58,21 @@ impl<'a, E: EntropySource> Scheduler<'a, E> {
                 },
                 None => Response::Error(jobs::Error::KeyStore(keystore::Error::KeyNotFound)),
             },
-            Request::GetRandom { size } => self.rng_worker.get_random(size),
+            Request::GetRandom { data } => self.rng_worker.get_random(data),
             Request::EncryptChaChaPoly {
                 key_id,
                 nonce,
                 aad,
                 plaintext,
+                tag,
             } => {
                 let mut key: ScrubOnDrop<MAX_KEY_SIZE> = ScrubOnDrop::new();
                 match &self.key_store {
                     Some(key_store) => match key_store.get(key_id, &mut key.data) {
                         Ok(size) => {
                             let key = &key.data[..size];
-                            self.chachapoly_worker.encrypt(key, nonce, aad, plaintext)
+                            self.chachapoly_worker
+                                .encrypt(key, nonce, aad, plaintext, tag)
                         }
                         Err(e) => Response::Error(jobs::Error::KeyStore(e)),
                     },
@@ -82,9 +84,10 @@ impl<'a, E: EntropySource> Scheduler<'a, E> {
                 nonce,
                 aad,
                 plaintext,
+                tag,
             } => self
                 .chachapoly_worker
-                .encrypt_external_key(key, nonce, aad, plaintext),
+                .encrypt_external_key(key, nonce, aad, plaintext, tag),
             Request::DecryptChaChaPoly {
                 key_id,
                 nonce,

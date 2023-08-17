@@ -1,5 +1,5 @@
 use crate::common::jobs::Response::GetRandom;
-use crate::common::jobs::{Error, Response};
+use crate::common::jobs::{Error, OutParam, Response};
 use crate::common::limits::MAX_RANDOM_SIZE;
 use crate::common::pool::Pool;
 use crate::crypto::rng::{EntropySource, Rng};
@@ -11,16 +11,12 @@ pub struct RngWorker<'a, E: EntropySource> {
 }
 
 impl<'a, E: EntropySource> RngWorker<'a, E> {
-    pub fn get_random(&mut self, size: usize) -> Response {
-        if size >= MAX_RANDOM_SIZE {
+    pub fn get_random(&mut self, mut data: OutParam) -> Response {
+        let data_slice = data.as_mut_slice();
+        if data_slice.len() >= MAX_RANDOM_SIZE {
             return Response::Error(Error::RequestTooLarge);
         }
-        match self.pool.alloc(size) {
-            Err(_) => Response::Error(Error::Alloc),
-            Ok(mut chunk) => {
-                self.rng.fill_bytes(chunk.as_slice_mut());
-                GetRandom { data: chunk }
-            }
-        }
+        self.rng.fill_bytes(data_slice);
+        GetRandom { data }
     }
 }

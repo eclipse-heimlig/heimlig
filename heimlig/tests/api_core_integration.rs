@@ -1,7 +1,7 @@
 mod test {
     use heapless::spsc::{Consumer, Producer, Queue};
     use heimlig::client::api::Api;
-    use heimlig::common::jobs::{Request, Response};
+    use heimlig::common::jobs::{ExternalMemory, OutParam, Request, Response};
     use heimlig::common::pool::{Memory, Pool};
     use heimlig::config::keystore::{KEY1, KEY2, KEY3};
     use heimlig::crypto::rng::{EntropySource, Rng};
@@ -96,14 +96,15 @@ mod test {
 
         // Send request
         let random_size = 16;
-        api.get_random(random_size)
+        let data = pool.alloc(random_size).expect("failed to allocate data");
+        api.get_random(OutParam::new(ExternalMemory::from_slice(data.as_slice())))
             .expect("failed to call randomness API");
         core.process_next().expect("failed to process next request");
 
         // Receive response
         let response = api.recv_response().expect("failed to receive response");
         match response {
-            Response::GetRandom { data } => assert_eq!(data.len(), random_size),
+            Response::GetRandom { data } => assert_eq!(data.as_slice().len(), random_size),
             _ => panic!("Unexpected response type"),
         }
     }

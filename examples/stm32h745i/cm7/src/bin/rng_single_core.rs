@@ -12,7 +12,7 @@ use embassy_time::{Duration, Timer};
 use heapless::spsc::{Consumer, Producer, Queue};
 use heimlig::client;
 use heimlig::client::api::Api;
-use heimlig::common::jobs::{Request, Response};
+use heimlig::common::jobs::{ExternalMemory, OutParam, Request, Response};
 use heimlig::common::pool::Memory;
 use heimlig::common::pool::Pool;
 use heimlig::crypto::rng;
@@ -123,14 +123,21 @@ async fn client_task(
     // Api
     let mut api = Api::new(&mut core_side);
 
+    // Random buffer
+    let random_buffer = [0u8; 16];
+
     loop {
         // Send requests
         Timer::after(Duration::from_millis(1000)).await;
         led.set_high();
-        let random_size = 16;
-        info!("Sending request: random data (size={})", random_size);
-        api.get_random(random_size)
-            .expect("failed to call randomness API");
+        info!(
+            "Sending request: random data (size={})",
+            random_buffer.len()
+        );
+        api.get_random(OutParam::new(ExternalMemory::from_slice(
+            random_buffer.as_slice(),
+        )))
+        .expect("failed to call randomness API");
 
         // Receive response
         loop {
@@ -139,7 +146,7 @@ async fn client_task(
                     Response::GetRandom { data } => {
                         info!(
                             "Received response: random data (size={}): {:02x}",
-                            data.len(),
+                            data.as_slice().len(),
                             data.as_slice()
                         );
                         break;

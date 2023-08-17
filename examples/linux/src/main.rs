@@ -1,17 +1,17 @@
 #![feature(type_alias_impl_trait)] // Required for embassy
 
 use embassy_executor::Spawner;
-use embassy_time::Duration;
-use embassy_time::Timer;
+use embassy_time::{Duration, Timer};
 use heapless::spsc::{Consumer, Producer, Queue};
-use heimlig::client::api::Api;
-use heimlig::common::jobs::{Request, Response};
-use heimlig::common::pool::Memory;
-use heimlig::common::pool::Pool;
-use heimlig::crypto::rng;
-use heimlig::crypto::rng::Rng;
-use heimlig::hsm::core::Core;
-use heimlig::{client, hsm};
+use heimlig::{
+    client::{self, api::Api},
+    common::{
+        jobs::{ExternalMemory, OutParam, Request, Response},
+        pool::{Memory, Pool},
+    },
+    crypto::rng::{self, Rng},
+    hsm::{self, core::Core},
+};
 use log::{error, info};
 use rand::RngCore;
 
@@ -104,13 +104,18 @@ async fn client_task(
     // Api
     let mut api = Api::new(&mut core_side);
 
+    // Random buffer
+    let random_buffer = [0u8; 16];
+
     loop {
         // Send request
         Timer::after(Duration::from_millis(1000)).await;
-        let random_size = 16;
-        info!(target: "CLIENT", "Sending request: random data (size={})", random_size);
-        api.get_random(random_size)
-            .expect("failed to call randomness API");
+
+        info!(target: "CLIENT", "Sending request: random data (size={})", random_buffer.len());
+        api.get_random(OutParam::new(ExternalMemory::from_slice(
+            random_buffer.as_slice(),
+        )))
+        .expect("failed to call randomness API");
 
         // Receive response
         loop {
@@ -121,7 +126,7 @@ async fn client_task(
                         Response::GetRandom { data } => {
                             info!(target: "CLIENT",
                                 "Received response: random data (size={}): {}",
-                                data.len(),
+                                data.as_slice().len(),
                                 hex::encode(data.as_slice())
                             );
                             break; // Send next request

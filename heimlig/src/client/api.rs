@@ -1,4 +1,4 @@
-use crate::common::jobs::{Request, Response};
+use crate::common::jobs::{OutParam, Request, Response};
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Error {
@@ -25,9 +25,9 @@ impl<'a, C: Channel> Api<'a, C> {
         Api { channel }
     }
 
-    /// Request `size` many random bytes.
-    pub fn get_random(&mut self, size: usize) -> Result<(), Error> {
-        self.channel.send(Request::GetRandom { size })
+    /// Request to fill `data` with random bytes.
+    pub fn get_random(&mut self, data: OutParam) -> Result<(), Error> {
+        self.channel.send(Request::GetRandom { data })
     }
 
     /// Attempt to poll a response and return it.
@@ -39,7 +39,7 @@ impl<'a, C: Channel> Api<'a, C> {
 #[cfg(test)]
 mod test {
     use crate::client::api::{Api, Channel, Error};
-    use crate::common::jobs::{Request, Response};
+    use crate::common::jobs::{ExternalMemory, OutParam, Request, Response};
     use crate::common::pool::{Memory, Pool};
     use heapless::spsc::{Consumer, Producer, Queue};
 
@@ -79,22 +79,26 @@ mod test {
 
         // Send request
         let random_len = 16;
-        api.get_random(random_len)
+        let data = pool.alloc(random_len).expect("failed to allocate");
+        api.get_random(OutParam::new(ExternalMemory::from_slice(data.as_slice())))
             .expect("failed to call randomness API");
         let request = req_rx.dequeue().expect("failed to receive request");
-        match request {
-            Request::GetRandom { size } => assert_eq!(size, random_len),
+        let random_buffer = match request {
+            Request::GetRandom { data } => data,
             _ => panic!("Unexpected request type"),
-        }
+        };
+
+        assert_eq!(random_buffer.as_slice().len(), random_len);
 
         // Receive response
-        let data = pool.alloc(random_len).expect("failed to allocate");
         resp_tx
-            .enqueue(Response::GetRandom { data })
+            .enqueue(Response::GetRandom {
+                data: random_buffer,
+            })
             .expect("failed to send response");
         let response = api.recv_response().expect("failed to receive response");
         match response {
-            Response::GetRandom { data } => assert_eq!(data.len(), random_len),
+            Response::GetRandom { data } => assert_eq!(data.as_slice().len(), random_len),
             _ => panic!("Unexpected response type"),
         }
     }

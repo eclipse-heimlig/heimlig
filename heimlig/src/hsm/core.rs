@@ -116,6 +116,7 @@ impl<'a, E: EntropySource, C: Channel, const MAX_CLIENTS: usize> Core<'a, E, C, 
 mod tests {
     use super::*;
     use crate::client::api::Channel as ApiChannel;
+    use crate::common::jobs::{ExternalMemory, OutParam};
     use crate::common::pool::Memory;
     use crate::config;
     use crate::config::keystore::{KEY1, KEY2, KEY3};
@@ -212,8 +213,11 @@ mod tests {
 
         // Send request from client 1
         let size = 65; // Exceed size of a small chunk
+        let data1 = pool.alloc(size).unwrap();
         client1_side
-            .send(Request::GetRandom { size })
+            .send(Request::GetRandom {
+                data: OutParam::new(ExternalMemory::from_slice(data1.as_slice())),
+            })
             .expect("failed to send request");
         core.process_next().expect("failed to process next request");
         if client2_side.recv().is_some() {
@@ -222,7 +226,7 @@ mod tests {
         match client1_side.recv() {
             Some(response) => match response {
                 Response::GetRandom { data } => {
-                    assert_eq!(data.len(), size)
+                    assert_eq!(data.as_slice().len(), size)
                 }
                 _ => {
                     panic!("Unexpected response type");
@@ -234,8 +238,11 @@ mod tests {
         }
 
         // Send request from client 2
+        let data2 = pool.alloc(size).unwrap();
         client2_side
-            .send(Request::GetRandom { size })
+            .send(Request::GetRandom {
+                data: OutParam::new(ExternalMemory::from_slice(data2.as_slice())),
+            })
             .expect("failed to send request");
         core.process_next().expect("failed to process next request");
         if client1_side.recv().is_some() {
@@ -244,7 +251,7 @@ mod tests {
         match client2_side.recv() {
             Some(response) => match response {
                 Response::GetRandom { data } => {
-                    assert_eq!(data.len(), size)
+                    assert_eq!(data.as_slice().len(), size)
                 }
                 _ => {
                     panic!("Unexpected response type");
