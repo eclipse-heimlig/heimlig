@@ -4,9 +4,10 @@
 
 use defmt::*;
 use embassy_executor::Spawner;
+use embassy_stm32::bind_interrupts;
 use embassy_stm32::gpio::{Level, Output, Speed};
 use embassy_stm32::peripherals::RNG;
-use embassy_stm32::rng::Rng;
+use embassy_stm32::rng::{InterruptHandler, Rng};
 use embassy_time::{Duration, Timer};
 use heapless::spsc::{Consumer, Producer, Queue};
 use heimlig::client;
@@ -18,7 +19,12 @@ use heimlig::crypto::rng;
 use heimlig::hsm;
 use heimlig::hsm::core::Core;
 use rand_core::RngCore;
+
 use {defmt_rtt as _, panic_probe as _};
+
+bind_interrupts!(struct Irqs {
+    RNG => InterruptHandler<RNG>;
+});
 
 // Shared memory pool
 static mut MEMORY: Memory = [0; Pool::required_memory()];
@@ -153,7 +159,7 @@ async fn main(spawner: Spawner) {
 
     // Random number generator
     let peripherals = embassy_stm32::init(Default::default());
-    let rng = Rng::new(peripherals.RNG);
+    let rng = Rng::new(peripherals.RNG, Irqs);
     let led = Output::new(peripherals.PJ2, Level::High, Speed::Low);
 
     // Queues

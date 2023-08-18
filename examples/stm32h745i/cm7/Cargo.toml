@@ -18,8 +18,8 @@ cortex-m = { version = "0.7", default-features = false, features = ["critical-se
 cortex-m-rt = { version = "0.7", default-features = false }
 defmt = { version = "0.3", default-features = false }
 defmt-rtt = { version = "0.4", default-features = false }
-embassy-executor = { version = "0.2", features = ["arch-cortex-m", "defmt", "executor-thread", "integrated-timers", "nightly"] }
-embassy-time = { version = "0.1", features = ["defmt", "defmt-timestamp-uptime", "nightly", "tick-hz-32_768", "unstable-traits"] }
+embassy-executor = { git = "https://github.com/embassy-rs/embassy.git", version = "0.2", features = ["arch-cortex-m", "defmt", "executor-thread", "integrated-timers", "nightly"] }
+embassy-time = { git = "https://github.com/embassy-rs/embassy.git", version = "0.1", features = ["defmt", "defmt-timestamp-uptime", "nightly", "tick-hz-32_768", "unstable-traits"] }
 embassy-stm32 = { git = "https://github.com/embassy-rs/embassy.git", version = "0.1", features = ["nightly", "defmt", "stm32h745xi-cm7", "time-driver-any", "exti", "unstable-pac", "unstable-traits"] }
 heapless = { version = "0.7", default-features = false }
 panic-probe = { version = "0.3", features = ["print-defmt"] }
