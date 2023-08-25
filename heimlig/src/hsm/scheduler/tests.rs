@@ -1,70 +1,81 @@
 use crate::common::jobs::{Error, Request, Response};
 use crate::common::limits::MAX_RANDOM_SIZE;
-use crate::common::pool::{Memory, Pool, PoolChunk};
 use crate::config;
 use crate::config::keystore::{KEY1, KEY2, KEY3};
 use crate::crypto::chacha20poly1305::{KEY_SIZE, NONCE_SIZE};
 use crate::crypto::rng::test::TestEntropySource;
 use crate::crypto::rng::Rng;
 use crate::hsm::keystore::MemoryKeyStore;
-use crate::hsm::scheduler::{Job, Scheduler};
+use crate::hsm::scheduler::{Job, JobResult, Scheduler};
 
 fn init_scheduler<'a>(
-    pool: &'a Pool,
-    key_store: &'a mut MemoryKeyStore<
-        { config::keystore::TOTAL_SIZE },
-        { config::keystore::NUM_KEYS },
-    >,
-) -> Scheduler<'a, TestEntropySource> {
+    key_store: MemoryKeyStore<{ config::keystore::TOTAL_SIZE }, { config::keystore::NUM_KEYS }>,
+) -> Scheduler<
+    TestEntropySource,
+    MemoryKeyStore<{ config::keystore::TOTAL_SIZE }, { config::keystore::NUM_KEYS }>,
+> {
     let entropy = TestEntropySource::default();
     let rng = Rng::new(entropy, None);
 
-    Scheduler::new(pool, rng, Some(key_store))
+    Scheduler::new(rng, Some(key_store))
 }
 
 #[test]
 fn get_random() {
-    static mut MEMORY: Memory = [0; Pool::required_memory()];
-    let pool = Pool::try_from(unsafe { &mut MEMORY }).unwrap();
     let key_infos = [KEY1, KEY2, KEY3];
-    let mut key_store = MemoryKeyStore::<
+    let key_store = MemoryKeyStore::<
         { config::keystore::TOTAL_SIZE },
         { config::keystore::NUM_KEYS },
     >::try_new(&key_infos)
     .expect("failed to create key store");
-    let mut scheduler = init_scheduler(&pool, &mut key_store);
-    let request = Request::GetRandom { size: 32 };
+    let mut scheduler = init_scheduler(key_store);
+
+    const REQUEST_SIZE: usize = 32;
+    const REQUEST_ID: usize = 12345;
+    let mut random_output = [0u8; REQUEST_SIZE];
+    let request = Request::GetRandom {
+        output: &mut random_output,
+    };
     let job = Job {
-        channel_id: 0,
+        request_id: REQUEST_ID,
         request,
     };
-    let response_data = match scheduler.schedule(job).response {
-        Response::GetRandom {
-            data: response_data,
-        } => response_data,
+    let response_data = match scheduler.schedule(job) {
+        JobResult {
+            request_id,
+            response: Response::GetRandom {
+                data: response_data,
+            },
+            ..
+        } => {
+            assert_eq!(request_id, REQUEST_ID);
+            response_data
+        }
         _ => {
             panic!("Unexpected response type");
         }
     };
-    assert_eq!(response_data.len(), 32);
+    assert_eq!(response_data.len(), REQUEST_SIZE);
 }
 
 #[test]
 fn get_random_request_too_large() {
-    static mut MEMORY: Memory = [0; Pool::required_memory()];
-    let pool = Pool::try_from(unsafe { &mut MEMORY }).unwrap();
     let key_infos = [KEY1, KEY2, KEY3];
-    let mut key_store = MemoryKeyStore::<
+    let key_store = MemoryKeyStore::<
         { config::keystore::TOTAL_SIZE },
         { config::keystore::NUM_KEYS },
     >::try_new(&key_infos)
     .expect("failed to create key store");
-    let mut scheduler = init_scheduler(&pool, &mut key_store);
+    let mut scheduler = init_scheduler(key_store);
+
+    const REQUEST_SIZE: usize = MAX_RANDOM_SIZE + 1;
+    const REQUEST_ID: usize = 12345;
+    let mut random_output = [0u8; REQUEST_SIZE];
     let request = Request::GetRandom {
-        size: MAX_RANDOM_SIZE + 1,
+        output: &mut random_output,
     };
     let job = Job {
-        channel_id: 0,
+        request_id: REQUEST_ID,
         request,
     };
     let result = scheduler.schedule(job);
@@ -74,41 +85,46 @@ fn get_random_request_too_large() {
     ))
 }
 
-fn alloc_chachapoly_vars(pool: &Pool) -> (PoolChunk, PoolChunk, PoolChunk, PoolChunk) {
+const PLAINTEXT_SIZE: usize = 36;
+const AAD_SIZE: usize = 33;
+const TAG_SIZE: usize = 16;
+
+fn alloc_chachapoly_vars(buffer: &mut [u8]) -> (&[u8], &[u8], &[u8], &mut [u8], &mut [u8]) {
     const KEY: &[u8; KEY_SIZE] = b"Fortuna Major or Oddsbodikins???";
     const NONCE: &[u8; NONCE_SIZE] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-    const PLAINTEXT: &[u8] = b"I solemnly swear I am up to no good!";
-    const AAD: &[u8] = b"When in doubt, go to the library.";
-    let key = pool.alloc(KEY.len()).unwrap();
-    let mut nonce = pool.alloc(NONCE_SIZE).unwrap();
-    nonce.as_slice_mut().copy_from_slice(NONCE);
-    let mut aad = pool.alloc(AAD.len()).unwrap();
-    aad.as_slice_mut().copy_from_slice(AAD);
-    let mut plaintext = pool.alloc(PLAINTEXT.len()).unwrap();
-    plaintext.as_slice_mut().copy_from_slice(PLAINTEXT);
-    (key, nonce, aad, plaintext)
+    const PLAINTEXT: &[u8; PLAINTEXT_SIZE] = b"I solemnly swear I am up to no good!";
+    const AAD: &[u8; AAD_SIZE] = b"When in doubt, go to the library.";
+    let (key, buffer) = buffer.split_at_mut(KEY.len());
+    key.copy_from_slice(KEY);
+    let (nonce, buffer) = buffer.split_at_mut(NONCE.len());
+    nonce.copy_from_slice(NONCE);
+    let (aad, buffer) = buffer.split_at_mut(AAD.len());
+    aad.copy_from_slice(AAD);
+    let (plaintext, buffer) = buffer.split_at_mut(PLAINTEXT.len());
+    plaintext.copy_from_slice(PLAINTEXT);
+    let (tag, _buffer) = buffer.split_at_mut(TAG_SIZE);
+    (key, nonce, aad, plaintext, tag)
 }
 
 #[test]
 fn encrypt_chachapoly() {
-    static mut MEMORY: Memory = [0; Pool::required_memory()];
-    let pool = Pool::try_from(unsafe { &mut MEMORY }).unwrap();
     let key_infos = [KEY1, KEY2, KEY3];
-    let mut key_store = MemoryKeyStore::<
+    let key_store = MemoryKeyStore::<
         { config::keystore::TOTAL_SIZE },
         { config::keystore::NUM_KEYS },
     >::try_new(&key_infos)
     .expect("failed to create key store");
-    let mut scheduler = init_scheduler(&pool, &mut key_store);
+    let mut scheduler = init_scheduler(key_store);
 
     // Import key
-    let (key, nonce, aad, plaintext) = alloc_chachapoly_vars(&pool);
+    let mut memory = [0; KEY_SIZE + NONCE_SIZE + PLAINTEXT_SIZE + AAD_SIZE + TAG_SIZE];
+    let (key, nonce, aad, plaintext, tag) = alloc_chachapoly_vars(&mut memory);
     let request = Request::ImportKey {
         id: KEY3.id,
         data: key,
     };
     let job = Job {
-        channel_id: 0,
+        request_id: 0,
         request,
     };
     match scheduler.schedule(job).response {
@@ -124,9 +140,10 @@ fn encrypt_chachapoly() {
         nonce,
         aad: Some(aad),
         plaintext,
+        tag,
     };
     let job = Job {
-        channel_id: 0,
+        request_id: 0,
         request,
     };
     let (ciphertext, tag) = match scheduler.schedule(job).response {
@@ -137,7 +154,8 @@ fn encrypt_chachapoly() {
     };
 
     // Decrypt data
-    let (_key, nonce, aad, org_plaintext) = alloc_chachapoly_vars(&pool);
+    let mut memory = [0; KEY_SIZE + NONCE_SIZE + PLAINTEXT_SIZE + AAD_SIZE + TAG_SIZE];
+    let (_key, nonce, aad, org_plaintext, _tag) = alloc_chachapoly_vars(&mut memory);
     let request = Request::DecryptChaChaPoly {
         key_id: KEY3.id,
         nonce,
@@ -146,40 +164,40 @@ fn encrypt_chachapoly() {
         tag,
     };
     let job = Job {
-        channel_id: 0,
+        request_id: 0,
         request,
     };
     let plaintext = match scheduler.schedule(job).response {
         Response::DecryptChaChaPoly { plaintext } => plaintext,
-        _ => {
-            panic!("Unexpected response type");
+        resp => {
+            panic!("Unexpected response type {:?}", resp);
         }
     };
-    assert_eq!(plaintext.as_slice(), org_plaintext.as_slice());
+    assert_eq!(plaintext, org_plaintext);
 }
 
 #[test]
 fn encrypt_chachapoly_external_key() {
-    static mut MEMORY: Memory = [0; Pool::required_memory()];
-    let pool = Pool::try_from(unsafe { &mut MEMORY }).unwrap();
     let key_infos = [KEY1, KEY2, KEY3];
-    let mut key_store = MemoryKeyStore::<
+    let key_store = MemoryKeyStore::<
         { config::keystore::TOTAL_SIZE },
         { config::keystore::NUM_KEYS },
     >::try_new(&key_infos)
     .expect("failed to create key store");
-    let mut scheduler = init_scheduler(&pool, &mut key_store);
+    let mut scheduler = init_scheduler(key_store);
 
     // Encrypt data
-    let (key, nonce, aad, plaintext) = alloc_chachapoly_vars(&pool);
+    let mut memory = [0; KEY_SIZE + NONCE_SIZE + PLAINTEXT_SIZE + AAD_SIZE + TAG_SIZE];
+    let (key, nonce, aad, plaintext, tag) = alloc_chachapoly_vars(&mut memory);
     let request = Request::EncryptChaChaPolyExternalKey {
         key,
         nonce,
         aad: Some(aad),
         plaintext,
+        tag,
     };
     let job = Job {
-        channel_id: 0,
+        request_id: 0,
         request,
     };
     let (ciphertext, tag) = match scheduler.schedule(job).response {
@@ -190,7 +208,8 @@ fn encrypt_chachapoly_external_key() {
     };
 
     // Decrypt data
-    let (key, nonce, aad, org_plaintext) = alloc_chachapoly_vars(&pool);
+    let mut memory = [0; KEY_SIZE + NONCE_SIZE + PLAINTEXT_SIZE + AAD_SIZE + TAG_SIZE];
+    let (key, nonce, aad, org_plaintext, _tag) = alloc_chachapoly_vars(&mut memory);
     let request = Request::DecryptChaChaPolyExternalKey {
         key,
         nonce,
@@ -199,7 +218,7 @@ fn encrypt_chachapoly_external_key() {
         tag,
     };
     let job = Job {
-        channel_id: 0,
+        request_id: 0,
         request,
     };
     let plaintext = match scheduler.schedule(job).response {
@@ -208,5 +227,5 @@ fn encrypt_chachapoly_external_key() {
             panic!("Unexpected response type");
         }
     };
-    assert_eq!(plaintext.as_slice(), org_plaintext.as_slice())
+    assert_eq!(plaintext, org_plaintext)
 }
