@@ -61,11 +61,11 @@ macro_rules! define_aes_gcm_impl {
         $decryptor:ident,
         $core:tt
     ) => {
-        pub fn $encryptor<'a>(
+        pub fn $encryptor(
             key: &[u8],
             nonce: &[u8],
             aad: &[u8],
-            buffer: &'a mut [u8],
+            buffer: &mut [u8],
         ) -> Result<Tag<$core>, Error> {
             encrypt_in_place_detached::<$core>(key, nonce, aad, buffer)
         }
