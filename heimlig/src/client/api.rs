@@ -30,7 +30,11 @@ impl<'a, Req: RequestSink<'a>, Resp: Iterator<Item = Response<'a>>> Api<'a, Req,
 
     /// Request `size` many random bytes.
     pub fn get_random(&mut self, output: &'a mut [u8]) -> Result<(), Error> {
-        self.requests_sink.send(Request::GetRandom { output })
+        if self.requests_sink.ready() {
+            self.requests_sink.send(Request::GetRandom { output })
+        } else {
+            Err(Error::QueueFull)
+        }
     }
 
     /// Attempt to poll a response and return it.

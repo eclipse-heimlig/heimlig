@@ -3,8 +3,6 @@ use crate::hsm::keystore::Id;
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Error {
-    /// Failed to allocate memory.
-    Alloc,
     /// The amount of requested data was too large.
     RequestTooLarge,
     /// A cryptographic error occurred.
@@ -59,7 +57,7 @@ pub enum Response<'a> {
     ImportKey,
     Error(Error),
     GetRandom {
-        data: &'a [u8],
+        data: &'a mut [u8],
     },
     EncryptChaChaPoly {
         ciphertext: &'a mut [u8],

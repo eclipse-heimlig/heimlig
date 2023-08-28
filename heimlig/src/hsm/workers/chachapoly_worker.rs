@@ -1,6 +1,6 @@
 use crate::common::jobs::{Error, Response};
 
-pub struct ChachaPolyWorker {}
+pub struct ChachaPolyWorker;
 
 impl ChachaPolyWorker {
     pub fn encrypt_external_key<'a>(
@@ -22,16 +22,15 @@ impl ChachaPolyWorker {
         ciphertext: &'a mut [u8],
         tag: &'a mut [u8],
     ) -> Response<'a> {
-        let aad = match &aad {
-            Some(aad) => aad,
-            None => &[] as &[u8],
-        };
         match crate::crypto::chacha20poly1305::encrypt_in_place_detached(
-            key, nonce, aad, ciphertext,
+            key,
+            nonce,
+            aad.unwrap_or_default(),
+            ciphertext,
         ) {
             Ok(computed_tag) => {
                 if computed_tag.len() != tag.len() {
-                    return Response::Error(Error::Alloc);
+                    return Response::Error(Error::Crypto(crate::crypto::Error::InvalidTagSize));
                 }
                 tag.copy_from_slice(computed_tag.as_slice());
                 Response::EncryptChaChaPoly { ciphertext, tag }
@@ -59,12 +58,12 @@ impl ChachaPolyWorker {
         plaintext: &'a mut [u8],
         tag: &[u8],
     ) -> Response<'a> {
-        let aad = match &aad {
-            Some(aad) => aad,
-            None => &[] as &[u8],
-        };
         match crate::crypto::chacha20poly1305::decrypt_in_place_detached(
-            key, nonce, aad, plaintext, tag,
+            key,
+            nonce,
+            aad.unwrap_or_default(),
+            plaintext,
+            tag,
         ) {
             Ok(()) => Response::DecryptChaChaPoly { plaintext },
             Err(e) => Response::Error(Error::Crypto(e)),
