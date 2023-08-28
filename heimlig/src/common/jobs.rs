@@ -1,6 +1,8 @@
 use crate::hsm::keystore;
 use crate::hsm::keystore::Id;
 
+use crate::crypto::chacha20poly1305::TAG_SIZE;
+
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Error {
     /// The amount of requested data was too large.
@@ -26,21 +28,21 @@ pub enum Request<'a> {
         nonce: &'a [u8],
         aad: Option<&'a [u8]>,
         plaintext: &'a mut [u8],
-        tag: &'a mut [u8],
+        tag: &'a mut [u8; TAG_SIZE],
     },
     EncryptChaChaPolyExternalKey {
         key: &'a [u8],
         nonce: &'a [u8],
         aad: Option<&'a [u8]>,
         plaintext: &'a mut [u8],
-        tag: &'a mut [u8],
+        tag: &'a mut [u8; TAG_SIZE],
     },
     DecryptChaChaPoly {
         key_id: Id,
         nonce: &'a [u8],
         aad: Option<&'a [u8]>,
         ciphertext: &'a mut [u8],
-        tag: &'a [u8],
+        tag: &'a [u8; TAG_SIZE],
     },
     DecryptChaChaPolyExternalKey {
         key: &'a [u8],
@@ -61,7 +63,7 @@ pub enum Response<'a> {
     },
     EncryptChaChaPoly {
         ciphertext: &'a mut [u8],
-        tag: &'a mut [u8],
+        tag: &'a mut [u8; TAG_SIZE],
     },
     DecryptChaChaPoly {
         plaintext: &'a mut [u8],
