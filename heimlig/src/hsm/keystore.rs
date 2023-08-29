@@ -40,6 +40,27 @@ pub trait KeyStore {
     }
 }
 
+/// Dummy key store that always returns [Error::KeyNotFound]. It used if a core is built without a KeyStore.
+pub struct NoKeyStore;
+
+impl KeyStore for NoKeyStore {
+    fn is_stored(&self, _id: Id) -> bool {
+        false
+    }
+
+    fn size(&self, _id: Id) -> Result<usize, Error> {
+        Err(Error::KeyNotFound)
+    }
+
+    fn store(&mut self, _id: Id, _src: &[u8]) -> Result<(), Error> {
+        Err(Error::KeyNotFound)
+    }
+
+    fn get(&self, _id: Id, _dest: &mut [u8]) -> Result<usize, Error> {
+        Err(Error::KeyNotFound)
+    }
+}
+
 #[derive(Debug)]
 pub struct KeyInfo {
     pub id: Id,

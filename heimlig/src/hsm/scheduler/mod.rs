@@ -6,7 +6,6 @@ use crate::common::jobs::{Request, Response};
 use crate::common::scrub_on_drop::ScrubOnDrop;
 use crate::config::keystore::MAX_KEY_SIZE;
 use crate::crypto::rng::{EntropySource, Rng};
-use crate::hsm::keystore;
 use crate::hsm::keystore::KeyStore;
 use crate::hsm::workers::chachapoly_worker::ChachaPolyWorker;
 use crate::hsm::workers::rng_worker::RngWorker;
@@ -29,14 +28,14 @@ pub struct JobResult<'a> {
 
 /// Scheduler to distribute jobs to proper workers.
 pub struct Scheduler<E: EntropySource, K: KeyStore> {
-    key_store: Option<K>,
+    key_store: K,
     rng_worker: RngWorker<E>,
     chachapoly_worker: ChachaPolyWorker,
 }
 
 impl<E: EntropySource, K: KeyStore> Scheduler<E, K> {
     /// Create a new scheduler.
-    pub fn new(rng: Rng<E>, key_store: Option<K>) -> Self {
+    pub fn new(rng: Rng<E>, key_store: K) -> Self {
         Scheduler {
             key_store,
             rng_worker: RngWorker { rng },
@@ -50,12 +49,9 @@ impl<E: EntropySource, K: KeyStore> Scheduler<E, K> {
     // TODO: Retrieve response from worker asynchronously and notify caller
     pub fn schedule<'a>(&mut self, job: Job<'a>) -> JobResult<'a> {
         let response = match job.request {
-            Request::ImportKey { id, data } => match &mut self.key_store {
-                Some(key_store) => match key_store.store(id, data) {
-                    Ok(_) => Response::ImportKey,
-                    Err(e) => Response::Error(jobs::Error::KeyStore(e)),
-                },
-                None => Response::Error(jobs::Error::KeyStore(keystore::Error::KeyNotFound)),
+            Request::ImportKey { id, data } => match self.key_store.store(id, data) {
+                Ok(_) => Response::ImportKey,
+                Err(e) => Response::Error(jobs::Error::KeyStore(e)),
             },
             Request::GetRandom { output } => self.rng_worker.get_random(output),
             Request::EncryptChaChaPoly {
@@ -66,16 +62,13 @@ impl<E: EntropySource, K: KeyStore> Scheduler<E, K> {
                 tag,
             } => {
                 let mut key: ScrubOnDrop<MAX_KEY_SIZE> = ScrubOnDrop::new();
-                match &self.key_store {
-                    Some(key_store) => match key_store.get(key_id, &mut key.data) {
-                        Ok(size) => {
-                            let key = &key.data[..size];
-                            self.chachapoly_worker
-                                .encrypt(key, nonce, aad, plaintext, tag)
-                        }
-                        Err(e) => Response::Error(jobs::Error::KeyStore(e)),
-                    },
-                    None => Response::Error(jobs::Error::KeyStore(keystore::Error::KeyNotFound)),
+                match self.key_store.get(key_id, &mut key.data) {
+                    Ok(size) => {
+                        let key = &key.data[..size];
+                        self.chachapoly_worker
+                            .encrypt(key, nonce, aad, plaintext, tag)
+                    }
+                    Err(e) => Response::Error(jobs::Error::KeyStore(e)),
                 }
             }
             Request::EncryptChaChaPolyExternalKey {
@@ -95,16 +88,13 @@ impl<E: EntropySource, K: KeyStore> Scheduler<E, K> {
                 tag,
             } => {
                 let mut key: ScrubOnDrop<MAX_KEY_SIZE> = ScrubOnDrop::new();
-                match &self.key_store {
-                    Some(key_store) => match key_store.get(key_id, &mut key.data) {
-                        Ok(size) => {
-                            let key = &key.data[..size];
-                            self.chachapoly_worker
-                                .decrypt(key, nonce, aad, ciphertext, tag)
-                        }
-                        Err(e) => Response::Error(jobs::Error::KeyStore(e)),
-                    },
-                    None => Response::Error(jobs::Error::KeyStore(keystore::Error::KeyNotFound)),
+                match self.key_store.get(key_id, &mut key.data) {
+                    Ok(size) => {
+                        let key = &key.data[..size];
+                        self.chachapoly_worker
+                            .decrypt(key, nonce, aad, ciphertext, tag)
+                    }
+                    Err(e) => Response::Error(jobs::Error::KeyStore(e)),
                 }
             }
             Request::DecryptChaChaPolyExternalKey {

@@ -17,7 +17,7 @@ fn init_scheduler<'a>(
     let entropy = TestEntropySource::default();
     let rng = Rng::new(entropy, None);
 
-    Scheduler::new(rng, Some(key_store))
+    Scheduler::new(rng, key_store)
 }
 
 #[test]

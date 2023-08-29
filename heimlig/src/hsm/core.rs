@@ -1,6 +1,6 @@
 use crate::common::jobs::{Request, Response};
 use crate::crypto::rng::{EntropySource, Rng};
-use crate::hsm::keystore::KeyStore;
+use crate::hsm::keystore::{KeyStore, NoKeyStore};
 use crate::hsm::scheduler::{Job, Scheduler};
 
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -31,6 +31,22 @@ pub struct Core<
     responses_sink: Resp,
 }
 
+impl<'a, E: EntropySource, Req: Iterator<Item = (usize, Request<'a>)>, Resp: ResponseSink<'a>>
+    Core<'a, E, NoKeyStore, Req, Resp>
+{
+    /// Create a new HSM core.
+    /// This variant does not configure a [KeyStore] so this core will not be able to store
+    /// cryptographic material.
+    ///
+    /// # Arguments
+    ///
+    /// * `rng`: Random number generator (RNG) used to seed the core RNG.
+    /// * `response_channels`: List of [Channel]s to send responses back to the clients.
+    pub fn new_without_key_store(rng: Rng<E>, requests_source: Req, responses_sink: Resp) -> Self {
+        Self::new(rng, requests_source, responses_sink, NoKeyStore)
+    }
+}
+
 impl<
         'a,
         E: EntropySource,
@@ -47,29 +63,12 @@ impl<
     /// * `rng`: Random number generator (RNG) used to seed the core RNG.
     /// * `response_channels`: List of [Channel]s to send responses back to the clients.
     /// * `key_store`: The [KeyStore] to hold cryptographic key material.
-    pub fn new(
-        rng: Rng<E>,
-        requests_source: Req,
-        responses_sink: Resp,
-        key_store: Option<K>,
-    ) -> Self {
-        Core {
+    pub fn new(rng: Rng<E>, requests_source: Req, responses_sink: Resp, key_store: K) -> Self {
+        Self {
             scheduler: Scheduler::new(rng, key_store),
             requests_source,
             responses_sink,
         }
-    }
-
-    /// Create a new HSM core.
-    /// This variant does not configure a [KeyStore] so this core will not be able to store
-    /// cryptographic material.
-    ///
-    /// # Arguments
-    ///
-    /// * `rng`: Random number generator (RNG) used to seed the core RNG.
-    /// * `response_channels`: List of [Channel]s to send responses back to the clients.
-    pub fn new_without_key_store(rng: Rng<E>, requests: Req, responses: Resp) -> Self {
-        Self::new(rng, requests, responses, None)
     }
 
     /// Search all input channels for a new request and process it.
@@ -181,7 +180,7 @@ mod tests {
             rng,
             requests_source.enumerate(),
             responses_sink,
-            Some(key_store),
+            key_store,
         );
 
         requests_tx

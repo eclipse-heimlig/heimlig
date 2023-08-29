@@ -114,7 +114,7 @@ mod test {
             rng,
             requests_source.enumerate(),
             responses_sink,
-            Some(key_store),
+            key_store,
         );
 
         // Api
