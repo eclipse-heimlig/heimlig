@@ -9,7 +9,7 @@ impl ChachaPolyWorker {
         nonce: &[u8],
         aad: Option<&[u8]>,
         ciphertext: &'a mut [u8],
-        tag: &'a mut [u8; crate::crypto::chacha20poly1305::TAG_SIZE],
+        tag: &'a mut [u8],
     ) -> Response<'a> {
         self.encrypt(key, nonce, aad, ciphertext, tag)
     }
@@ -20,7 +20,7 @@ impl ChachaPolyWorker {
         nonce: &[u8],
         aad: Option<&[u8]>,
         ciphertext: &'a mut [u8],
-        tag: &'a mut [u8; crate::crypto::chacha20poly1305::TAG_SIZE],
+        tag: &'a mut [u8],
     ) -> Response<'a> {
         match crate::crypto::chacha20poly1305::encrypt_in_place_detached(
             key,

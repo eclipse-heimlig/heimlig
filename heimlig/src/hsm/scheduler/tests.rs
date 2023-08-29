@@ -87,11 +87,9 @@ fn get_random_request_too_large() {
 
 const PLAINTEXT_SIZE: usize = 36;
 const AAD_SIZE: usize = 33;
-const TAG_SIZE: usize = crate::crypto::chacha20poly1305::TAG_SIZE;
+const TAG_SIZE: usize = 16;
 
-fn alloc_chachapoly_vars(
-    buffer: &mut [u8],
-) -> (&[u8], &[u8], &[u8], &mut [u8], &mut [u8; TAG_SIZE]) {
+fn alloc_chachapoly_vars(buffer: &mut [u8]) -> (&[u8], &[u8], &[u8], &mut [u8], &mut [u8]) {
     const KEY: &[u8; KEY_SIZE] = b"Fortuna Major or Oddsbodikins???";
     const NONCE: &[u8; NONCE_SIZE] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
     const PLAINTEXT: &[u8; PLAINTEXT_SIZE] = b"I solemnly swear I am up to no good!";
@@ -105,7 +103,7 @@ fn alloc_chachapoly_vars(
     let (plaintext, buffer) = buffer.split_at_mut(PLAINTEXT.len());
     plaintext.copy_from_slice(PLAINTEXT);
     let (tag, _buffer) = buffer.split_at_mut(TAG_SIZE);
-    (key, nonce, aad, plaintext, tag.try_into().unwrap())
+    (key, nonce, aad, plaintext, tag)
 }
 
 #[test]
