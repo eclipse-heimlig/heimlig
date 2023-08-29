@@ -3,12 +3,12 @@ mod tests;
 
 use crate::common::jobs;
 use crate::common::jobs::{Request, Response};
-use crate::common::scrub_on_drop::ScrubOnDrop;
 use crate::config::keystore::MAX_KEY_SIZE;
 use crate::crypto::rng::{EntropySource, Rng};
 use crate::hsm::keystore::KeyStore;
 use crate::hsm::workers::chachapoly_worker::ChachaPolyWorker;
 use crate::hsm::workers::rng_worker::RngWorker;
+use zeroize::Zeroizing;
 
 /// A job for the HSM to compute a cryptographic task.
 pub struct Job<'a> {
@@ -61,10 +61,10 @@ impl<E: EntropySource, K: KeyStore> Scheduler<E, K> {
                 plaintext,
                 tag,
             } => {
-                let mut key: ScrubOnDrop<MAX_KEY_SIZE> = ScrubOnDrop::new();
-                match self.key_store.get(key_id, &mut key.data) {
+                let mut key = Zeroizing::new([0u8; MAX_KEY_SIZE]);
+                match self.key_store.get(key_id, key.as_mut()) {
                     Ok(size) => {
-                        let key = &key.data[..size];
+                        let key = &key[..size];
                         self.chachapoly_worker
                             .encrypt(key, nonce, aad, plaintext, tag)
                     }
@@ -87,10 +87,10 @@ impl<E: EntropySource, K: KeyStore> Scheduler<E, K> {
                 ciphertext,
                 tag,
             } => {
-                let mut key: ScrubOnDrop<MAX_KEY_SIZE> = ScrubOnDrop::new();
-                match self.key_store.get(key_id, &mut key.data) {
+                let mut key = Zeroizing::new([0u8; MAX_KEY_SIZE]);
+                match self.key_store.get(key_id, key.as_mut()) {
                     Ok(size) => {
-                        let key = &key.data[..size];
+                        let key = &key[..size];
                         self.chachapoly_worker
                             .decrypt(key, nonce, aad, ciphertext, tag)
                     }
