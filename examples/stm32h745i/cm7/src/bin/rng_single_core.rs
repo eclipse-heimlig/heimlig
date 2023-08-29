@@ -10,14 +10,10 @@ use embassy_stm32::peripherals::RNG;
 use embassy_stm32::rng::{InterruptHandler, Rng};
 use embassy_time::{Duration, Timer};
 use heapless::spsc::{Consumer, Producer, Queue};
-use heimlig::client;
-use heimlig::client::api::Api;
+use heimlig::client::api::{Api, RequestSink};
 use heimlig::common::jobs::{Request, Response};
-use heimlig::common::pool::Memory;
-use heimlig::common::pool::Pool;
 use heimlig::crypto::rng;
-use heimlig::hsm;
-use heimlig::hsm::core::Core;
+use heimlig::hsm::core::{Core, ResponseSink};
 use rand_core::RngCore;
 
 use {defmt_rtt as _, panic_probe as _};
@@ -27,7 +23,7 @@ bind_interrupts!(struct Irqs {
 });
 
 // Shared memory pool
-static mut MEMORY: Memory = [0; Pool::required_memory()];
+static mut MEMORY: [u8; 256] = [0; 256];
 
 const QUEUE_SIZE: usize = 8;
 static mut CLIENT_TO_HSM: Queue<Request, QUEUE_SIZE> = Queue::<Request, QUEUE_SIZE>::new();
@@ -45,60 +41,75 @@ impl rng::EntropySource for EntropySource {
         buf
     }
 }
-
-struct ChannelClientSide<'a, const QUEUE_SIZE: usize> {
-    sender: Producer<'a, Request, QUEUE_SIZE>,
-    receiver: Consumer<'a, Response, QUEUE_SIZE>,
+struct RequestQueueSink<'ch, 'a> {
+    producer: Producer<'ch, Request<'a>, QUEUE_SIZE>,
 }
 
-struct ChannelCoreSide<'a> {
-    sender: Producer<'a, Response, QUEUE_SIZE>,
-    receiver: Consumer<'a, Request, QUEUE_SIZE>,
-}
-
-impl<'a> client::api::Channel for ChannelClientSide<'a, QUEUE_SIZE> {
-    fn send(&mut self, request: Request) -> Result<(), client::api::Error> {
-        self.sender
+impl<'a> RequestSink<'a> for RequestQueueSink<'_, 'a> {
+    fn send(&mut self, request: Request<'a>) -> Result<(), heimlig::client::api::Error> {
+        self.producer
             .enqueue(request)
-            .map_err(|_request| client::api::Error::QueueFull)
+            .map_err(|_| heimlig::client::api::Error::QueueFull)
     }
 
-    fn recv(&mut self) -> Option<Response> {
-        self.receiver.dequeue()
+    fn ready(&self) -> bool {
+        self.producer.ready()
     }
 }
 
-impl<'a> hsm::core::Channel for ChannelCoreSide<'a> {
-    fn send(&mut self, response: Response) -> Result<(), hsm::core::Error> {
-        self.sender
-            .enqueue(response)
-            .map_err(|_response| hsm::core::Error::QueueFull)
-    }
+struct RequestQueueSource<'ch, 'a> {
+    consumer: Consumer<'ch, Request<'a>, QUEUE_SIZE>,
+}
 
-    fn recv(&mut self) -> Option<Request> {
-        self.receiver.dequeue()
+impl<'a> Iterator for RequestQueueSource<'_, 'a> {
+    type Item = Request<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.consumer.dequeue()
+    }
+}
+
+struct ResponseQueueSink<'ch, 'a> {
+    producer: Producer<'ch, Response<'a>, QUEUE_SIZE>,
+}
+
+impl<'a> ResponseSink<'a> for ResponseQueueSink<'_, 'a> {
+    fn send(&mut self, response: Response<'a>) -> Result<(), heimlig::hsm::core::Error> {
+        self.producer
+            .enqueue(response)
+            .map_err(|_| heimlig::hsm::core::Error::QueueFull)
+    }
+    fn ready(&self) -> bool {
+        self.producer.ready()
+    }
+}
+
+struct ResponseQueueSource<'ch, 'a> {
+    consumer: Consumer<'ch, Response<'a>, QUEUE_SIZE>,
+}
+
+impl<'a> Iterator for ResponseQueueSource<'_, 'a> {
+    type Item = Response<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.consumer.dequeue()
     }
 }
 
 #[embassy_executor::task]
 async fn hsm_task(
-    req_rx: Consumer<'static, Request, QUEUE_SIZE>,
-    resp_tx: Producer<'static, Response, QUEUE_SIZE>,
+    req_rx: Consumer<'static, Request<'_>, QUEUE_SIZE>,
+    resp_tx: Producer<'static, Response<'_>, QUEUE_SIZE>,
     rng: Rng<'static, RNG>,
 ) {
     info!("HSM task started");
 
     // Channel
-    let core_side = ChannelCoreSide {
-        sender: resp_tx,
-        receiver: req_rx,
-    };
-    let mut channels = heapless::Vec::<_, 1>::new();
-    let _ = channels.push(core_side);
+    let requests_source = RequestQueueSource { consumer: req_rx };
+    let responses_sink = ResponseQueueSink { producer: resp_tx };
 
     let rng = rng::Rng::new(EntropySource { rng }, None);
-    let pool = Pool::try_from(unsafe { &mut MEMORY }).expect("failed to initialize memory pool");
-    let mut core = Core::new_without_key_store(&pool, rng, channels);
+    let mut core = Core::new_without_key_store(rng, requests_source.enumerate(), responses_sink);
 
     loop {
         core.process_next().expect("failed to process next request");
@@ -108,28 +119,49 @@ async fn hsm_task(
 
 #[embassy_executor::task]
 async fn client_task(
-    resp_rx: Consumer<'static, Response, QUEUE_SIZE>,
-    req_tx: Producer<'static, Request, QUEUE_SIZE>,
+    resp_rx: Consumer<'static, Response<'_>, QUEUE_SIZE>,
+    req_tx: Producer<'static, Request<'_>, QUEUE_SIZE>,
     mut led: Output<'static, embassy_stm32::peripherals::PJ2>,
 ) {
     info!("Client task started");
 
+    // Memory
+    let pool = heapless::pool::Pool::<[u8; 16]>::new();
+    // Safety: we are the only users of MEMORY
+    pool.grow(unsafe { &mut MEMORY });
+
     // Channel
-    let mut core_side = ChannelClientSide {
-        sender: req_tx,
-        receiver: resp_rx,
-    };
+    let requests_sink = RequestQueueSink { producer: req_tx };
+    let responses_source = ResponseQueueSource { consumer: resp_rx };
 
     // Api
-    let mut api = Api::new(&mut core_side);
+    let mut api = Api::new(requests_sink, responses_source);
 
     loop {
         // Send requests
         Timer::after(Duration::from_millis(1000)).await;
         led.set_high();
-        let random_size = 16;
-        info!("Sending request: random data (size={})", random_size);
-        api.get_random(random_size)
+
+        let mut random_buffer_alloc = pool
+            .alloc()
+            .expect("Failed to allocate buffer for random data")
+            .init([0; 16]);
+        // Safety: we forget about the box below, so it doesn't get dropped!
+        let random_buffer = unsafe {
+            core::slice::from_raw_parts_mut(
+                random_buffer_alloc.as_mut_ptr(),
+                random_buffer_alloc.len(),
+            )
+        };
+        // Avoid releasing the allocation; unfortunately with current version of heapless, we
+        // cannot unleak this. heapless::pool::Box would need to implement an interface similar to
+        // std::Box::from_raw.
+        core::mem::forget(random_buffer_alloc);
+        info!(
+            "Sending request: random data (size={})",
+            random_buffer.len()
+        );
+        api.get_random(random_buffer)
             .expect("failed to call randomness API");
 
         // Receive response
@@ -140,7 +172,7 @@ async fn client_task(
                         info!(
                             "Received response: random data (size={}): {:02x}",
                             data.len(),
-                            data.as_slice()
+                            data
                         );
                         break;
                     }
