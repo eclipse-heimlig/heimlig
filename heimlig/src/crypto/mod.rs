@@ -5,6 +5,7 @@ pub mod ecdh;
 pub mod ecdsa;
 pub mod hash;
 pub mod rng;
+pub mod x25519;
 
 /// Common errors.
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -15,7 +16,7 @@ pub enum Error {
     InvalidIvSize,
     /// Size of the provided tag is invalid.
     InvalidTagSize,
-    /// Size of the provided plaintext or ciphertext is invalid.
+    /// Size of the provided buffer is invalid.
     InvalidBufferSize,
     /// Provided plaintext or ciphertext is not padded.
     InvalidPadding,
@@ -23,6 +24,10 @@ pub enum Error {
     Encrypt,
     /// Error during decryption.
     Decrypt,
+    /// Invalid private key format.
+    InvalidPrivateKey,
+    /// Invalid public key format.
+    InvalidPublicKey,
 }
 
 /// Validation of key and initialization vector/nonce sizes.
