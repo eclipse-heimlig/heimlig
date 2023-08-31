@@ -110,12 +110,7 @@ mod test {
             { config::keystore::NUM_KEYS },
         >::try_new(&key_infos)
         .expect("failed to create key store");
-        let mut core = Core::new(
-            rng,
-            requests_source.enumerate(),
-            responses_sink,
-            key_store,
-        );
+        let mut core = Core::new(rng, requests_source.enumerate(), responses_sink, key_store);
 
         // Api
         let mut api = Api::new(requests_sink, responses_source);

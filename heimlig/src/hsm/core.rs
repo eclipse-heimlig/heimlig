@@ -176,12 +176,7 @@ mod tests {
         >::try_new(&key_infos)
         .expect("failed to create key store");
 
-        let mut core = Core::new(
-            rng,
-            requests_source.enumerate(),
-            responses_sink,
-            key_store,
-        );
+        let mut core = Core::new(rng, requests_source.enumerate(), responses_sink, key_store);
 
         requests_tx
             .enqueue(Request::GetRandom {
