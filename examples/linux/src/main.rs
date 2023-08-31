@@ -5,18 +5,14 @@ use embassy_time::Duration;
 use embassy_time::Timer;
 use heapless::spsc::{Consumer, Producer, Queue};
 use heimlig::client::api::Api;
+use heimlig::client::api::RequestSink;
 use heimlig::common::jobs::{Request, Response};
-use heimlig::common::pool::Memory;
-use heimlig::common::pool::Pool;
 use heimlig::crypto::rng;
 use heimlig::crypto::rng::Rng;
 use heimlig::hsm::core::Core;
-use heimlig::{client, hsm};
+use heimlig::hsm::core::ResponseSink;
 use log::{error, info};
 use rand::RngCore;
-
-// Shared memory pool
-static mut MEMORY: Memory = [0; Pool::required_memory()];
 
 // Request and response queues between tasks
 const QUEUE_SIZE: usize = 8;
@@ -32,57 +28,72 @@ impl rng::EntropySource for EntropySource {
         data
     }
 }
-
-struct ChannelClientSide<'a, const QUEUE_SIZE: usize> {
-    sender: Producer<'a, Request, QUEUE_SIZE>,
-    receiver: Consumer<'a, Response, QUEUE_SIZE>,
+struct RequestQueueSink<'ch, 'a> {
+    producer: Producer<'ch, Request<'a>, QUEUE_SIZE>,
 }
 
-struct ChannelCoreSide<'a, const QUEUE_SIZE: usize> {
-    sender: Producer<'a, Response, QUEUE_SIZE>,
-    receiver: Consumer<'a, Request, QUEUE_SIZE>,
-}
-
-impl<'a> client::api::Channel for ChannelClientSide<'a, QUEUE_SIZE> {
-    fn send(&mut self, request: Request) -> Result<(), client::api::Error> {
-        self.sender
+impl<'a> RequestSink<'a> for RequestQueueSink<'_, 'a> {
+    fn send(&mut self, request: Request<'a>) -> Result<(), heimlig::client::api::Error> {
+        self.producer
             .enqueue(request)
-            .map_err(|_| client::api::Error::QueueFull)
+            .map_err(|_| heimlig::client::api::Error::QueueFull)
     }
 
-    fn recv(&mut self) -> Option<Response> {
-        self.receiver.dequeue()
+    fn ready(&self) -> bool {
+        self.producer.ready()
     }
 }
 
-impl<'a> hsm::core::Channel for ChannelCoreSide<'a, QUEUE_SIZE> {
-    fn send(&mut self, response: Response) -> Result<(), hsm::core::Error> {
-        self.sender
-            .enqueue(response)
-            .map_err(|_response| hsm::core::Error::QueueFull)
-    }
+struct RequestQueueSource<'ch, 'a> {
+    consumer: Consumer<'ch, Request<'a>, QUEUE_SIZE>,
+}
 
-    fn recv(&mut self) -> Option<Request> {
-        self.receiver.dequeue()
+impl<'a> Iterator for RequestQueueSource<'_, 'a> {
+    type Item = Request<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.consumer.dequeue()
+    }
+}
+
+struct ResponseQueueSink<'ch, 'a> {
+    producer: Producer<'ch, Response<'a>, QUEUE_SIZE>,
+}
+
+impl<'a> ResponseSink<'a> for ResponseQueueSink<'_, 'a> {
+    fn send(&mut self, response: Response<'a>) -> Result<(), heimlig::hsm::core::Error> {
+        self.producer
+            .enqueue(response)
+            .map_err(|_| heimlig::hsm::core::Error::QueueFull)
+    }
+    fn ready(&self) -> bool {
+        self.producer.ready()
+    }
+}
+
+struct ResponseQueueSource<'ch, 'a> {
+    consumer: Consumer<'ch, Response<'a>, QUEUE_SIZE>,
+}
+
+impl<'a> Iterator for ResponseQueueSource<'_, 'a> {
+    type Item = Response<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.consumer.dequeue()
     }
 }
 
 #[embassy_executor::task]
 async fn hsm_task(
-    pool: Pool,
-    req_rx: Consumer<'static, Request, QUEUE_SIZE>,
-    resp_tx: Producer<'static, Response, QUEUE_SIZE>,
+    req_rx: Consumer<'static, Request<'_>, QUEUE_SIZE>,
+    resp_tx: Producer<'static, Response<'_>, QUEUE_SIZE>,
 ) {
     // Channel
-    let core_side = ChannelCoreSide {
-        sender: resp_tx,
-        receiver: req_rx,
-    };
-    let mut channels = heapless::Vec::<_, 1>::new();
-    let _ = channels.push(core_side);
+    let requests_source = RequestQueueSource { consumer: req_rx };
+    let responses_sink = ResponseQueueSink { producer: resp_tx };
 
     let rng = Rng::new(EntropySource {}, None);
-    let mut core = Core::new_without_key_store(&pool, rng, channels);
+    let mut core = Core::new_without_key_store(rng, requests_source.enumerate(), responses_sink);
 
     loop {
         core.process_next().expect("failed to process next request");
@@ -92,24 +103,22 @@ async fn hsm_task(
 
 #[embassy_executor::task]
 async fn client_task(
-    resp_rx: Consumer<'static, Response, QUEUE_SIZE>,
-    req_tx: Producer<'static, Request, QUEUE_SIZE>,
+    resp_rx: Consumer<'static, Response<'_>, QUEUE_SIZE>,
+    req_tx: Producer<'static, Request<'_>, QUEUE_SIZE>,
 ) {
     // Channel
-    let mut core_side = ChannelClientSide {
-        sender: req_tx,
-        receiver: resp_rx,
-    };
+    let requests_sink = RequestQueueSink { producer: req_tx };
+    let responses_source = ResponseQueueSource { consumer: resp_rx };
 
     // Api
-    let mut api = Api::new(&mut core_side);
+    let mut api = Api::new(requests_sink, responses_source);
 
     loop {
         // Send request
         Timer::after(Duration::from_millis(1000)).await;
-        let random_size = 16;
-        info!(target: "CLIENT", "Sending request: random data (size={})", random_size);
-        api.get_random(random_size)
+        let random_output = Box::leak(Box::new([0u8; 16]));
+        info!(target: "CLIENT", "Sending request: random data (size={})", random_output.len());
+        api.get_random(random_output.as_mut_slice())
             .expect("failed to call randomness API");
 
         // Receive response
@@ -122,8 +131,10 @@ async fn client_task(
                             info!(target: "CLIENT",
                                 "Received response: random data (size={}): {}",
                                 data.len(),
-                                hex::encode(data.as_slice())
+                                hex::encode(&data)
                             );
+                            // release the memory
+                            drop(unsafe { Box::from_raw(data) });
                             break; // Send next request
                         }
                         _ => error!(target: "CLIENT", "Unexpected response type"),
@@ -140,9 +151,6 @@ async fn main(spawner: Spawner) {
         .init()
         .expect("failed to initialize logger");
 
-    // Pool
-    let pool = Pool::try_from(unsafe { &mut MEMORY }).expect("failed to initialize memory pool");
-
     // Queues
     // Unsafe: Access to mutable static only happens here. Static lifetime is required by embassy tasks.
     let (req_tx, req_rx) = unsafe { CLIENT_TO_HSM.split() };
@@ -150,7 +158,7 @@ async fn main(spawner: Spawner) {
 
     // Start tasks
     spawner
-        .spawn(hsm_task(pool, req_rx, resp_tx))
+        .spawn(hsm_task(req_rx, resp_tx))
         .expect("failed to spawn HSM task");
     spawner
         .spawn(client_task(resp_rx, req_tx))

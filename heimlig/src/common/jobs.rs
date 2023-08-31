@@ -1,11 +1,8 @@
-use crate::common::pool::PoolChunk;
 use crate::hsm::keystore;
 use crate::hsm::keystore::Id;
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Error {
-    /// Failed to allocate memory.
-    Alloc,
     /// The amount of requested data was too large.
     RequestTooLarge,
     /// A cryptographic error occurred.
@@ -16,55 +13,57 @@ pub enum Error {
 
 /// A request for the HSM to perform a cryptographic task.
 #[derive(Eq, PartialEq, Debug)]
-pub enum Request {
+pub enum Request<'a> {
     ImportKey {
         id: Id,
-        data: PoolChunk,
+        data: &'a [u8],
     },
     GetRandom {
-        size: usize,
+        output: &'a mut [u8],
     },
     EncryptChaChaPoly {
         key_id: Id,
-        nonce: PoolChunk,
-        aad: Option<PoolChunk>,
-        plaintext: PoolChunk,
+        nonce: &'a [u8],
+        aad: Option<&'a [u8]>,
+        plaintext: &'a mut [u8],
+        tag: &'a mut [u8],
     },
     EncryptChaChaPolyExternalKey {
-        key: PoolChunk,
-        nonce: PoolChunk,
-        aad: Option<PoolChunk>,
-        plaintext: PoolChunk,
+        key: &'a [u8],
+        nonce: &'a [u8],
+        aad: Option<&'a [u8]>,
+        plaintext: &'a mut [u8],
+        tag: &'a mut [u8],
     },
     DecryptChaChaPoly {
         key_id: Id,
-        nonce: PoolChunk,
-        aad: Option<PoolChunk>,
-        ciphertext: PoolChunk,
-        tag: PoolChunk,
+        nonce: &'a [u8],
+        aad: Option<&'a [u8]>,
+        ciphertext: &'a mut [u8],
+        tag: &'a [u8],
     },
     DecryptChaChaPolyExternalKey {
-        key: PoolChunk,
-        nonce: PoolChunk,
-        aad: Option<PoolChunk>,
-        ciphertext: PoolChunk,
-        tag: PoolChunk,
+        key: &'a [u8],
+        nonce: &'a [u8],
+        aad: Option<&'a [u8]>,
+        ciphertext: &'a mut [u8],
+        tag: &'a [u8],
     },
 }
 
 /// A response from the HSM containing the results of a cryptographic task.
 #[derive(Eq, PartialEq, Debug)]
-pub enum Response {
+pub enum Response<'a> {
     ImportKey,
     Error(Error),
     GetRandom {
-        data: PoolChunk,
+        data: &'a mut [u8],
     },
     EncryptChaChaPoly {
-        ciphertext: PoolChunk,
-        tag: PoolChunk,
+        ciphertext: &'a mut [u8],
+        tag: &'a mut [u8],
     },
     DecryptChaChaPoly {
-        plaintext: PoolChunk,
+        plaintext: &'a mut [u8],
     },
 }
