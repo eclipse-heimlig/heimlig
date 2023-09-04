@@ -152,12 +152,12 @@ mod test {
             let mut buffer = PLAINTEXT.to_owned();
             assert_eq!(
                 encrypt_in_place_detached(&wrong_key, NONCE, &[], &mut buffer),
-                Err(Error::InvalidKeySize)
+                Err(Error::InvalidSymmetricKeySize)
             );
             let tag = [0u8; TAG_SIZE];
             assert_eq!(
                 decrypt_in_place_detached(&wrong_key, NONCE, &[], &mut buffer, &tag),
-                Err(Error::InvalidKeySize)
+                Err(Error::InvalidSymmetricKeySize)
             );
         }
 

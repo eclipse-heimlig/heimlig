@@ -266,11 +266,11 @@ mod test {
                             &mut buffer,
                             $plaintext.len()
                         ),
-                        Err(Error::InvalidKeySize)
+                        Err(Error::InvalidSymmetricKeySize)
                     );
                     assert_eq!(
                         decrypt_in_place::<$cipher, $padding>(&key, $iv, &mut buffer),
-                        Err(Error::InvalidKeySize)
+                        Err(Error::InvalidSymmetricKeySize)
                     );
                 }
             }
@@ -324,11 +324,11 @@ mod test {
                             &mut buffer,
                             PLAINTEXT_PADDED.len()
                         ),
-                        Err(Error::InvalidKeySize)
+                        Err(Error::InvalidSymmetricKeySize)
                     );
                     assert_eq!(
                         decrypt_in_place::<$cipher, Pkcs7>(&wrong_key, IV, &mut buffer),
-                        Err(Error::InvalidKeySize)
+                        Err(Error::InvalidSymmetricKeySize)
                     );
                 }
 
