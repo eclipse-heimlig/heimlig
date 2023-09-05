@@ -7,7 +7,7 @@ impl ChachaPolyWorker {
         &mut self,
         key: &[u8],
         nonce: &[u8],
-        aad: Option<&[u8]>,
+        aad: &[u8],
         ciphertext: &'a mut [u8],
         tag: &'a mut [u8],
     ) -> Response<'a> {
@@ -18,15 +18,12 @@ impl ChachaPolyWorker {
         &mut self,
         key: &[u8],
         nonce: &[u8],
-        aad: Option<&[u8]>,
+        aad: &[u8],
         ciphertext: &'a mut [u8],
         tag: &'a mut [u8],
     ) -> Response<'a> {
         match crate::crypto::chacha20poly1305::encrypt_in_place_detached(
-            key,
-            nonce,
-            aad.unwrap_or_default(),
-            ciphertext,
+            key, nonce, aad, ciphertext,
         ) {
             Ok(computed_tag) => {
                 if computed_tag.len() != tag.len() {
@@ -43,7 +40,7 @@ impl ChachaPolyWorker {
         &mut self,
         key: &[u8],
         nonce: &[u8],
-        aad: Option<&[u8]>,
+        aad: &[u8],
         plaintext: &'a mut [u8],
         tag: &[u8],
     ) -> Response<'a> {
@@ -54,16 +51,12 @@ impl ChachaPolyWorker {
         &mut self,
         key: &[u8],
         nonce: &[u8],
-        aad: Option<&[u8]>,
+        aad: &[u8],
         plaintext: &'a mut [u8],
         tag: &[u8],
     ) -> Response<'a> {
         match crate::crypto::chacha20poly1305::decrypt_in_place_detached(
-            key,
-            nonce,
-            aad.unwrap_or_default(),
-            plaintext,
-            tag,
+            key, nonce, aad, plaintext, tag,
         ) {
             Ok(()) => Response::DecryptChaChaPoly { plaintext },
             Err(e) => Response::Error(Error::Crypto(e)),

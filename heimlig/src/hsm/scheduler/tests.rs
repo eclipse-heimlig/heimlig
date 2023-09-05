@@ -138,7 +138,7 @@ fn encrypt_chachapoly() {
     let request = Request::EncryptChaChaPoly {
         key_id: KEY3.id,
         nonce,
-        aad: Some(aad),
+        aad,
         plaintext,
         tag,
     };
@@ -159,7 +159,7 @@ fn encrypt_chachapoly() {
     let request = Request::DecryptChaChaPoly {
         key_id: KEY3.id,
         nonce,
-        aad: Some(aad),
+        aad,
         ciphertext,
         tag,
     };
@@ -192,7 +192,7 @@ fn encrypt_chachapoly_external_key() {
     let request = Request::EncryptChaChaPolyExternalKey {
         key,
         nonce,
-        aad: Some(aad),
+        aad,
         plaintext,
         tag,
     };
@@ -213,7 +213,7 @@ fn encrypt_chachapoly_external_key() {
     let request = Request::DecryptChaChaPolyExternalKey {
         key,
         nonce,
-        aad: Some(aad),
+        aad,
         ciphertext,
         tag,
     };

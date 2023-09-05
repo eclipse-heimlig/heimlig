@@ -273,12 +273,12 @@ mod test {
                     wrong_key.resize(size, 0).expect("Allocation error");
                     assert_eq!(
                         $encryptor(&wrong_key, $nonce, &[], &mut buffer),
-                        Err(Error::InvalidKeySize)
+                        Err(Error::InvalidSymmetricKeySize)
                     );
                     let tag = [0u8; CCM_TAG_SIZE];
                     assert_eq!(
                         $decryptor(&wrong_key, $nonce, &[], &mut buffer, &tag),
-                        Err(Error::InvalidKeySize)
+                        Err(Error::InvalidSymmetricKeySize)
                     );
                 }
 

@@ -61,11 +61,11 @@ macro_rules! define_aes_gcm_impl {
         $decryptor:ident,
         $core:tt
     ) => {
-        pub fn $encryptor<'a>(
+        pub fn $encryptor(
             key: &[u8],
             nonce: &[u8],
             aad: &[u8],
-            buffer: &'a mut [u8],
+            buffer: &mut [u8],
         ) -> Result<Tag<$core>, Error> {
             encrypt_in_place_detached::<$core>(key, nonce, aad, buffer)
         }
@@ -232,7 +232,7 @@ mod test {
                     wrong_key.resize(size, 0).expect("Allocation error");
                     assert_eq!(
                         encrypt_in_place_detached::<$cipher>(&wrong_key, $nonce, &[], &mut buffer),
-                        Err(Error::InvalidKeySize)
+                        Err(Error::InvalidSymmetricKeySize)
                     );
                     let tag = [0u8; GCM_TAG_SIZE];
                     assert_eq!(
@@ -243,7 +243,7 @@ mod test {
                             &mut buffer,
                             &tag
                         ),
-                        Err(Error::InvalidKeySize)
+                        Err(Error::InvalidSymmetricKeySize)
                     );
                 }
 

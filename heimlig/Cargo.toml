@@ -16,6 +16,7 @@ cbc = { version = "0.1", default-features = false, features = ["block-padding", 
 ccm = { version = "0.5", default-features = false }
 chacha20poly1305 = { version = "0.10", default-features = false }
 ecdsa = { version = "0.16", default-features = false }
+ed25519-dalek = { version = "2.0", default-features = false, features = ["zeroize"] }
 elliptic-curve = { version = "0.13", default-features = false }
 generic-array = { version = "0.14", default-features = false, features = ["more_lengths"] }
 heapless = { version = "0.7", default-features = false, features = ["cas", "x86-sync-pool"] }
@@ -26,7 +27,10 @@ rand_chacha = { version = "0.3", default-features = false }
 rand_core = { version = "0.6", default-features = false }
 sha2 = { version = "0.10", default-features = false }
 sha3 = { version = "0.10", default-features = false }
+x25519-dalek = { version = "2.0", default-features = false, features = ["static_secrets", "zeroize"] }
+zeroize = { version = "1.6", default-features = false }
 
 [dev-dependencies]
 heapless = "0.7"
 hex = "0.4"
+ed25519-dalek = { version = "2.0", default-features = false, features = ["zeroize", "rand_core"] }
