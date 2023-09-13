@@ -1,8 +1,9 @@
 use crate::common::jobs::Response::GetRandom;
 use crate::common::jobs::{Error, Request, Response};
 use crate::common::limits::MAX_RANDOM_SIZE;
+use crate::common::queues;
+use crate::common::queues::ResponseSink;
 use crate::crypto::rng::{EntropySource, Rng};
-use crate::hsm::core::ResponseSink;
 use rand_core::RngCore;
 
 pub struct RngWorker<
@@ -24,7 +25,7 @@ impl<
     > RngWorker<'data, E, ReqSrc, RespSink>
 {
     // TODO: Do not use core errors here? Export errors in trait as typedef?
-    pub fn execute(&mut self) -> Result<(), crate::hsm::core::Error> {
+    pub fn execute(&mut self) -> Result<(), queues::Error> {
         if self.responses.ready() {
             match self.requests.next() {
                 Some((_id, Request::GetRandom { output })) => {
@@ -37,7 +38,7 @@ impl<
             }
             Ok(()) // Nothing to process
         } else {
-            Err(crate::hsm::core::Error::QueueFull)
+            Err(queues::Error::QueueFull)
         }
     }
 

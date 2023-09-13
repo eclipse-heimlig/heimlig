@@ -1,19 +1,20 @@
 mod tests {
+    use core::iter::Enumerate;
     use embassy_sync::blocking_mutex::raw::{NoopRawMutex, RawMutex};
     use embassy_sync::mutex::Mutex;
     use heapless::spsc::{Consumer, Producer, Queue};
     use heimlig::common::jobs;
     use heimlig::common::jobs::{Request, RequestType, Response};
     use heimlig::common::limits::MAX_RANDOM_SIZE;
+    use heimlig::common::queues::{Error, RequestSink, ResponseSink};
     use heimlig::config;
     use heimlig::config::keystore::{KEY1, KEY2, KEY3};
     use heimlig::crypto::chacha20poly1305::{KEY_SIZE, NONCE_SIZE};
     use heimlig::crypto::rng::{EntropySource, Rng};
-    use heimlig::hsm::core::{Core, Error, RequestSink, ResponseSink};
+    use heimlig::hsm::core::Core;
     use heimlig::hsm::keystore::MemoryKeyStore;
     use heimlig::hsm::workers::chachapoly_worker::ChaChaPolyWorker;
     use heimlig::hsm::workers::rng_worker::RngWorker;
-    use std::iter::Enumerate;
 
     const QUEUE_SIZE: usize = 8;
     const PLAINTEXT_SIZE: usize = 36;
@@ -367,23 +368,6 @@ mod tests {
         req_client_tx
             .enqueue(request)
             .expect("failed to send request");
-
-        match core.execute() {
-            Ok(()) => {
-                // Nothing to do. Everything worked fine
-            }
-            Err(e) => {
-                // Handle error
-                match e {
-                    Error::UnknownChannelId => {
-                        //
-                    }
-                    Error::QueueFull => {
-                        //
-                    }
-                }
-            }
-        }
 
         core.execute().expect("failed to forward request");
         chacha_worker.execute().expect("failed to process request");

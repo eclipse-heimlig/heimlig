@@ -1,5 +1,6 @@
 use crate::common::jobs;
 use crate::common::jobs::{Request, RequestType, Response};
+use crate::common::queues::{Error, RequestSink, ResponseSink};
 use crate::hsm::keystore::KeyStore;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
@@ -26,26 +27,6 @@ pub struct Core<
         ReqTypesToWorkerQueues<'data, ReqSink, RespSrc, MAX_REQUEST_TYPES_PER_WORKER, MAX_WORKERS>,
         MAX_WORKERS,
     >,
-}
-
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub enum Error {
-    /// No [Channel] found for given ID.
-    UnknownChannelId,
-    /// Attempted to push to a full queue.
-    QueueFull,
-}
-
-/// Sink where the responses from the Core can be pushed to
-pub trait ResponseSink<'data> {
-    /// Send a [Response] to the client through this sink.
-    fn send(&mut self, response: Response<'data>) -> Result<(), Error>;
-    fn ready(&self) -> bool;
-}
-
-pub trait RequestSink<'data> {
-    fn send(&mut self, request: Request<'data>) -> Result<(), Error>;
-    fn ready(&self) -> bool;
 }
 
 /// Associate request types with worker channels
@@ -163,15 +144,14 @@ impl<
     /// * `Ok(false)` if no [Request] was found in any input [Channel].
     /// * `Err(core::Error)` if a processing error occurred.
     pub fn process_client_requests(&mut self) -> Result<(), Error> {
-        if self.client_responses.ready() {
-            let request = self.client_requests.next();
-            if let Some((request_id, request)) = request {
-                return self.process(request_id, request);
-            }
-            Ok(()) // Nothing to process
-        } else {
-            Err(Error::QueueFull)
+        if !self.client_responses.ready() {
+            return Err(Error::NotReady);
         }
+        let request = self.client_requests.next();
+        if let Some((request_id, request)) = request {
+            return self.process(request_id, request);
+        }
+        Ok(()) // Nothing to process
     }
 
     // TODO: Move request ID into Request struct

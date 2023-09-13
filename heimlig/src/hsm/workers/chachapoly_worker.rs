@@ -1,6 +1,7 @@
 use crate::common::jobs::{Error, Request, Response};
+use crate::common::queues;
+use crate::common::queues::ResponseSink;
 use crate::config::keystore::MAX_KEY_SIZE;
-use crate::hsm::core::ResponseSink;
 use crate::hsm::keystore::KeyStore;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
@@ -29,7 +30,7 @@ impl<
     > ChaChaPolyWorker<'data, 'keystore, M, K, ReqSrc, RespSink>
 {
     // TODO: Do not use core errors here? Export errors in trait as typedef?
-    pub fn execute(&mut self) -> Result<(), crate::hsm::core::Error> {
+    pub fn execute(&mut self) -> Result<(), queues::Error> {
         if self.responses.ready() {
             let mut key_buffer = Zeroizing::new([0u8; MAX_KEY_SIZE]);
             let response = match self.requests.next() {
@@ -96,7 +97,7 @@ impl<
             self.responses.send(response)?;
             Ok(())
         } else {
-            Err(crate::hsm::core::Error::QueueFull)
+            Err(queues::Error::QueueFull)
         }
     }
     pub fn encrypt_external_key<'a>(

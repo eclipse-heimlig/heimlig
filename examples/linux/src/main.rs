@@ -1,16 +1,20 @@
 #![feature(type_alias_impl_trait)] // Required for embassy
 
+use core::iter::Enumerate;
 use embassy_executor::Spawner;
-use embassy_time::Duration;
+use embassy_time::{Duration, queue};
 use embassy_time::Timer;
 use heapless::spsc::{Consumer, Producer, Queue};
 use heimlig::client::api::Api;
-use heimlig::client::api::RequestSink;
 use heimlig::common::jobs::{Request, Response};
 use heimlig::crypto::rng;
 use heimlig::crypto::rng::Rng;
 use heimlig::hsm::core::Core;
-use heimlig::hsm::core::ResponseSink;
+use heimlig::hsm::keystore::NoKeyStore;
+use embassy_sync::mutex::Mutex;
+use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use heimlig::common::queues;
+use heimlig::common::queues::{RequestSink, ResponseSink};
 use log::{error, info};
 use rand::RngCore;
 
@@ -28,15 +32,15 @@ impl rng::EntropySource for EntropySource {
         data
     }
 }
-struct RequestQueueSink<'ch, 'a> {
-    producer: Producer<'ch, Request<'a>, QUEUE_SIZE>,
+struct RequestQueueSink<'ch, 'data> {
+    producer: Producer<'ch, Request<'data>, QUEUE_SIZE>,
 }
 
-impl<'a> RequestSink<'a> for RequestQueueSink<'_, 'a> {
-    fn send(&mut self, request: Request<'a>) -> Result<(), heimlig::client::api::Error> {
+impl<'data> RequestSink<'data> for RequestQueueSink<'_, 'data> {
+    fn send(&mut self, request: Request<'data>) -> Result<(), queues::Error> {
         self.producer
             .enqueue(request)
-            .map_err(|_| heimlig::client::api::Error::QueueFull)
+            .map_err(|_| queues::Error::Enqueue)
     }
 
     fn ready(&self) -> bool {
@@ -44,27 +48,27 @@ impl<'a> RequestSink<'a> for RequestQueueSink<'_, 'a> {
     }
 }
 
-struct RequestQueueSource<'ch, 'a> {
-    consumer: Consumer<'ch, Request<'a>, QUEUE_SIZE>,
+struct RequestQueueSource<'ch, 'data> {
+    consumer: Consumer<'ch, Request<'data>, QUEUE_SIZE>,
 }
 
-impl<'a> Iterator for RequestQueueSource<'_, 'a> {
-    type Item = Request<'a>;
+impl<'data> Iterator for RequestQueueSource<'_, 'data> {
+    type Item = Request<'data>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.consumer.dequeue()
     }
 }
 
-struct ResponseQueueSink<'ch, 'a> {
-    producer: Producer<'ch, Response<'a>, QUEUE_SIZE>,
+struct ResponseQueueSink<'ch, 'data> {
+    producer: Producer<'ch, Response<'data>, QUEUE_SIZE>,
 }
 
-impl<'a> ResponseSink<'a> for ResponseQueueSink<'_, 'a> {
-    fn send(&mut self, response: Response<'a>) -> Result<(), heimlig::hsm::core::Error> {
+impl<'data> ResponseSink<'data> for ResponseQueueSink<'_, 'data> {
+    fn send(&mut self, response: Response<'data>) -> Result<(), queues::Error> {
         self.producer
             .enqueue(response)
-            .map_err(|_| heimlig::hsm::core::Error::QueueFull)
+            .map_err(|_| queues::Error::Enqueue)
     }
     fn ready(&self) -> bool {
         self.producer.ready()
@@ -93,12 +97,21 @@ async fn hsm_task(
     let responses_sink = ResponseQueueSink { producer: resp_tx };
 
     let rng = Rng::new(EntropySource {}, None);
-    let mut core = Core::new_without_key_store(rng, requests_source.enumerate(), responses_sink);
+    let key_store = NoKeyStore{};
+    let key_store = Mutex::<NoopRawMutex, NoKeyStore>::new(key_store);
+    let mut core: Core<
+        NoopRawMutex,
+        NoKeyStore,
+        Enumerate<RequestQueueSource<'_, '_>>,
+        ResponseQueueSink<'_,'_>,
+        RequestQueueSink<'_, '_>,
+        Enumerate<ResponseQueueSource<'_, '_>>,
+    > = Core::new(&key_store, requests_source.enumerate(), responses_sink);
 
-    loop {
+    /*loop {
         core.process_next().expect("failed to process next request");
         Timer::after(Duration::from_millis(100)).await;
-    }
+    }*/
 }
 
 #[embassy_executor::task]

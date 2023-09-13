@@ -1,22 +1,17 @@
 use crate::common::jobs::{Request, Response};
-
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub enum Error {
-    /// Attempted to push to a full queue.
-    QueueFull,
-}
-
-/// Sink where the requests to the Core can be pushed to
-pub trait RequestSink<'a> {
-    /// Send a [Request] to the client through this sink.
-    fn send(&mut self, request: Request<'a>) -> Result<(), Error>;
-    fn ready(&self) -> bool;
-}
+use crate::common::queues;
+use crate::common::queues::RequestSink;
 
 /// An interface to send [Request]s to the HSM core and receive [Response]es from it.
 pub struct Api<'a, Req: RequestSink<'a>, Resp: Iterator<Item = Response<'a>>> {
     requests_sink: Req,
     responses_source: Resp,
+}
+
+#[derive(Clone, Eq, PartialEq, Debug)]
+pub enum Error {
+    SinkNotReady,
+    Send(queues::Error),
 }
 
 impl<'a, Req: RequestSink<'a>, Resp: Iterator<Item = Response<'a>>> Api<'a, Req, Resp> {
@@ -31,10 +26,13 @@ impl<'a, Req: RequestSink<'a>, Resp: Iterator<Item = Response<'a>>> Api<'a, Req,
     /// Request `size` many random bytes.
     pub fn get_random(&mut self, output: &'a mut [u8]) -> Result<(), Error> {
         if self.requests_sink.ready() {
-            self.requests_sink.send(Request::GetRandom { output })
+            self.requests_sink
+                .send(Request::GetRandom { output })
+                .map_err(Error::Send)?
         } else {
-            Err(Error::QueueFull)
+            Err(Error::SinkNotReady)?
         }
+        Ok(())
     }
 
     /// Attempt to poll a response and return it.
@@ -45,8 +43,9 @@ impl<'a, Req: RequestSink<'a>, Resp: Iterator<Item = Response<'a>>> Api<'a, Req,
 
 #[cfg(test)]
 mod test {
-    use crate::client::api::{Api, Error, RequestSink};
+    use crate::client::api::{Api, RequestSink};
     use crate::common::jobs::{Request, Response};
+    use crate::common::queues;
     use heapless::spsc::{Consumer, Producer, Queue};
 
     const QUEUE_SIZE: usize = 8;
@@ -56,8 +55,10 @@ mod test {
     }
 
     impl<'a> RequestSink<'a> for RequestQueueSink<'_, 'a> {
-        fn send(&mut self, request: Request<'a>) -> Result<(), Error> {
-            self.producer.enqueue(request).map_err(|_| Error::QueueFull)
+        fn send(&mut self, request: Request<'a>) -> Result<(), queues::Error> {
+            self.producer
+                .enqueue(request)
+                .map_err(|_| queues::Error::Enqueue)
         }
 
         fn ready(&self) -> bool {
