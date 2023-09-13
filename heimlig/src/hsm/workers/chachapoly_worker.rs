@@ -34,6 +34,9 @@ impl<
         if self.responses.ready() {
             let mut key_buffer = Zeroizing::new([0u8; MAX_KEY_SIZE]);
             let response = match self.requests.next() {
+                None => {
+                    None // Nothing to process
+                }
                 Some((
                     _request_id,
                     Request::DecryptChaChaPoly {
@@ -49,8 +52,8 @@ impl<
                     .expect("Failed to lock key store")
                     .export(key_id, key_buffer.as_mut_slice())
                 {
-                    Ok(key) => self.decrypt(key, nonce, aad, ciphertext, tag),
-                    Err(e) => Response::Error(Error::KeyStore(e)),
+                    Ok(key) => Some(self.decrypt(key, nonce, aad, ciphertext, tag)),
+                    Err(e) => Some(Response::Error(Error::KeyStore(e))),
                 },
                 Some((
                     _request_id,
@@ -67,8 +70,8 @@ impl<
                     .expect("Failed to lock key store")
                     .export(key_id, key_buffer.as_mut_slice())
                 {
-                    Ok(key) => self.encrypt(key, nonce, aad, plaintext, tag),
-                    Err(e) => Response::Error(Error::KeyStore(e)),
+                    Ok(key) => Some(self.encrypt(key, nonce, aad, plaintext, tag)),
+                    Err(e) => Some(Response::Error(Error::KeyStore(e))),
                 },
                 Some((
                     _request_id,
@@ -79,7 +82,7 @@ impl<
                         plaintext,
                         tag,
                     },
-                )) => self.encrypt_external_key(key, nonce, aad, plaintext, tag),
+                )) => Some(self.encrypt_external_key(key, nonce, aad, plaintext, tag)),
                 Some((
                     _request_id,
                     Request::DecryptChaChaPolyExternalKey {
@@ -89,12 +92,14 @@ impl<
                         ciphertext,
                         tag,
                     },
-                )) => self.decrypt_external_key(key, nonce, aad, ciphertext, tag),
+                )) => Some(self.decrypt_external_key(key, nonce, aad, ciphertext, tag)),
                 _ => {
-                    panic!("Return unexpected request error"); // Return error here instead? Should never happen.
+                    panic!("Encountered unexpected request"); // Integration error. Return error here instead?
                 }
             };
-            self.responses.send(response)?;
+            if let Some(response) = response {
+                return self.responses.send(response);
+            }
             Ok(())
         } else {
             Err(queues::Error::QueueFull)

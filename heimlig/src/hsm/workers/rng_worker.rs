@@ -28,15 +28,17 @@ impl<
     pub fn execute(&mut self) -> Result<(), queues::Error> {
         if self.responses.ready() {
             match self.requests.next() {
+                None => {
+                    Ok(()) // Nothing to process
+                }
                 Some((_id, Request::GetRandom { output })) => {
                     let response = self.get_random(output);
-                    self.responses.send(response)?;
+                    self.responses.send(response)
                 }
                 _ => {
-                    todo!("Return unexpected request error")
+                    panic!("Encountered unexpected request"); // Integration error. Return error here instead?
                 }
             }
-            Ok(()) // Nothing to process
         } else {
             Err(queues::Error::QueueFull)
         }

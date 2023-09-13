@@ -132,25 +132,25 @@ mod tests {
         ResponseQueueSource<'ch, 'data>,
         ResponseQueueSink<'ch, 'data>,
     ) {
-        let (rng_requests_tx, rng_requests_rx): (
+        let (requests_tx, requests_rx): (
             Producer<Request, QUEUE_SIZE>,
             Consumer<Request, QUEUE_SIZE>,
         ) = requests.split();
-        let requests_rx = RequestQueueSource {
-            consumer: rng_requests_rx,
-        };
-        let requests_tx = RequestQueueSink {
-            producer: rng_requests_tx,
-        };
-        let (response_rng_tx, response_rng_rx): (
+        let (response_tx, response_rx): (
             Producer<Response, QUEUE_SIZE>,
             Consumer<Response, QUEUE_SIZE>,
         ) = responses.split();
+        let requests_rx = RequestQueueSource {
+            consumer: requests_rx,
+        };
+        let requests_tx = RequestQueueSink {
+            producer: requests_tx,
+        };
         let response_rx = ResponseQueueSource {
-            consumer: response_rng_rx,
+            consumer: response_rx,
         };
         let response_tx = ResponseQueueSink {
-            producer: response_rng_tx,
+            producer: response_tx,
         };
         (requests_rx, requests_tx, response_rx, response_tx)
     }
