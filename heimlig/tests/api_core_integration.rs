@@ -63,9 +63,7 @@ mod tests {
 
     impl<'data> ResponseSink<'data> for ResponseQueueSink<'_, 'data> {
         fn send(&mut self, response: Response<'data>) -> Result<(), Error> {
-            self.producer
-                .enqueue(response)
-                .map_err(|_| Error::QueueFull)
+            self.producer.enqueue(response).map_err(|_| Error::Enqueue)
         }
         fn ready(&self) -> bool {
             self.producer.ready()
@@ -82,9 +80,7 @@ mod tests {
 
     impl<'data> RequestSink<'data> for RequestQueueSink<'_, 'data> {
         fn send(&mut self, response: Request<'data>) -> Result<(), Error> {
-            self.producer
-                .enqueue(response)
-                .map_err(|_| Error::QueueFull)
+            self.producer.enqueue(response).map_err(|_| Error::Enqueue)
         }
         fn ready(&self) -> bool {
             self.producer.ready()
@@ -238,16 +234,10 @@ mod tests {
         core.execute().expect("failed to forward response");
         match resp_client_rx.dequeue() {
             Some(response) => match response {
-                Response::GetRandom { data } => {
-                    assert_eq!(data.len(), REQUEST_SIZE)
-                }
-                _ => {
-                    panic!("Unexpected response type {:?}", response);
-                }
+                Response::GetRandom { data } => assert_eq!(data.len(), REQUEST_SIZE),
+                _ => panic!("Unexpected response type {:?}", response),
             },
-            None => {
-                panic!("Failed to receive expected response");
-            }
+            None => panic!("Failed to receive expected response"),
         }
     }
 
@@ -290,13 +280,9 @@ mod tests {
         match resp_client_rx.dequeue() {
             Some(response) => match response {
                 Response::Error(jobs::Error::RequestTooLarge) => {}
-                _ => {
-                    panic!("Unexpected response type {:?}", response);
-                }
+                _ => panic!("Unexpected response type {:?}", response),
             },
-            None => {
-                panic!("Failed to receive expected response");
-            }
+            None => panic!("Failed to receive expected response"),
         }
     }
 
@@ -345,16 +331,13 @@ mod tests {
         req_client_tx
             .enqueue(request)
             .expect("failed to send request");
-        core.process_client_requests()
-            .expect("failed to process next request");
+        core.execute().expect("failed to process next request");
         let response = resp_client_rx
             .dequeue()
             .expect("Failed to receive expected response");
         match response {
             Response::ImportKey {} => {}
-            _ => {
-                panic!("Unexpected response type");
-            }
+            _ => panic!("Unexpected response type"),
         };
 
         // Encrypt data
@@ -377,9 +360,7 @@ mod tests {
             .expect("Failed to receive expected response")
         {
             Response::EncryptChaChaPoly { ciphertext, tag } => (ciphertext, tag),
-            _ => {
-                panic!("Unexpected response type");
-            }
+            _ => panic!("Unexpected response type"),
         };
 
         // Decrypt data
@@ -402,9 +383,7 @@ mod tests {
             .expect("Failed to receive expected response")
         {
             Response::DecryptChaChaPoly { plaintext } => plaintext,
-            resp => {
-                panic!("Unexpected response type {:?}", resp);
-            }
+            resp => panic!("Unexpected response type {:?}", resp),
         };
         assert_eq!(plaintext, org_plaintext);
     }
@@ -468,9 +447,7 @@ mod tests {
             .expect("Failed to receive expected response")
         {
             Response::EncryptChaChaPoly { ciphertext, tag } => (ciphertext, tag),
-            _ => {
-                panic!("Unexpected response type");
-            }
+            _ => panic!("Unexpected response type"),
         };
 
         // Decrypt data
@@ -493,9 +470,7 @@ mod tests {
             .expect("Failed to receive expected response")
         {
             Response::DecryptChaChaPoly { plaintext } => plaintext,
-            _ => {
-                panic!("Unexpected response type");
-            }
+            _ => panic!("Unexpected response type"),
         };
         assert_eq!(plaintext, org_plaintext)
     }

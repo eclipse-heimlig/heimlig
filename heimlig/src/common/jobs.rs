@@ -9,8 +9,6 @@ pub enum Error {
     Crypto(crate::crypto::Error),
     /// A key store error occurred.
     KeyStore(keystore::Error),
-    /// Attempted to push to a full queue.
-    QueueFull,
 }
 
 /// A request for the HSM to perform a cryptographic task.

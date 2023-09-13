@@ -58,7 +58,7 @@ impl<'a> RequestSink<'a> for RequestQueueSink<'_, 'a> {
     fn send(&mut self, request: Request<'a>) -> Result<(), queues::Error> {
         self.producer
             .enqueue(request)
-            .map_err(|_| queues::Error::QueueFull)
+            .map_err(|_| queues::Error::Enqueue)
     }
 
     fn ready(&self) -> bool {
@@ -86,7 +86,7 @@ impl<'a> ResponseSink<'a> for ResponseQueueSink<'_, 'a> {
     fn send(&mut self, response: Response<'a>) -> Result<(), queues::Error> {
         self.producer
             .enqueue(response)
-            .map_err(|_| queues::Error::QueueFull)
+            .map_err(|_| queues::Error::Enqueue)
     }
     fn ready(&self) -> bool {
         self.producer.ready()

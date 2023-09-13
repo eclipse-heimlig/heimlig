@@ -23,6 +23,7 @@ pub struct Core<
     // TODO: Support multiple client channels like worker channels
     client_requests: ReqSrc,
     client_responses: RespSink,
+    // TODO: Replace with multi index map once it exists for no_std
     worker_channels: Vec<
         ReqTypesToWorkerQueues<'data, ReqSink, RespSrc, MAX_REQUEST_TYPES_PER_WORKER, MAX_WORKERS>,
         MAX_WORKERS,
@@ -67,7 +68,6 @@ impl<
         MAX_WORKERS,
     >
 {
-    // TODO: Create builder
     /// Create a new HSM core.
     /// The core accepts requests and forwards the responses once they are ready.
     ///
@@ -122,8 +122,7 @@ impl<
         Ok(())
     }
 
-    // TODO: Make private?
-    pub fn process_worker_responses(&mut self) -> Result<(), Error> {
+    fn process_worker_responses(&mut self) -> Result<(), Error> {
         for channel in &mut self.worker_channels {
             if self.client_responses.ready() {
                 if let Some((_id, response)) = channel.responses.next() {
@@ -134,7 +133,6 @@ impl<
         Ok(())
     }
 
-    // TODO: Make private?
     /// Search all input channels for a new request and process it.
     /// Channels are processed in a round-robin fashion.
     ///
@@ -143,7 +141,7 @@ impl<
     /// * `Ok(true)` if a [Request] was found and successfully processed.
     /// * `Ok(false)` if no [Request] was found in any input [Channel].
     /// * `Err(core::Error)` if a processing error occurred.
-    pub fn process_client_requests(&mut self) -> Result<(), Error> {
+    fn process_client_requests(&mut self) -> Result<(), Error> {
         if !self.client_responses.ready() {
             return Err(Error::NotReady);
         }
@@ -171,9 +169,7 @@ impl<
                     };
                     self.client_responses.send(response)?;
                 }
-                _ => {
-                    panic!("Mismatch of request type and content")
-                }
+                _ => panic!("Mismatch of request type and content"),
             },
             _ => {
                 let channel = self

@@ -29,14 +29,11 @@ impl<
         RespSink: ResponseSink<'data>,
     > ChaChaPolyWorker<'data, 'keystore, M, K, ReqSrc, RespSink>
 {
-    // TODO: Do not use core errors here? Export errors in trait as typedef?
     pub fn execute(&mut self) -> Result<(), queues::Error> {
         if self.responses.ready() {
             let mut key_buffer = Zeroizing::new([0u8; MAX_KEY_SIZE]);
             let response = match self.requests.next() {
-                None => {
-                    None // Nothing to process
-                }
+                None => None, // Nothing to process
                 Some((
                     _request_id,
                     Request::DecryptChaChaPoly {
@@ -93,16 +90,14 @@ impl<
                         tag,
                     },
                 )) => Some(self.decrypt_external_key(key, nonce, aad, ciphertext, tag)),
-                _ => {
-                    panic!("Encountered unexpected request"); // Integration error. Return error here instead?
-                }
+                _ => panic!("Encountered unexpected request"), // TODO: Integration error. Return error here instead?
             };
             if let Some(response) = response {
                 return self.responses.send(response);
             }
             Ok(())
         } else {
-            Err(queues::Error::QueueFull)
+            Err(queues::Error::NotReady)
         }
     }
     pub fn encrypt_external_key<'a>(

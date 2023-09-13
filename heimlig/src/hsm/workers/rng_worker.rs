@@ -24,23 +24,18 @@ impl<
         RespSink: ResponseSink<'data>,
     > RngWorker<'data, E, ReqSrc, RespSink>
 {
-    // TODO: Do not use core errors here? Export errors in trait as typedef?
     pub fn execute(&mut self) -> Result<(), queues::Error> {
         if self.responses.ready() {
             match self.requests.next() {
-                None => {
-                    Ok(()) // Nothing to process
-                }
+                None => Ok(()), // Nothing to process
                 Some((_id, Request::GetRandom { output })) => {
                     let response = self.get_random(output);
                     self.responses.send(response)
                 }
-                _ => {
-                    panic!("Encountered unexpected request"); // Integration error. Return error here instead?
-                }
+                _ => panic!("Encountered unexpected request"), // TODO: Integration error. Return error here instead?
             }
         } else {
-            Err(queues::Error::QueueFull)
+            Err(queues::Error::NotReady)
         }
     }
 

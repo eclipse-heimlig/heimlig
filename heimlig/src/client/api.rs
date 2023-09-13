@@ -4,40 +4,37 @@ use crate::common::queues::RequestSink;
 
 /// An interface to send [Request]s to the HSM core and receive [Response]es from it.
 pub struct Api<'a, Req: RequestSink<'a>, Resp: Iterator<Item = Response<'a>>> {
-    requests_sink: Req,
-    responses_source: Resp,
+    requests: Req,
+    responses: Resp,
 }
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Error {
-    SinkNotReady,
-    Send(queues::Error),
+    Queue(queues::Error),
 }
 
 impl<'a, Req: RequestSink<'a>, Resp: Iterator<Item = Response<'a>>> Api<'a, Req, Resp> {
     /// Create a new instance of the HSM API.
-    pub fn new(requests_sink: Req, responses_source: Resp) -> Self {
+    pub fn new(requests: Req, responses: Resp) -> Self {
         Api {
-            requests_sink,
-            responses_source,
+            requests,
+            responses,
         }
     }
 
     /// Request `size` many random bytes.
     pub fn get_random(&mut self, output: &'a mut [u8]) -> Result<(), Error> {
-        if self.requests_sink.ready() {
-            self.requests_sink
-                .send(Request::GetRandom { output })
-                .map_err(Error::Send)?
-        } else {
-            Err(Error::SinkNotReady)?
+        if !self.requests.ready() {
+            return Err(Error::Queue(queues::Error::NotReady));
         }
-        Ok(())
+        self.requests
+            .send(Request::GetRandom { output })
+            .map_err(Error::Queue)
     }
 
     /// Attempt to poll a response and return it.
     pub fn recv_response(&mut self) -> Option<Response> {
-        self.responses_source.next()
+        self.responses.next()
     }
 }
 
@@ -90,15 +87,15 @@ mod test {
         let (requests_tx, mut requests_rx) = requests.split();
         let (mut responses_tx, responses_rx) = responses.split();
 
-        let requests_sink = RequestQueueSink {
+        let requests = RequestQueueSink {
             producer: requests_tx,
         };
 
-        let responses_source = ResponseQueueSource {
+        let responses = ResponseQueueSource {
             consumer: responses_rx,
         };
 
-        let mut api = Api::new(requests_sink, responses_source);
+        let mut api = Api::new(requests, responses);
 
         // Send request
         api.get_random(&mut random_output)
