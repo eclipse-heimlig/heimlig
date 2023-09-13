@@ -9,13 +9,15 @@ pub enum Error {
     Crypto(crate::crypto::Error),
     /// A key store error occurred.
     KeyStore(keystore::Error),
+    /// Attempted to push to a full queue.
+    QueueFull,
 }
 
 /// A request for the HSM to perform a cryptographic task.
 #[derive(Eq, PartialEq, Debug)]
 pub enum Request<'a> {
     ImportKey {
-        id: Id,
+        key_id: Id,
         data: &'a [u8],
     },
     GetRandom {
@@ -49,6 +51,33 @@ pub enum Request<'a> {
         ciphertext: &'a mut [u8],
         tag: &'a [u8],
     },
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum RequestType {
+    ImportKey,
+    GetRandom,
+    EncryptChaChaPoly,
+    EncryptChaChaPolyExternalKey,
+    DecryptChaChaPoly,
+    DecryptChaChaPolyExternalKey,
+}
+
+impl<'data> Request<'data> {
+    pub fn get_type(&self) -> RequestType {
+        match self {
+            Request::ImportKey { .. } => RequestType::ImportKey,
+            Request::GetRandom { .. } => RequestType::GetRandom,
+            Request::EncryptChaChaPoly { .. } => RequestType::EncryptChaChaPoly,
+            Request::EncryptChaChaPolyExternalKey { .. } => {
+                RequestType::EncryptChaChaPolyExternalKey
+            }
+            Request::DecryptChaChaPoly { .. } => RequestType::DecryptChaChaPoly,
+            Request::DecryptChaChaPolyExternalKey { .. } => {
+                RequestType::DecryptChaChaPolyExternalKey
+            }
+        }
+    }
 }
 
 /// A response from the HSM containing the results of a cryptographic task.

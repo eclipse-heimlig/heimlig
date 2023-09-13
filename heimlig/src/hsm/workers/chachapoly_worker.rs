@@ -1,8 +1,104 @@
-use crate::common::jobs::{Error, Response};
+use crate::common::jobs::{Error, Request, Response};
+use crate::config::keystore::MAX_KEY_SIZE;
+use crate::hsm::core::ResponseSink;
+use crate::hsm::keystore::KeyStore;
+use embassy_sync::blocking_mutex::raw::RawMutex;
+use embassy_sync::mutex::Mutex;
+use zeroize::Zeroizing;
 
-pub struct ChachaPolyWorker;
+pub struct ChaChaPolyWorker<
+    'data,
+    'keystore,
+    M: RawMutex,
+    K: KeyStore,
+    ReqSrc: Iterator<Item = (usize, Request<'data>)>,
+    RespSink: ResponseSink<'data>,
+> {
+    pub key_store: &'keystore Mutex<M, K>,
+    pub requests: ReqSrc,
+    pub responses: RespSink,
+}
 
-impl ChachaPolyWorker {
+impl<
+        'data,
+        'keystore,
+        M: RawMutex,
+        K: KeyStore,
+        ReqSrc: Iterator<Item = (usize, Request<'data>)>,
+        RespSink: ResponseSink<'data>,
+    > ChaChaPolyWorker<'data, 'keystore, M, K, ReqSrc, RespSink>
+{
+    // TODO: Do not use core errors here? Export errors in trait as typedef?
+    pub fn execute(&mut self) -> Result<(), crate::hsm::core::Error> {
+        if self.responses.ready() {
+            let mut key_buffer = Zeroizing::new([0u8; MAX_KEY_SIZE]);
+            let response = match self.requests.next() {
+                Some((
+                    _request_id,
+                    Request::DecryptChaChaPoly {
+                        key_id,
+                        nonce,
+                        aad,
+                        ciphertext,
+                        tag,
+                    },
+                )) => match self
+                    .key_store
+                    .try_lock()
+                    .expect("Failed to lock key store")
+                    .export(key_id, key_buffer.as_mut_slice())
+                {
+                    Ok(key) => self.decrypt(key, nonce, aad, ciphertext, tag),
+                    Err(e) => Response::Error(Error::KeyStore(e)),
+                },
+                Some((
+                    _request_id,
+                    Request::EncryptChaChaPoly {
+                        key_id,
+                        nonce,
+                        aad,
+                        plaintext,
+                        tag,
+                    },
+                )) => match self
+                    .key_store
+                    .try_lock()
+                    .expect("Failed to lock key store")
+                    .export(key_id, key_buffer.as_mut_slice())
+                {
+                    Ok(key) => self.encrypt(key, nonce, aad, plaintext, tag),
+                    Err(e) => Response::Error(Error::KeyStore(e)),
+                },
+                Some((
+                    _request_id,
+                    Request::EncryptChaChaPolyExternalKey {
+                        key,
+                        nonce,
+                        aad,
+                        plaintext,
+                        tag,
+                    },
+                )) => self.encrypt_external_key(key, nonce, aad, plaintext, tag),
+                Some((
+                    _request_id,
+                    Request::DecryptChaChaPolyExternalKey {
+                        key,
+                        nonce,
+                        aad,
+                        ciphertext,
+                        tag,
+                    },
+                )) => self.decrypt_external_key(key, nonce, aad, ciphertext, tag),
+                _ => {
+                    panic!("Return unexpected request error"); // Return error here instead? Should never happen.
+                }
+            };
+            self.responses.send(response)?;
+            Ok(())
+        } else {
+            Err(crate::hsm::core::Error::QueueFull)
+        }
+    }
     pub fn encrypt_external_key<'a>(
         &mut self,
         key: &[u8],
