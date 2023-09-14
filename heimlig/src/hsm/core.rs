@@ -24,15 +24,14 @@ pub struct Core<
     // TODO: Support multiple client channels like worker channels
     client_requests: ReqSrc,
     client_responses: RespSink,
-    // TODO: Replace with multi index map once it exists for no_std
     worker_channels: Vec<
-        ReqTypesToWorkerQueues<'data, ReqSink, RespSrc, MAX_REQUEST_TYPES_PER_WORKER, MAX_WORKERS>,
+        WorkerChannel<'data, ReqSink, RespSrc, MAX_REQUEST_TYPES_PER_WORKER, MAX_WORKERS>,
         MAX_WORKERS,
     >,
 }
 
-/// Associate request types with worker channels
-struct ReqTypesToWorkerQueues<
+/// Associate request types with request sink and response source of the responsible worker
+struct WorkerChannel<
     'data,
     ReqSink: RequestSink<'data>,
     RespSrc: Iterator<Item = (usize, Response<'data>)>,
@@ -99,14 +98,15 @@ impl<
         for channel in &self.worker_channels {
             for req_type in req_types {
                 if channel.req_types.contains(req_type) {
-                    panic!("Channel for given request type was already added");
+                    panic!("Channel for given request type already exists");
                 }
             }
         }
         if self
             .worker_channels
-            .push(ReqTypesToWorkerQueues {
-                req_types: Vec::from_slice(req_types).expect("Failed to add worker channel"),
+            .push(WorkerChannel {
+                req_types: Vec::from_slice(req_types)
+                    .expect("Maximum number of request types for single worker exceeded"),
                 requests,
                 responses,
             })
