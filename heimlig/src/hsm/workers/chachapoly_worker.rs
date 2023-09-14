@@ -3,6 +3,7 @@ use crate::common::queues;
 use crate::common::queues::ResponseSink;
 use crate::config::keystore::MAX_KEY_SIZE;
 use crate::hsm::keystore::KeyStore;
+use core::cell::RefCell;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
 use zeroize::Zeroizing;
@@ -15,7 +16,7 @@ pub struct ChaChaPolyWorker<
     ReqSrc: Iterator<Item = (usize, Request<'data>)>,
     RespSink: ResponseSink<'data>,
 > {
-    pub key_store: &'keystore Mutex<M, K>,
+    pub key_store: &'keystore Mutex<M, RefCell<Option<K>>>,
     pub requests: ReqSrc,
     pub responses: RespSink,
 }
@@ -39,14 +40,17 @@ impl<
                     Request::DecryptChaChaPoly {
                         key_id,
                         nonce,
-                        aad,
                         ciphertext,
+                        aad,
                         tag,
                     },
                 )) => match self
                     .key_store
                     .try_lock()
                     .expect("Failed to lock key store")
+                    .borrow_mut()
+                    .as_mut()
+                    .unwrap() // TODO: Handle no key store case
                     .export(key_id, key_buffer.as_mut_slice())
                 {
                     Ok(key) => Some(self.decrypt(key, nonce, aad, ciphertext, tag)),
@@ -57,14 +61,17 @@ impl<
                     Request::EncryptChaChaPoly {
                         key_id,
                         nonce,
-                        aad,
                         plaintext,
+                        aad,
                         tag,
                     },
                 )) => match self
                     .key_store
                     .try_lock()
                     .expect("Failed to lock key store")
+                    .borrow_mut()
+                    .as_mut()
+                    .unwrap() // TODO: Handle no key store case
                     .export(key_id, key_buffer.as_mut_slice())
                 {
                     Ok(key) => Some(self.encrypt(key, nonce, aad, plaintext, tag)),
@@ -75,8 +82,8 @@ impl<
                     Request::EncryptChaChaPolyExternalKey {
                         key,
                         nonce,
-                        aad,
                         plaintext,
+                        aad,
                         tag,
                     },
                 )) => Some(self.encrypt_external_key(key, nonce, aad, plaintext, tag)),
@@ -85,8 +92,8 @@ impl<
                     Request::DecryptChaChaPolyExternalKey {
                         key,
                         nonce,
-                        aad,
                         ciphertext,
+                        aad,
                         tag,
                     },
                 )) => Some(self.decrypt_external_key(key, nonce, aad, ciphertext, tag)),

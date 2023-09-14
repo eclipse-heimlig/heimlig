@@ -2,6 +2,7 @@
 #![no_main]
 #![feature(type_alias_impl_trait)]
 
+use core::cell::RefCell;
 use core::iter::Enumerate;
 use defmt::*;
 use embassy_executor::Spawner;
@@ -144,7 +145,7 @@ async fn hsm_task(
         responses: rng_responses_tx,
     };
     let key_store = NoKeyStore {};
-    let key_store = Mutex::<NoopRawMutex, NoKeyStore>::new(key_store);
+    let key_store = Mutex::new(RefCell::new(Some(key_store)));
     let mut core: Core<
         NoopRawMutex,
         NoKeyStore,

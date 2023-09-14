@@ -1,4 +1,5 @@
 mod tests {
+    use core::cell::RefCell;
     use core::iter::Enumerate;
     use embassy_sync::blocking_mutex::raw::{NoopRawMutex, RawMutex};
     use embassy_sync::mutex::Mutex;
@@ -151,27 +152,32 @@ mod tests {
         (requests_rx, requests_tx, response_rx, response_tx)
     }
 
-    fn alloc_chachapoly_vars(buffer: &mut [u8]) -> (&[u8], &[u8], &[u8], &mut [u8], &mut [u8]) {
-        const KEY: &[u8; KEY_SIZE] = b"Fortuna Major or Oddsbodikins???";
-        const NONCE: &[u8; NONCE_SIZE] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-        const PLAINTEXT: &[u8; PLAINTEXT_SIZE] = b"I solemnly swear I am up to no good!";
-        const AAD: &[u8; AAD_SIZE] = b"When in doubt, go to the library.";
-        let (key, buffer) = buffer.split_at_mut(KEY.len());
-        key.copy_from_slice(KEY);
-        let (nonce, buffer) = buffer.split_at_mut(NONCE.len());
-        nonce.copy_from_slice(NONCE);
-        let (aad, buffer) = buffer.split_at_mut(AAD.len());
-        aad.copy_from_slice(AAD);
-        let (plaintext, buffer) = buffer.split_at_mut(PLAINTEXT.len());
-        plaintext.copy_from_slice(PLAINTEXT);
-        let (tag, _buffer) = buffer.split_at_mut(TAG_SIZE);
-        (key, nonce, aad, plaintext, tag)
+    fn alloc_chachapoly_vars() -> (
+        [u8; KEY_SIZE],
+        [u8; NONCE_SIZE],
+        [u8; PLAINTEXT_SIZE],
+        [u8; AAD_SIZE],
+        [u8; TAG_SIZE],
+    ) {
+        let key: [u8; KEY_SIZE] = *b"Fortuna Major or Oddsbodikins???";
+        let nonce: [u8; NONCE_SIZE] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+        let plaintext: [u8; PLAINTEXT_SIZE] = *b"I solemnly swear I am up to no good!";
+        let aad: [u8; AAD_SIZE] = *b"When in doubt, go to the library.";
+        let tag: [u8; TAG_SIZE] = [0u8; TAG_SIZE];
+        (key, nonce, plaintext, aad, tag)
     }
 
     fn init_core<'keystore, 'ch, 'data, M: RawMutex>(
         key_store: &'keystore Mutex<
             M,
-            MemoryKeyStore<{ config::keystore::TOTAL_SIZE }, { config::keystore::NUM_KEYS }>,
+            RefCell<
+                Option<
+                    MemoryKeyStore<
+                        { config::keystore::TOTAL_SIZE },
+                        { config::keystore::NUM_KEYS },
+                    >,
+                >,
+            >,
         >,
         client_requests: RequestQueueSource<'ch, 'data>,
         client_responses: ResponseQueueSink<'ch, 'data>,
@@ -215,7 +221,7 @@ mod tests {
             responses: rng_responses_tx,
         };
         let key_store = init_key_store();
-        let key_store = Mutex::new(key_store);
+        let key_store = Mutex::new(RefCell::new(Some(key_store)));
         let mut core =
             init_core::<NoopRawMutex>(&key_store, client_requests_rx, client_responses_tx);
         core.add_worker_channel(
@@ -260,7 +266,7 @@ mod tests {
             responses: rng_responses_tx,
         };
         let key_store = init_key_store();
-        let key_store = Mutex::new(key_store);
+        let key_store = Mutex::new(RefCell::new(Some(key_store)));
         let mut core =
             init_core::<NoopRawMutex>(&key_store, client_requests_rx, client_responses_tx);
         core.add_worker_channel(
@@ -288,8 +294,8 @@ mod tests {
 
     #[test]
     fn encrypt_chachapoly() {
-        let mut memory1 = [0; KEY_SIZE + NONCE_SIZE + PLAINTEXT_SIZE + AAD_SIZE + TAG_SIZE];
-        let mut memory2 = [0; KEY_SIZE + NONCE_SIZE + PLAINTEXT_SIZE + AAD_SIZE + TAG_SIZE];
+        let (key, nonce, mut plaintext, aad, mut tag) = alloc_chachapoly_vars();
+        let org_plaintext = plaintext;
         let mut client_requests = Queue::<Request, QUEUE_SIZE>::new();
         let mut client_responses = Queue::<Response, QUEUE_SIZE>::new();
         let mut chachapoly_requests = Queue::<Request, QUEUE_SIZE>::new();
@@ -303,7 +309,7 @@ mod tests {
             chachapoly_responses_tx,
         ) = split_worker_queues(&mut chachapoly_requests, &mut chachapoly_responses);
         let key_store = init_key_store();
-        let key_store = Mutex::new(key_store);
+        let key_store = Mutex::new(RefCell::new(Some(key_store)));
         let mut chacha_worker = ChaChaPolyWorker {
             key_store: &key_store,
             requests: chachapoly_requests_rx.enumerate(),
@@ -323,10 +329,9 @@ mod tests {
         );
 
         // Import key
-        let (key, nonce, aad, plaintext, tag) = alloc_chachapoly_vars(&mut memory1);
         let request = Request::ImportKey {
             key_id: KEY3.id,
-            data: key,
+            data: &key,
         };
         req_client_tx
             .enqueue(request)
@@ -343,10 +348,10 @@ mod tests {
         // Encrypt data
         let request = Request::EncryptChaChaPoly {
             key_id: KEY3.id,
-            nonce,
-            aad,
-            plaintext,
-            tag,
+            nonce: &nonce,
+            plaintext: &mut plaintext,
+            aad: &aad,
+            tag: &mut tag,
         };
         req_client_tx
             .enqueue(request)
@@ -364,12 +369,11 @@ mod tests {
         };
 
         // Decrypt data
-        let (_key, nonce, aad, org_plaintext, _tag) = alloc_chachapoly_vars(&mut memory2);
         let request = Request::DecryptChaChaPoly {
             key_id: KEY3.id,
-            nonce,
-            aad,
+            nonce: &nonce,
             ciphertext,
+            aad: &aad,
             tag,
         };
         req_client_tx
@@ -390,8 +394,8 @@ mod tests {
 
     #[test]
     fn encrypt_chachapoly_external_key() {
-        let mut memory1 = [0; KEY_SIZE + NONCE_SIZE + PLAINTEXT_SIZE + AAD_SIZE + TAG_SIZE];
-        let mut memory2 = [0; KEY_SIZE + NONCE_SIZE + PLAINTEXT_SIZE + AAD_SIZE + TAG_SIZE];
+        let (key, nonce, mut plaintext, aad, mut tag) = alloc_chachapoly_vars();
+        let org_plaintext = plaintext;
         let mut client_requests = Queue::<Request, QUEUE_SIZE>::new();
         let mut client_responses = Queue::<Response, QUEUE_SIZE>::new();
         let mut chachapoly_requests = Queue::<Request, QUEUE_SIZE>::new();
@@ -405,10 +409,7 @@ mod tests {
             chachapoly_responses_tx,
         ) = split_worker_queues(&mut chachapoly_requests, &mut chachapoly_responses);
         let key_store = init_key_store();
-        let key_store: Mutex<
-            NoopRawMutex,
-            MemoryKeyStore<{ config::keystore::TOTAL_SIZE }, { config::keystore::NUM_KEYS }>,
-        > = Mutex::new(key_store);
+        let key_store = Mutex::new(RefCell::new(Some(key_store)));
         let mut chacha_worker = ChaChaPolyWorker {
             key_store: &key_store,
             requests: chachapoly_requests_rx.enumerate(),
@@ -428,13 +429,12 @@ mod tests {
         );
 
         // Encrypt data
-        let (key, nonce, aad, plaintext, tag) = alloc_chachapoly_vars(&mut memory1);
         let request = Request::EncryptChaChaPolyExternalKey {
-            key,
-            nonce,
-            aad,
-            plaintext,
-            tag,
+            key: &key,
+            nonce: &nonce,
+            aad: &aad,
+            plaintext: &mut plaintext,
+            tag: &mut tag,
         };
         req_client_tx
             .enqueue(request)
@@ -451,12 +451,11 @@ mod tests {
         };
 
         // Decrypt data
-        let (key, nonce, aad, org_plaintext, _tag) = alloc_chachapoly_vars(&mut memory2);
         let request = Request::DecryptChaChaPolyExternalKey {
-            key,
-            nonce,
-            aad,
+            key: &key,
+            nonce: &nonce,
             ciphertext,
+            aad: &aad,
             tag,
         };
         req_client_tx

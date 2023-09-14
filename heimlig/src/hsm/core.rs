@@ -2,6 +2,7 @@ use crate::common::jobs;
 use crate::common::jobs::{Request, RequestType, Response};
 use crate::common::queues::{Error, RequestSink, ResponseSink};
 use crate::hsm::keystore::KeyStore;
+use core::cell::RefCell;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
 use heapless::Vec;
@@ -19,7 +20,7 @@ pub struct Core<
     const MAX_REQUEST_TYPES_PER_WORKER: usize = 8,
     const MAX_WORKERS: usize = 8,
 > {
-    key_store: &'keystore Mutex<M, K>,
+    key_store: &'keystore Mutex<M, RefCell<Option<K>>>,
     // TODO: Support multiple client channels like worker channels
     client_requests: ReqSrc,
     client_responses: RespSink,
@@ -77,7 +78,7 @@ impl<
     /// * `response_channels`: List of [Channel]s to send responses back to the clients.
     /// * `key_store`: The [KeyStore] to hold cryptographic key material.
     pub fn new(
-        key_store: &'keystore Mutex<M, K>,
+        key_store: &'keystore Mutex<M, RefCell<Option<K>>>,
         client_requests: ReqSrc,
         client_responses: RespSink,
     ) -> Self {
@@ -162,6 +163,9 @@ impl<
                         .key_store
                         .try_lock()
                         .expect("Failed to lock key store")
+                        .borrow_mut()
+                        .as_mut()
+                        .unwrap() // TODO: Handle no key store case
                         .import(key_id, data)
                     {
                         Ok(()) => Response::ImportKey,

@@ -24,29 +24,29 @@ pub enum Request<'a> {
     EncryptChaChaPoly {
         key_id: Id,
         nonce: &'a [u8],
-        aad: &'a [u8],
         plaintext: &'a mut [u8],
+        aad: &'a [u8],
         tag: &'a mut [u8],
     },
     EncryptChaChaPolyExternalKey {
         key: &'a [u8],
         nonce: &'a [u8],
-        aad: &'a [u8],
         plaintext: &'a mut [u8],
+        aad: &'a [u8],
         tag: &'a mut [u8],
     },
     DecryptChaChaPoly {
         key_id: Id,
         nonce: &'a [u8],
-        aad: &'a [u8],
         ciphertext: &'a mut [u8],
+        aad: &'a [u8],
         tag: &'a [u8],
     },
     DecryptChaChaPolyExternalKey {
         key: &'a [u8],
         nonce: &'a [u8],
-        aad: &'a [u8],
         ciphertext: &'a mut [u8],
+        aad: &'a [u8],
         tag: &'a [u8],
     },
 }
