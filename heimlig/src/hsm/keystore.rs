@@ -1,6 +1,6 @@
 pub type Id = u32;
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum Error {
     /// The requested ID is not defined.
     InvalidKeyId,
@@ -37,27 +37,6 @@ pub trait KeyStore {
     /// return: An error, if the key could not be found.
     fn delete(&mut self, id: Id) -> Result<(), Error> {
         self.import(id, &[])
-    }
-}
-
-/// Dummy key store that always returns [Error::KeyNotFound]. It used if a core is built without a KeyStore.
-pub struct NoKeyStore;
-
-impl KeyStore for NoKeyStore {
-    fn is_stored(&self, _id: Id) -> bool {
-        false
-    }
-
-    fn size(&self, _id: Id) -> Result<usize, Error> {
-        Err(Error::KeyNotFound)
-    }
-
-    fn import(&mut self, _id: Id, _src: &[u8]) -> Result<(), Error> {
-        Err(Error::KeyNotFound)
-    }
-
-    fn export<'a>(&self, _id: Id, _dest: &'a mut [u8]) -> Result<&'a [u8], Error> {
-        Err(Error::KeyNotFound)
     }
 }
 

@@ -2,7 +2,6 @@
 #![no_main]
 #![feature(type_alias_impl_trait)]
 
-use core::cell::RefCell;
 use core::iter::Enumerate;
 use defmt::*;
 use embassy_executor::Spawner;
@@ -11,7 +10,6 @@ use embassy_stm32::gpio::{Level, Output, Speed};
 use embassy_stm32::peripherals::RNG;
 use embassy_stm32::rng::{InterruptHandler, Rng};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Timer};
 use heapless::spsc::{Consumer, Producer, Queue};
 use heimlig::client::api::Api;
@@ -20,7 +18,6 @@ use heimlig::common::queues;
 use heimlig::common::queues::{RequestSink, ResponseSink};
 use heimlig::crypto::rng;
 use heimlig::hsm::core::Core;
-use heimlig::hsm::keystore::NoKeyStore;
 use heimlig::hsm::workers::rng_worker::RngWorker;
 use rand_core::RngCore;
 
@@ -144,16 +141,13 @@ async fn hsm_task(
         requests: rng_requests_rx.enumerate(),
         responses: rng_responses_tx,
     };
-    let key_store = NoKeyStore {};
-    let key_store = Mutex::new(RefCell::new(Some(key_store)));
     let mut core: Core<
         NoopRawMutex,
-        NoKeyStore,
         Enumerate<RequestQueueSource<'_, '_>>,
         ResponseQueueSink<'_, '_>,
         RequestQueueSink<'_, '_>,
         Enumerate<ResponseQueueSource<'_, '_>>,
-    > = Core::new(&key_store, client_requests.enumerate(), client_responses);
+    > = Core::new(None, client_requests.enumerate(), client_responses);
     core.add_worker_channel(
         &[RequestType::GetRandom],
         rng_requests_tx,

@@ -8,7 +8,7 @@ pub struct Api<'a, Req: RequestSink<'a>, Resp: Iterator<Item = Response<'a>>> {
     responses: Resp,
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum Error {
     Queue(queues::Error),
 }

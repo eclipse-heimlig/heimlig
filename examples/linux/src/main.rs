@@ -15,7 +15,6 @@ use heimlig::common::queues::{RequestSink, ResponseSink};
 use heimlig::crypto::rng;
 use heimlig::crypto::rng::Rng;
 use heimlig::hsm::core::Core;
-use heimlig::hsm::keystore::NoKeyStore;
 use heimlig::hsm::workers::rng_worker::RngWorker;
 use log::{error, info};
 use rand::RngCore;
@@ -34,7 +33,6 @@ static CORE: Mutex<
         Option<
             Core<
                 CriticalSectionRawMutex,
-                NoKeyStore,
                 Enumerate<RequestQueueSource<'static, 'static>>,
                 ResponseQueueSink<'static, 'static>,
                 RequestQueueSink<'static, 'static>,
@@ -43,8 +41,6 @@ static CORE: Mutex<
         >,
     >,
 > = Mutex::new(RefCell::new(None));
-static KEY_STORE: Mutex<CriticalSectionRawMutex, RefCell<Option<NoKeyStore>>> =
-    Mutex::new(RefCell::new(None));
 static RNG_WORKER: Mutex<
     CriticalSectionRawMutex,
     RefCell<Option<RngWorker<EntropySource, Enumerate<RequestQueueSource>, ResponseQueueSink>>>,
@@ -228,18 +224,13 @@ async fn main(spawner: Spawner) {
         .try_lock()
         .expect("Failed to lock RNG_WORKER")
         .replace(Some(rng_worker));
-    KEY_STORE
-        .try_lock()
-        .expect("Failed to lock KEY_STORE")
-        .replace(Some(NoKeyStore {}));
     let mut core: Core<
         CriticalSectionRawMutex,
-        NoKeyStore,
         Enumerate<RequestQueueSource<'_, '_>>,
         ResponseQueueSink<'_, '_>,
         RequestQueueSink<'_, '_>,
         Enumerate<ResponseQueueSource<'_, '_>>,
-    > = Core::new(&KEY_STORE, client_requests.enumerate(), client_responses);
+    > = Core::new(None, client_requests.enumerate(), client_responses);
     core.add_worker_channel(
         &[RequestType::GetRandom],
         rng_requests_tx,

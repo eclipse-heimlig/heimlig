@@ -1,5 +1,4 @@
 mod tests {
-    use core::cell::RefCell;
     use core::iter::Enumerate;
     use embassy_sync::blocking_mutex::raw::{NoopRawMutex, RawMutex};
     use embassy_sync::mutex::Mutex;
@@ -13,7 +12,7 @@ mod tests {
     use heimlig::crypto::chacha20poly1305::{KEY_SIZE, NONCE_SIZE};
     use heimlig::crypto::rng::{EntropySource, Rng};
     use heimlig::hsm::core::Core;
-    use heimlig::hsm::keystore::MemoryKeyStore;
+    use heimlig::hsm::keystore::{KeyStore, MemoryKeyStore};
     use heimlig::hsm::workers::chachapoly_worker::ChaChaPolyWorker;
     use heimlig::hsm::workers::rng_worker::RngWorker;
 
@@ -168,24 +167,13 @@ mod tests {
     }
 
     fn init_core<'keystore, 'ch, 'data, M: RawMutex>(
-        key_store: &'keystore Mutex<
-            M,
-            RefCell<
-                Option<
-                    MemoryKeyStore<
-                        { config::keystore::TOTAL_SIZE },
-                        { config::keystore::NUM_KEYS },
-                    >,
-                >,
-            >,
-        >,
+        key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
         client_requests: RequestQueueSource<'ch, 'data>,
         client_responses: ResponseQueueSink<'ch, 'data>,
     ) -> Core<
         'data,
         'keystore,
         M,
-        MemoryKeyStore<{ config::keystore::TOTAL_SIZE }, { config::keystore::NUM_KEYS }>,
         Enumerate<RequestQueueSource<'ch, 'data>>,
         ResponseQueueSink<'ch, 'data>,
         RequestQueueSink<'ch, 'data>,
@@ -215,15 +203,16 @@ mod tests {
             split_client_queues(&mut client_requests, &mut client_responses);
         let (rng_requests_rx, rng_requests_tx, rng_responses_rx, rng_responses_tx) =
             split_worker_queues(&mut rng_requests, &mut rng_responses);
+        let mut key_store = init_key_store();
+        let key_store: Option<Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)>> =
+            Some(Mutex::new(&mut key_store));
         let mut rng_worker = RngWorker {
             rng,
             requests: rng_requests_rx.enumerate(),
             responses: rng_responses_tx,
         };
-        let key_store = init_key_store();
-        let key_store = Mutex::new(RefCell::new(Some(key_store)));
         let mut core =
-            init_core::<NoopRawMutex>(&key_store, client_requests_rx, client_responses_tx);
+            init_core::<NoopRawMutex>(key_store.as_ref(), client_requests_rx, client_responses_tx);
         core.add_worker_channel(
             &[RequestType::GetRandom],
             rng_requests_tx,
@@ -260,15 +249,16 @@ mod tests {
             split_client_queues(&mut client_requests, &mut client_responses);
         let (rng_requests_rx, rng_requests_tx, rng_responses_rx, rng_responses_tx) =
             split_worker_queues(&mut rng_requests, &mut rng_responses);
+        let mut key_store = init_key_store();
+        let key_store: Option<Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)>> =
+            Some(Mutex::new(&mut key_store));
         let mut rng_worker = RngWorker {
             rng,
             requests: rng_requests_rx.enumerate(),
             responses: rng_responses_tx,
         };
-        let key_store = init_key_store();
-        let key_store = Mutex::new(RefCell::new(Some(key_store)));
         let mut core =
-            init_core::<NoopRawMutex>(&key_store, client_requests_rx, client_responses_tx);
+            init_core::<NoopRawMutex>(key_store.as_ref(), client_requests_rx, client_responses_tx);
         core.add_worker_channel(
             &[RequestType::GetRandom],
             rng_requests_tx,
@@ -308,15 +298,16 @@ mod tests {
             chachapoly_responses_rx,
             chachapoly_responses_tx,
         ) = split_worker_queues(&mut chachapoly_requests, &mut chachapoly_responses);
-        let key_store = init_key_store();
-        let key_store = Mutex::new(RefCell::new(Some(key_store)));
+        let mut key_store = init_key_store();
+        let key_store: Option<Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)>> =
+            Some(Mutex::new(&mut key_store));
         let mut chacha_worker = ChaChaPolyWorker {
-            key_store: &key_store,
+            key_store: key_store.as_ref(),
             requests: chachapoly_requests_rx.enumerate(),
             responses: chachapoly_responses_tx,
         };
         let mut core =
-            init_core::<NoopRawMutex>(&key_store, client_requests_rx, client_responses_tx);
+            init_core::<NoopRawMutex>(key_store.as_ref(), client_requests_rx, client_responses_tx);
         core.add_worker_channel(
             &[
                 RequestType::EncryptChaChaPoly,
@@ -408,15 +399,16 @@ mod tests {
             chachapoly_responses_rx,
             chachapoly_responses_tx,
         ) = split_worker_queues(&mut chachapoly_requests, &mut chachapoly_responses);
-        let key_store = init_key_store();
-        let key_store = Mutex::new(RefCell::new(Some(key_store)));
+        let mut key_store = init_key_store();
+        let key_store: Option<Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)>> =
+            Some(Mutex::new(&mut key_store));
         let mut chacha_worker = ChaChaPolyWorker {
-            key_store: &key_store,
+            key_store: key_store.as_ref(),
             requests: chachapoly_requests_rx.enumerate(),
             responses: chachapoly_responses_tx,
         };
         let mut core =
-            init_core::<NoopRawMutex>(&key_store, client_requests_rx, client_responses_tx);
+            init_core::<NoopRawMutex>(key_store.as_ref(), client_requests_rx, client_responses_tx);
         core.add_worker_channel(
             &[
                 RequestType::EncryptChaChaPoly,

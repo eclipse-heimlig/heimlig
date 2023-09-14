@@ -1,14 +1,26 @@
 use crate::hsm::keystore;
 use crate::hsm::keystore::Id;
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum Error {
     /// The amount of requested data was too large.
     RequestTooLarge,
     /// A cryptographic error occurred.
     Crypto(crate::crypto::Error),
+    /// No key store present.
+    NoKeyStore,
     /// A key store error occurred.
     KeyStore(keystore::Error),
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum RequestType {
+    ImportKey,
+    GetRandom,
+    EncryptChaChaPoly,
+    EncryptChaChaPolyExternalKey,
+    DecryptChaChaPoly,
+    DecryptChaChaPolyExternalKey,
 }
 
 /// A request for the HSM to perform a cryptographic task.
@@ -49,16 +61,6 @@ pub enum Request<'a> {
         aad: &'a [u8],
         tag: &'a [u8],
     },
-}
-
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
-pub enum RequestType {
-    ImportKey,
-    GetRandom,
-    EncryptChaChaPoly,
-    EncryptChaChaPolyExternalKey,
-    DecryptChaChaPoly,
-    DecryptChaChaPolyExternalKey,
 }
 
 impl<'data> Request<'data> {

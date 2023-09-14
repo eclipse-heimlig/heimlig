@@ -1,6 +1,6 @@
 use crate::common::jobs::{Request, Response};
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum Error {
     /// No [Channel] found for given ID.
     UnknownChannelId,
@@ -24,4 +24,6 @@ pub trait ResponseSink<'data> {
     fn ready(&self) -> bool; // TODO: Remove after async is implemented
 }
 
-// TODO: Add dedicated RequestSource and ResponseSource here instead of using Iterators directly?
+// TODO: Use trait aliases once they are stable (https://doc.rust-lang.org/beta/unstable-book/language-features/trait-alias.html)
+// pub type RequestSource<'data> = dyn Iterator<Item = (usize, Request<'data>)>;
+// pub type ResponseSource<'data> = dyn Iterator<Item = (usize, Response<'data>)>;

@@ -1,9 +1,10 @@
+use crate::common::jobs::Error::NoKeyStore;
 use crate::common::jobs::{Error, Request, Response};
 use crate::common::queues;
 use crate::common::queues::ResponseSink;
 use crate::config::keystore::MAX_KEY_SIZE;
 use crate::hsm::keystore::KeyStore;
-use core::cell::RefCell;
+use core::ops::DerefMut;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
 use zeroize::Zeroizing;
@@ -12,11 +13,10 @@ pub struct ChaChaPolyWorker<
     'data,
     'keystore,
     M: RawMutex,
-    K: KeyStore,
     ReqSrc: Iterator<Item = (usize, Request<'data>)>,
     RespSink: ResponseSink<'data>,
 > {
-    pub key_store: &'keystore Mutex<M, RefCell<Option<K>>>,
+    pub key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
     pub requests: ReqSrc,
     pub responses: RespSink,
 }
@@ -25,10 +25,9 @@ impl<
         'data,
         'keystore,
         M: RawMutex,
-        K: KeyStore,
         ReqSrc: Iterator<Item = (usize, Request<'data>)>,
         RespSink: ResponseSink<'data>,
-    > ChaChaPolyWorker<'data, 'keystore, M, K, ReqSrc, RespSink>
+    > ChaChaPolyWorker<'data, 'keystore, M, ReqSrc, RespSink>
 {
     pub fn execute(&mut self) -> Result<(), queues::Error> {
         if self.responses.ready() {
@@ -44,18 +43,21 @@ impl<
                         aad,
                         tag,
                     },
-                )) => match self
-                    .key_store
-                    .try_lock()
-                    .expect("Failed to lock key store")
-                    .borrow_mut()
-                    .as_mut()
-                    .unwrap() // TODO: Handle no key store case
-                    .export(key_id, key_buffer.as_mut_slice())
-                {
-                    Ok(key) => Some(self.decrypt(key, nonce, aad, ciphertext, tag)),
-                    Err(e) => Some(Response::Error(Error::KeyStore(e))),
-                },
+                )) => {
+                    if let Some(key_store) = self.key_store {
+                        let export = key_store
+                            .try_lock()
+                            .expect("Failed to lock key store")
+                            .deref_mut()
+                            .export(key_id, key_buffer.as_mut_slice());
+                        match export {
+                            Ok(key) => Some(self.decrypt(key, nonce, aad, ciphertext, tag)),
+                            Err(e) => Some(Response::Error(Error::KeyStore(e))),
+                        }
+                    } else {
+                        Some(Response::Error(NoKeyStore))
+                    }
+                }
                 Some((
                     _request_id,
                     Request::EncryptChaChaPoly {
@@ -65,18 +67,21 @@ impl<
                         aad,
                         tag,
                     },
-                )) => match self
-                    .key_store
-                    .try_lock()
-                    .expect("Failed to lock key store")
-                    .borrow_mut()
-                    .as_mut()
-                    .unwrap() // TODO: Handle no key store case
-                    .export(key_id, key_buffer.as_mut_slice())
-                {
-                    Ok(key) => Some(self.encrypt(key, nonce, aad, plaintext, tag)),
-                    Err(e) => Some(Response::Error(Error::KeyStore(e))),
-                },
+                )) => {
+                    if let Some(key_store) = self.key_store {
+                        let export = key_store
+                            .try_lock()
+                            .expect("Failed to lock key store")
+                            .deref_mut()
+                            .export(key_id, key_buffer.as_mut_slice());
+                        match export {
+                            Ok(key) => Some(self.encrypt(key, nonce, aad, plaintext, tag)),
+                            Err(e) => Some(Response::Error(Error::KeyStore(e))),
+                        }
+                    } else {
+                        Some(Response::Error(NoKeyStore))
+                    }
+                }
                 Some((
                     _request_id,
                     Request::EncryptChaChaPolyExternalKey {

@@ -1,18 +1,25 @@
-use crate::common::jobs;
 use crate::common::jobs::{Request, RequestType, Response};
-use crate::common::queues::{Error, RequestSink, ResponseSink};
+use crate::common::queues::{RequestSink, ResponseSink};
+use crate::common::{jobs, queues};
 use crate::hsm::keystore::KeyStore;
-use core::cell::RefCell;
+use core::ops::DerefMut;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
 use heapless::Vec;
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum Error {
+    /// Queue specific error
+    Queue(queues::Error),
+    /// Job specific error
+    Job(jobs::Error),
+}
 
 /// HSM core that waits for [Request]s from [Channel]s and send [Response]s once they are ready.   
 pub struct Core<
     'data,
     'keystore,
     M: RawMutex,
-    K: KeyStore,
     ReqSrc: Iterator<Item = (usize, Request<'data>)>,
     RespSink: ResponseSink<'data>,
     ReqSink: RequestSink<'data>,
@@ -20,7 +27,7 @@ pub struct Core<
     const MAX_REQUEST_TYPES_PER_WORKER: usize = 8,
     const MAX_WORKERS: usize = 8,
 > {
-    key_store: &'keystore Mutex<M, RefCell<Option<K>>>,
+    key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
     // TODO: Support multiple client channels like worker channels
     client_requests: ReqSrc,
     client_responses: RespSink,
@@ -47,7 +54,6 @@ impl<
         'data,
         'keystore,
         M: RawMutex,
-        K: KeyStore,
         ReqSrc: Iterator<Item = (usize, Request<'data>)>,
         RespSink: ResponseSink<'data>,
         ReqSink: RequestSink<'data>,
@@ -59,7 +65,6 @@ impl<
         'data,
         'keystore,
         M,
-        K,
         ReqSrc,
         RespSink,
         ReqSink,
@@ -77,7 +82,7 @@ impl<
     /// * `response_channels`: List of [Channel]s to send responses back to the clients.
     /// * `key_store`: The [KeyStore] to hold cryptographic key material.
     pub fn new(
-        key_store: &'keystore Mutex<M, RefCell<Option<K>>>,
+        key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
         client_requests: ReqSrc,
         client_responses: RespSink,
     ) -> Self {
@@ -127,7 +132,7 @@ impl<
         for channel in &mut self.worker_channels {
             if self.client_responses.ready() {
                 if let Some((_id, response)) = channel.responses.next() {
-                    self.client_responses.send(response)?
+                    self.client_responses.send(response).map_err(Error::Queue)?
                 }
             }
         }
@@ -144,7 +149,7 @@ impl<
     /// * `Err(core::Error)` if a processing error occurred.
     fn process_client_requests(&mut self) -> Result<(), Error> {
         if !self.client_responses.ready() {
-            return Err(Error::NotReady);
+            return Err(Error::Queue(queues::Error::NotReady));
         }
         let request = self.client_requests.next();
         if let Some((request_id, request)) = request {
@@ -159,19 +164,22 @@ impl<
         match req_type {
             RequestType::ImportKey => match request {
                 Request::ImportKey { key_id, data } => {
-                    let response = match self
-                        .key_store
-                        .try_lock()
-                        .expect("Failed to lock key store")
-                        .borrow_mut()
-                        .as_mut()
-                        .unwrap() // TODO: Handle no key store case
-                        .import(key_id, data)
-                    {
-                        Ok(()) => Response::ImportKey,
-                        Err(e) => Response::Error(jobs::Error::KeyStore(e)),
+                    let response = {
+                        if let Some(key_store) = self.key_store {
+                            match key_store
+                                .try_lock()
+                                .expect("Failed to lock key store")
+                                .deref_mut()
+                                .import(key_id, data)
+                            {
+                                Ok(()) => Response::ImportKey,
+                                Err(e) => Response::Error(jobs::Error::KeyStore(e)),
+                            }
+                        } else {
+                            Response::Error(jobs::Error::NoKeyStore)
+                        }
                     };
-                    self.client_responses.send(response)?;
+                    self.client_responses.send(response).map_err(Error::Queue)?;
                 }
                 _ => panic!("Mismatch of request type and content"),
             },
@@ -181,7 +189,7 @@ impl<
                     .iter_mut()
                     .find(|c| c.req_types.contains(&req_type))
                     .expect("Failed to find worker channel for request type");
-                channel.requests.send(request)?;
+                channel.requests.send(request).map_err(Error::Queue)?;
             }
         }
         Ok(())
