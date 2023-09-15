@@ -91,35 +91,7 @@ mod tests {
         Rng::new(TestEntropySource::default(), None)
     }
 
-    fn split_client_queues<'ch, 'data>(
-        client_requests: &'ch mut Queue<Request<'data>, QUEUE_SIZE>,
-        client_responses: &'ch mut Queue<Response<'data>, QUEUE_SIZE>,
-    ) -> (
-        Producer<'ch, Request<'data>, QUEUE_SIZE>,
-        Consumer<'ch, Response<'data>, QUEUE_SIZE>,
-        RequestQueueSource<'ch, 'data>,
-        ResponseQueueSink<'ch, 'data>,
-    ) {
-        let (client_requests_tx, client_requests_rx): (
-            Producer<Request, QUEUE_SIZE>,
-            Consumer<Request, QUEUE_SIZE>,
-        ) = client_requests.split();
-        let (client_responses_tx, client_responses_rx) = client_responses.split();
-        let client_requests_rx = RequestQueueSource {
-            consumer: client_requests_rx,
-        };
-        let client_responses_tx = ResponseQueueSink {
-            producer: client_responses_tx,
-        };
-        (
-            client_requests_tx,
-            client_responses_rx,
-            client_requests_rx,
-            client_responses_tx,
-        )
-    }
-
-    fn split_worker_queues<'ch, 'data>(
+    fn split_queues<'ch, 'data>(
         requests: &'ch mut Queue<Request<'data>, QUEUE_SIZE>,
         responses: &'ch mut Queue<Response<'data>, QUEUE_SIZE>,
     ) -> (
@@ -190,6 +162,8 @@ mod tests {
         )
         .expect("failed to create key store")
     }
+
+    // TODO: Use API object in integration tests instead of raw queues
     #[test]
     fn get_random() {
         const REQUEST_SIZE: usize = 16;
@@ -199,10 +173,10 @@ mod tests {
         let mut client_responses = Queue::<Response, QUEUE_SIZE>::new();
         let mut rng_requests = Queue::<Request, QUEUE_SIZE>::new();
         let mut rng_responses = Queue::<Response, QUEUE_SIZE>::new();
-        let (mut req_client_tx, mut resp_client_rx, client_requests_rx, client_responses_tx) =
-            split_client_queues(&mut client_requests, &mut client_responses);
+        let (req_client_rx, mut req_client_tx, mut resp_client_rx, resp_client_tx) =
+            split_queues(&mut client_requests, &mut client_responses);
         let (rng_requests_rx, rng_requests_tx, rng_responses_rx, rng_responses_tx) =
-            split_worker_queues(&mut rng_requests, &mut rng_responses);
+            split_queues(&mut rng_requests, &mut rng_responses);
         let mut key_store = init_key_store();
         let key_store: Option<Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)>> =
             Some(Mutex::new(&mut key_store));
@@ -211,8 +185,7 @@ mod tests {
             requests: rng_requests_rx.enumerate(),
             responses: rng_responses_tx,
         };
-        let mut core =
-            init_core::<NoopRawMutex>(key_store.as_ref(), client_requests_rx, client_responses_tx);
+        let mut core = init_core::<NoopRawMutex>(key_store.as_ref(), req_client_rx, resp_client_tx);
         core.add_worker_channel(
             &[RequestType::GetRandom],
             rng_requests_tx,
@@ -221,13 +194,11 @@ mod tests {
         let request = Request::GetRandom {
             output: &mut random_output,
         };
-        req_client_tx
-            .enqueue(request)
-            .expect("failed to send request");
+        req_client_tx.send(request).expect("failed to send request");
         core.execute().expect("failed to forward request");
         rng_worker.execute().expect("failed to process request");
         core.execute().expect("failed to forward response");
-        match resp_client_rx.dequeue() {
+        match resp_client_rx.next() {
             Some(response) => match response {
                 Response::GetRandom { data } => assert_eq!(data.len(), REQUEST_SIZE),
                 _ => panic!("Unexpected response type {:?}", response),
@@ -245,10 +216,10 @@ mod tests {
         let mut client_responses = Queue::<Response, QUEUE_SIZE>::new();
         let mut rng_requests = Queue::<Request, QUEUE_SIZE>::new();
         let mut rng_responses = Queue::<Response, QUEUE_SIZE>::new();
-        let (mut req_client_tx, mut resp_client_rx, client_requests_rx, client_responses_tx) =
-            split_client_queues(&mut client_requests, &mut client_responses);
+        let (req_client_rx, mut req_client_tx, mut resp_client_rx, resp_client_tx) =
+            split_queues(&mut client_requests, &mut client_responses);
         let (rng_requests_rx, rng_requests_tx, rng_responses_rx, rng_responses_tx) =
-            split_worker_queues(&mut rng_requests, &mut rng_responses);
+            split_queues(&mut rng_requests, &mut rng_responses);
         let mut key_store = init_key_store();
         let key_store: Option<Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)>> =
             Some(Mutex::new(&mut key_store));
@@ -257,8 +228,7 @@ mod tests {
             requests: rng_requests_rx.enumerate(),
             responses: rng_responses_tx,
         };
-        let mut core =
-            init_core::<NoopRawMutex>(key_store.as_ref(), client_requests_rx, client_responses_tx);
+        let mut core = init_core::<NoopRawMutex>(key_store.as_ref(), req_client_rx, resp_client_tx);
         core.add_worker_channel(
             &[RequestType::GetRandom],
             rng_requests_tx,
@@ -267,13 +237,11 @@ mod tests {
         let request = Request::GetRandom {
             output: &mut random_output,
         };
-        req_client_tx
-            .enqueue(request)
-            .expect("failed to send request");
+        req_client_tx.send(request).expect("failed to send request");
         core.execute().expect("failed to forward request");
         rng_worker.execute().expect("failed to process request");
         core.execute().expect("failed to forward response");
-        match resp_client_rx.dequeue() {
+        match resp_client_rx.next() {
             Some(response) => match response {
                 Response::Error(jobs::Error::RequestTooLarge) => {}
                 _ => panic!("Unexpected response type {:?}", response),
@@ -290,14 +258,14 @@ mod tests {
         let mut client_responses = Queue::<Response, QUEUE_SIZE>::new();
         let mut chachapoly_requests = Queue::<Request, QUEUE_SIZE>::new();
         let mut chachapoly_responses = Queue::<Response, QUEUE_SIZE>::new();
-        let (mut req_client_tx, mut resp_client_rx, client_requests_rx, client_responses_tx) =
-            split_client_queues(&mut client_requests, &mut client_responses);
+        let (req_client_rx, mut req_client_tx, mut resp_client_rx, resp_client_tx) =
+            split_queues(&mut client_requests, &mut client_responses);
         let (
             chachapoly_requests_rx,
             chachapoly_requests_tx,
             chachapoly_responses_rx,
             chachapoly_responses_tx,
-        ) = split_worker_queues(&mut chachapoly_requests, &mut chachapoly_responses);
+        ) = split_queues(&mut chachapoly_requests, &mut chachapoly_responses);
         let mut key_store = init_key_store();
         let key_store: Option<Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)>> =
             Some(Mutex::new(&mut key_store));
@@ -306,8 +274,7 @@ mod tests {
             requests: chachapoly_requests_rx.enumerate(),
             responses: chachapoly_responses_tx,
         };
-        let mut core =
-            init_core::<NoopRawMutex>(key_store.as_ref(), client_requests_rx, client_responses_tx);
+        let mut core = init_core::<NoopRawMutex>(key_store.as_ref(), req_client_rx, resp_client_tx);
         core.add_worker_channel(
             &[
                 RequestType::EncryptChaChaPoly,
@@ -324,12 +291,10 @@ mod tests {
             key_id: KEY3.id,
             data: &key,
         };
-        req_client_tx
-            .enqueue(request)
-            .expect("failed to send request");
+        req_client_tx.send(request).expect("failed to send request");
         core.execute().expect("failed to process next request");
         let response = resp_client_rx
-            .dequeue()
+            .next()
             .expect("Failed to receive expected response");
         match response {
             Response::ImportKey {} => {}
@@ -344,15 +309,13 @@ mod tests {
             aad: &aad,
             tag: &mut tag,
         };
-        req_client_tx
-            .enqueue(request)
-            .expect("failed to send request");
+        req_client_tx.send(request).expect("failed to send request");
 
         core.execute().expect("failed to forward request");
         chacha_worker.execute().expect("failed to process request");
         core.execute().expect("failed to forward response");
         let (ciphertext, tag) = match resp_client_rx
-            .dequeue()
+            .next()
             .expect("Failed to receive expected response")
         {
             Response::EncryptChaChaPoly { ciphertext, tag } => (ciphertext, tag),
@@ -367,14 +330,12 @@ mod tests {
             aad: &aad,
             tag,
         };
-        req_client_tx
-            .enqueue(request)
-            .expect("failed to send request");
+        req_client_tx.send(request).expect("failed to send request");
         core.execute().expect("failed to forward request");
         chacha_worker.execute().expect("failed to process request");
         core.execute().expect("failed to forward response");
         let plaintext = match resp_client_rx
-            .dequeue()
+            .next()
             .expect("Failed to receive expected response")
         {
             Response::DecryptChaChaPoly { plaintext } => plaintext,
@@ -391,14 +352,14 @@ mod tests {
         let mut client_responses = Queue::<Response, QUEUE_SIZE>::new();
         let mut chachapoly_requests = Queue::<Request, QUEUE_SIZE>::new();
         let mut chachapoly_responses = Queue::<Response, QUEUE_SIZE>::new();
-        let (mut req_client_tx, mut resp_client_rx, client_requests_rx, client_responses_tx) =
-            split_client_queues(&mut client_requests, &mut client_responses);
+        let (req_client_rx, mut req_client_tx, mut resp_client_rx, resp_client_tx) =
+            split_queues(&mut client_requests, &mut client_responses);
         let (
             chachapoly_requests_rx,
             chachapoly_requests_tx,
             chachapoly_responses_rx,
             chachapoly_responses_tx,
-        ) = split_worker_queues(&mut chachapoly_requests, &mut chachapoly_responses);
+        ) = split_queues(&mut chachapoly_requests, &mut chachapoly_responses);
         let mut key_store = init_key_store();
         let key_store: Option<Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)>> =
             Some(Mutex::new(&mut key_store));
@@ -407,8 +368,7 @@ mod tests {
             requests: chachapoly_requests_rx.enumerate(),
             responses: chachapoly_responses_tx,
         };
-        let mut core =
-            init_core::<NoopRawMutex>(key_store.as_ref(), client_requests_rx, client_responses_tx);
+        let mut core = init_core::<NoopRawMutex>(key_store.as_ref(), req_client_rx, resp_client_tx);
         core.add_worker_channel(
             &[
                 RequestType::EncryptChaChaPoly,
@@ -428,14 +388,12 @@ mod tests {
             plaintext: &mut plaintext,
             tag: &mut tag,
         };
-        req_client_tx
-            .enqueue(request)
-            .expect("failed to send request");
+        req_client_tx.send(request).expect("failed to send request");
         core.execute().expect("failed to forward request");
         chacha_worker.execute().expect("failed to process request");
         core.execute().expect("failed to forward response");
         let (ciphertext, tag) = match resp_client_rx
-            .dequeue()
+            .next()
             .expect("Failed to receive expected response")
         {
             Response::EncryptChaChaPoly { ciphertext, tag } => (ciphertext, tag),
@@ -450,14 +408,12 @@ mod tests {
             aad: &aad,
             tag,
         };
-        req_client_tx
-            .enqueue(request)
-            .expect("failed to send request");
+        req_client_tx.send(request).expect("failed to send request");
         core.execute().expect("failed to forward request");
         chacha_worker.execute().expect("failed to process request");
         core.execute().expect("failed to forward response");
         let plaintext = match resp_client_rx
-            .dequeue()
+            .next()
             .expect("Failed to receive expected response")
         {
             Response::DecryptChaChaPoly { plaintext } => plaintext,

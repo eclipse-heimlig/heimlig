@@ -15,7 +15,7 @@ pub enum Error {
     Job(jobs::Error),
 }
 
-/// HSM core that waits for [Request]s from [Channel]s and send [Response]s once they are ready.   
+/// HSM core that waits for [Request]s from clients and send [Response]s once they are ready.   
 pub struct Core<
     'data,
     'keystore,
@@ -24,17 +24,21 @@ pub struct Core<
     RespSink: ResponseSink<'data>,
     ReqSink: RequestSink<'data>,
     RespSrc: Iterator<Item = (usize, Response<'data>)>,
-    const MAX_REQUEST_TYPES_PER_WORKER: usize = 8,
+    const MAX_REQUEST_TYPES: usize = 8,
     const MAX_WORKERS: usize = 8,
 > {
     key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
-    // TODO: Support multiple client channels like worker channels
-    client_requests: ReqSrc,
-    client_responses: RespSink,
-    worker_channels: Vec<
-        WorkerChannel<'data, ReqSink, RespSrc, MAX_REQUEST_TYPES_PER_WORKER, MAX_WORKERS>,
-        MAX_WORKERS,
-    >,
+    client: ClientChannel<'data, ReqSrc, RespSink>, // TODO: Support multiple clients
+    workers: Vec<WorkerChannel<'data, ReqSink, RespSrc, MAX_REQUEST_TYPES>, MAX_WORKERS>,
+}
+
+struct ClientChannel<
+    'data,
+    ReqSrc: Iterator<Item = (usize, Request<'data>)>,
+    RespSink: ResponseSink<'data>,
+> {
+    requests: ReqSrc,
+    responses: RespSink,
 }
 
 /// Associate request types with request sink and response source of the responsible worker
@@ -43,7 +47,6 @@ struct WorkerChannel<
     ReqSink: RequestSink<'data>,
     RespSrc: Iterator<Item = (usize, Response<'data>)>,
     const MAX_REQUEST_TYPES_PER_WORKER: usize,
-    const MAX_WORKERS: usize,
 > {
     pub req_types: Vec<RequestType, MAX_REQUEST_TYPES_PER_WORKER>,
     pub requests: ReqSink,
@@ -78,19 +81,21 @@ impl<
     ///
     /// # Arguments
     ///
-    /// * `rng`: Random number generator (RNG) used to seed the core RNG.
-    /// * `response_channels`: List of [Channel]s to send responses back to the clients.
     /// * `key_store`: The [KeyStore] to hold cryptographic key material.
+    /// * `requests`: Source from where the core received requests.
+    /// * `responses`: Sink to where the core sends responses.
     pub fn new(
         key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
-        client_requests: ReqSrc,
-        client_responses: RespSink,
+        requests: ReqSrc,
+        responses: RespSink,
     ) -> Self {
         Self {
             key_store,
-            client_requests,
-            client_responses,
-            worker_channels: Default::default(),
+            client: ClientChannel {
+                requests,
+                responses,
+            },
+            workers: Default::default(),
         }
     }
 
@@ -100,7 +105,7 @@ impl<
         requests: ReqSink,
         responses: RespSrc,
     ) {
-        for channel in &self.worker_channels {
+        for channel in &self.workers {
             for req_type in req_types {
                 if channel.req_types.contains(req_type) {
                     panic!("Channel for given request type already exists");
@@ -108,7 +113,7 @@ impl<
             }
         }
         if self
-            .worker_channels
+            .workers
             .push(WorkerChannel {
                 req_types: Vec::from_slice(req_types)
                     .expect("Maximum number of request types for single worker exceeded"),
@@ -129,10 +134,10 @@ impl<
     }
 
     fn process_worker_responses(&mut self) -> Result<(), Error> {
-        for channel in &mut self.worker_channels {
-            if self.client_responses.ready() {
+        for channel in &mut self.workers {
+            if self.client.responses.ready() {
                 if let Some((_id, response)) = channel.responses.next() {
-                    self.client_responses.send(response).map_err(Error::Queue)?
+                    self.client.responses.send(response).map_err(Error::Queue)?
                 }
             }
         }
@@ -145,13 +150,13 @@ impl<
     /// # Returns
     ///
     /// * `Ok(true)` if a [Request] was found and successfully processed.
-    /// * `Ok(false)` if no [Request] was found in any input [Channel].
+    /// * `Ok(false)` if no [Request] was found in any input [ClientChannel].
     /// * `Err(core::Error)` if a processing error occurred.
     fn process_client_requests(&mut self) -> Result<(), Error> {
-        if !self.client_responses.ready() {
+        if !self.client.responses.ready() {
             return Err(Error::Queue(queues::Error::NotReady));
         }
-        let request = self.client_requests.next();
+        let request = self.client.requests.next();
         if let Some((request_id, request)) = request {
             return self.process(request_id, request);
         }
@@ -179,13 +184,13 @@ impl<
                             Response::Error(jobs::Error::NoKeyStore)
                         }
                     };
-                    self.client_responses.send(response).map_err(Error::Queue)?;
+                    self.client.responses.send(response).map_err(Error::Queue)?;
                 }
                 _ => panic!("Mismatch of request type and content"),
             },
             _ => {
                 let channel = self
-                    .worker_channels
+                    .workers
                     .iter_mut()
                     .find(|c| c.req_types.contains(&req_type))
                     .expect("Failed to find worker channel for request type");
