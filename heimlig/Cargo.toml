@@ -19,7 +19,6 @@ ecdsa = { version = "0.16", default-features = false }
 ed25519-dalek = { version = "2.0", default-features = false, features = ["zeroize"] }
 elliptic-curve = { version = "0.13", default-features = false }
 embassy-sync = { version = "0.3", default-features = false }
-generic-array = { version = "0.14", default-features = false, features = ["more_lengths"] }
 heapless = { version = "0.7", default-features = false, features = ["cas", "x86-sync-pool"] }
 p256 = { version = "0.13", default-features = false, features = ["ecdh", "ecdsa"] }
 p384 = { version = "0.13", default-features = false, features = ["ecdh", "ecdsa"] }

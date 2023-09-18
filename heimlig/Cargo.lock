@@ -461,7 +461,6 @@ dependencies = [
  "ed25519-dalek",
  "elliptic-curve",
  "embassy-sync",
- "generic-array",
  "heapless",
  "hex",
  "p256",
