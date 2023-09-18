@@ -2,15 +2,15 @@ use crate::common::jobs::Response::GetRandom;
 use crate::common::jobs::{Error, Request, Response};
 use crate::common::limits::MAX_RANDOM_SIZE;
 use crate::common::queues;
-use crate::common::queues::ResponseSink;
 use crate::crypto::rng::{EntropySource, Rng};
+use futures::{Sink, SinkExt, Stream, StreamExt};
 use rand_core::RngCore;
 
 pub struct RngWorker<
     'data,
     E: EntropySource,
-    ReqSrc: Iterator<Item = (usize, Request<'data>)>,
-    RespSink: ResponseSink<'data>,
+    ReqSrc: Stream<Item = Request<'data>>,
+    RespSink: Sink<Response<'data>>,
 > {
     pub rng: Rng<E>,
     pub requests: ReqSrc,
@@ -20,22 +20,21 @@ pub struct RngWorker<
 impl<
         'data,
         E: EntropySource,
-        ReqSrc: Iterator<Item = (usize, Request<'data>)>,
-        RespSink: ResponseSink<'data>,
+        ReqSrc: Stream<Item = Request<'data>> + Unpin,
+        RespSink: Sink<Response<'data>> + Unpin,
     > RngWorker<'data, E, ReqSrc, RespSink>
 {
-    pub fn execute(&mut self) -> Result<(), queues::Error> {
-        if self.responses.ready() {
-            match self.requests.next() {
-                None => Ok(()), // Nothing to process
-                Some((_id, Request::GetRandom { output })) => {
-                    let response = self.get_random(output);
-                    self.responses.send(response)
-                }
-                _ => panic!("Encountered unexpected request"), // TODO: Integration error. Return error here instead?
+    pub async fn execute(&mut self) -> Result<(), queues::Error> {
+        match self.requests.next().await {
+            None => Ok(()), // Nothing to process
+            Some(Request::GetRandom { output }) => {
+                let response = self.get_random(output);
+                self.responses
+                    .send(response)
+                    .await
+                    .map_err(|_e| queues::Error::Enqueue)
             }
-        } else {
-            Err(queues::Error::NotReady)
+            _ => panic!("Encountered unexpected request"), // TODO: Integration error. Return error here instead?
         }
     }
 

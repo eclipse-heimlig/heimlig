@@ -1,16 +1,16 @@
 use crate::common::jobs::{Request, RequestType, Response};
-use crate::common::queues::{RequestSink, ResponseSink};
 use crate::common::{jobs, queues};
 use crate::hsm::keystore::KeyStore;
 use core::ops::DerefMut;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
+use futures::{Sink, SinkExt, Stream, StreamExt};
 use heapless::Vec;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum Error {
     /// Queue specific error
-    Queue(queues::Error),
+    Queue(queues::Error), // Use Source and Sink errors as arguments
     /// Job specific error
     Job(jobs::Error),
 }
@@ -20,10 +20,10 @@ pub struct Core<
     'data,
     'keystore,
     M: RawMutex,
-    ReqSrc: Iterator<Item = (usize, Request<'data>)>,
-    RespSink: ResponseSink<'data>,
-    ReqSink: RequestSink<'data>,
-    RespSrc: Iterator<Item = (usize, Response<'data>)>,
+    ReqSrc: Stream<Item = Request<'data>>,
+    RespSink: Sink<Response<'data>>,
+    ReqSink: Sink<Request<'data>>,
+    RespSrc: Stream<Item = Response<'data>>,
     const MAX_REQUEST_TYPES: usize = 8,
     const MAX_WORKERS: usize = 8,
 > {
@@ -32,11 +32,8 @@ pub struct Core<
     workers: Vec<WorkerChannel<'data, ReqSink, RespSrc, MAX_REQUEST_TYPES>, MAX_WORKERS>,
 }
 
-struct ClientChannel<
-    'data,
-    ReqSrc: Iterator<Item = (usize, Request<'data>)>,
-    RespSink: ResponseSink<'data>,
-> {
+struct ClientChannel<'data, ReqSrc: Stream<Item = Request<'data>>, RespSink: Sink<Response<'data>>>
+{
     requests: ReqSrc,
     responses: RespSink,
 }
@@ -44,8 +41,8 @@ struct ClientChannel<
 /// Associate request types with request sink and response source of the responsible worker
 struct WorkerChannel<
     'data,
-    ReqSink: RequestSink<'data>,
-    RespSrc: Iterator<Item = (usize, Response<'data>)>,
+    ReqSink: Sink<Request<'data>>,
+    RespSrc: Stream<Item = Response<'data>>,
     const MAX_REQUEST_TYPES_PER_WORKER: usize,
 > {
     pub req_types: Vec<RequestType, MAX_REQUEST_TYPES_PER_WORKER>,
@@ -57,10 +54,10 @@ impl<
         'data,
         'keystore,
         M: RawMutex,
-        ReqSrc: Iterator<Item = (usize, Request<'data>)>,
-        RespSink: ResponseSink<'data>,
-        ReqSink: RequestSink<'data>,
-        RespSrc: Iterator<Item = (usize, Response<'data>)>,
+        ReqSrc: Stream<Item = Request<'data>> + Unpin,
+        RespSink: Sink<Response<'data>> + Unpin,
+        ReqSink: Sink<Request<'data>> + Unpin,
+        RespSrc: Stream<Item = Response<'data>> + Unpin,
         const MAX_REQUESTS_PER_WORKER: usize,
         const MAX_WORKERS: usize,
     >
@@ -126,18 +123,20 @@ impl<
         };
     }
 
-    pub fn execute(&mut self) -> Result<(), Error> {
-        self.process_worker_responses()?;
-        self.process_client_requests()?;
+    pub async fn execute(&mut self) -> Result<(), Error> {
+        self.process_worker_responses().await?;
+        self.process_client_requests().await?;
         Ok(())
     }
 
-    fn process_worker_responses(&mut self) -> Result<(), Error> {
+    async fn process_worker_responses(&mut self) -> Result<(), Error> {
         for channel in &mut self.workers {
-            if self.client.responses.ready() {
-                if let Some((_id, response)) = channel.responses.next() {
-                    self.client.responses.send(response).map_err(Error::Queue)?
-                }
+            if let Some(response) = channel.responses.next().await {
+                self.client
+                    .responses
+                    .send(response)
+                    .await
+                    .map_err(|_e| Error::Queue(queues::Error::Enqueue))?;
             }
         }
         Ok(())
@@ -151,19 +150,16 @@ impl<
     /// * `Ok(true)` if a [Request] was found and successfully processed.
     /// * `Ok(false)` if no [Request] was found in any input [ClientChannel].
     /// * `Err(core::Error)` if a processing error occurred.
-    fn process_client_requests(&mut self) -> Result<(), Error> {
-        if !self.client.responses.ready() {
-            return Err(Error::Queue(queues::Error::NotReady));
-        }
-        let request = self.client.requests.next();
-        if let Some((request_id, request)) = request {
-            return self.process(request_id, request);
+    async fn process_client_requests(&mut self) -> Result<(), Error> {
+        let request = self.client.requests.next().await;
+        if let Some(request) = request {
+            return self.process(request).await;
         }
         Ok(()) // Nothing to process
     }
 
     // TODO: Move request ID into Request struct
-    fn process(&mut self, _request_id: usize, request: Request<'data>) -> Result<(), Error> {
+    async fn process(&mut self, request: Request<'data>) -> Result<(), Error> {
         match request {
             Request::ImportKey { key_id, data } => {
                 let response = {
@@ -181,7 +177,11 @@ impl<
                         Response::Error(jobs::Error::NoKeyStore)
                     }
                 };
-                self.client.responses.send(response).map_err(Error::Queue)?;
+                self.client
+                    .responses
+                    .send(response)
+                    .await
+                    .map_err(|_e| Error::Queue(queues::Error::Enqueue))?;
             }
             _ => {
                 let channel = self
@@ -189,7 +189,11 @@ impl<
                     .iter_mut()
                     .find(|c| c.req_types.contains(&request.get_type()))
                     .expect("Failed to find worker channel for request type");
-                channel.requests.send(request).map_err(Error::Queue)?;
+                channel
+                    .requests
+                    .send(request)
+                    .await
+                    .map_err(|_e| Error::Queue(queues::Error::Enqueue))?;
             }
         }
         Ok(())

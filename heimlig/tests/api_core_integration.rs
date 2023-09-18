@@ -1,12 +1,14 @@
 mod tests {
-    use core::iter::Enumerate;
+    use core::cell::RefCell;
+    use embassy_sync::blocking_mutex;
     use embassy_sync::blocking_mutex::raw::{NoopRawMutex, RawMutex};
     use embassy_sync::mutex::Mutex;
+    use embassy_sync::waitqueue::WakerRegistration;
+    use futures::{SinkExt, StreamExt};
     use heapless::spsc::{Consumer, Producer, Queue};
     use heimlig::common::jobs;
     use heimlig::common::jobs::{Request, RequestType, Response};
     use heimlig::common::limits::MAX_RANDOM_SIZE;
-    use heimlig::common::queues::{Error, RequestSink, ResponseSink};
     use heimlig::config;
     use heimlig::config::keystore::{KEY1, KEY2, KEY3};
     use heimlig::crypto::chacha20poly1305::{KEY_SIZE, NONCE_SIZE};
@@ -15,6 +17,8 @@ mod tests {
     use heimlig::hsm::keystore::{KeyStore, MemoryKeyStore};
     use heimlig::hsm::workers::chachapoly_worker::ChaChaPolyWorker;
     use heimlig::hsm::workers::rng_worker::RngWorker;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
 
     const QUEUE_SIZE: usize = 8;
     const PLAINTEXT_SIZE: usize = 36;
@@ -37,53 +41,158 @@ mod tests {
         }
     }
 
-    struct RequestQueueSource<'ch, 'data> {
+    struct RequestQueueSource<'ch, 'data, M: RawMutex + Unpin> {
         consumer: Consumer<'ch, Request<'data>, QUEUE_SIZE>,
+        sender_waker: blocking_mutex::Mutex<M, RefCell<WakerRegistration>>,
     }
 
-    struct ResponseQueueSink<'ch, 'data> {
+    struct ResponseQueueSink<'ch, 'data, M: RawMutex + Unpin> {
         producer: Producer<'ch, Response<'data>, QUEUE_SIZE>,
+        receiver_waker: blocking_mutex::Mutex<M, RefCell<WakerRegistration>>,
+        sender_waker: blocking_mutex::Mutex<M, RefCell<WakerRegistration>>,
     }
 
-    struct ResponseQueueSource<'ch, 'data> {
+    struct ResponseQueueSource<'ch, 'data, M: RawMutex + Unpin> {
         consumer: Consumer<'ch, Response<'data>, QUEUE_SIZE>,
+        senders_waker: blocking_mutex::Mutex<M, RefCell<WakerRegistration>>,
     }
 
-    struct RequestQueueSink<'ch, 'data> {
+    struct RequestQueueSink<'ch, 'data, M: RawMutex + Unpin> {
         producer: Producer<'ch, Request<'data>, QUEUE_SIZE>,
+        receiver_waker: blocking_mutex::Mutex<M, RefCell<WakerRegistration>>,
+        sender_waker: blocking_mutex::Mutex<M, RefCell<WakerRegistration>>,
     }
 
-    impl<'data> Iterator for RequestQueueSource<'_, 'data> {
+    impl<'data, M: RawMutex + Unpin> futures::Stream for RequestQueueSource<'_, 'data, M> {
         type Item = Request<'data>;
 
-        fn next(&mut self) -> Option<Self::Item> {
-            self.consumer.dequeue()
+        fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            self.sender_waker.lock(|w| w.borrow_mut().wake());
+            // No need to return pending and wake a receiver waker as dequeue() always returns directly
+            Poll::Ready(self.get_mut().consumer.dequeue())
         }
     }
 
-    impl<'data> ResponseSink<'data> for ResponseQueueSink<'_, 'data> {
-        fn send(&mut self, response: Response<'data>) -> Result<(), Error> {
-            self.producer.enqueue(response).map_err(|_| Error::Enqueue)
-        }
-        fn ready(&self) -> bool {
-            self.producer.ready()
+    impl<'ch, 'data, M: RawMutex + Unpin> RequestQueueSource<'ch, 'data, M> {
+        pub fn new(requests: Consumer<'ch, Request<'data>, QUEUE_SIZE>) -> Self {
+            RequestQueueSource {
+                consumer: requests,
+                sender_waker: blocking_mutex::Mutex::new(RefCell::new(WakerRegistration::new())),
+            }
         }
     }
 
-    impl<'data> Iterator for ResponseQueueSource<'_, 'data> {
+    impl<'data, M: RawMutex + Unpin> futures::Sink<Response<'data>>
+        for ResponseQueueSink<'_, 'data, M>
+    {
+        type Error = ();
+
+        fn poll_ready(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            if self.producer.ready() {
+                Poll::Ready(Ok(()))
+            } else {
+                self.sender_waker.lock(|w| w.borrow_mut().wake());
+                Poll::Pending
+            }
+        }
+
+        fn start_send(self: Pin<&mut Self>, response: Response<'data>) -> Result<(), Self::Error> {
+            self.receiver_waker.lock(|w| w.borrow_mut().wake());
+            // A full queue is not possible as a previous successful call to poll_ready can be assumed by contract
+            let _response = self.get_mut().producer.enqueue(response);
+            Ok(())
+        }
+
+        fn poll_flush(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_close(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    impl<'ch, 'data, M: RawMutex + Unpin> ResponseQueueSink<'ch, 'data, M> {
+        pub fn new(responses: Producer<'ch, Response<'data>, QUEUE_SIZE>) -> Self {
+            ResponseQueueSink {
+                producer: responses,
+                receiver_waker: blocking_mutex::Mutex::new(RefCell::new(WakerRegistration::new())),
+                sender_waker: blocking_mutex::Mutex::new(RefCell::new(WakerRegistration::new())),
+            }
+        }
+    }
+
+    impl<'data, M: RawMutex + Unpin> futures::Stream for ResponseQueueSource<'_, 'data, M> {
         type Item = Response<'data>;
 
-        fn next(&mut self) -> Option<Self::Item> {
-            self.consumer.dequeue()
+        fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            self.senders_waker.lock(|w| w.borrow_mut().wake());
+            // No need to return pending and wake a receiver waker as dequeue() always returns directly
+            Poll::Ready(self.get_mut().consumer.dequeue())
         }
     }
 
-    impl<'data> RequestSink<'data> for RequestQueueSink<'_, 'data> {
-        fn send(&mut self, response: Request<'data>) -> Result<(), Error> {
-            self.producer.enqueue(response).map_err(|_| Error::Enqueue)
+    impl<'ch, 'data, M: RawMutex + Unpin> ResponseQueueSource<'ch, 'data, M> {
+        pub fn new(responses: Consumer<'ch, Response<'data>, QUEUE_SIZE>) -> Self {
+            ResponseQueueSource {
+                consumer: responses,
+                senders_waker: blocking_mutex::Mutex::new(RefCell::new(WakerRegistration::new())),
+            }
         }
-        fn ready(&self) -> bool {
-            self.producer.ready()
+    }
+
+    impl<'data, M: RawMutex + Unpin> futures::Sink<Request<'data>> for RequestQueueSink<'_, 'data, M> {
+        type Error = ();
+
+        fn poll_ready(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            if self.producer.ready() {
+                Poll::Ready(Ok(()))
+            } else {
+                self.sender_waker.lock(|w| w.borrow_mut().wake());
+                Poll::Pending
+            }
+        }
+
+        fn start_send(self: Pin<&mut Self>, request: Request<'data>) -> Result<(), Self::Error> {
+            self.receiver_waker.lock(|w| w.borrow_mut().wake());
+            let _request = self.get_mut().producer.enqueue(request);
+            Ok(())
+        }
+
+        fn poll_flush(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_close(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    impl<'ch, 'data, M: RawMutex + Unpin> RequestQueueSink<'ch, 'data, M> {
+        pub fn new(requests: Producer<'ch, Request<'data>, QUEUE_SIZE>) -> Self {
+            RequestQueueSink {
+                producer: requests,
+                receiver_waker: blocking_mutex::Mutex::new(RefCell::new(WakerRegistration::new())),
+                sender_waker: blocking_mutex::Mutex::new(RefCell::new(WakerRegistration::new())),
+            }
         }
     }
 
@@ -95,10 +204,10 @@ mod tests {
         requests: &'ch mut Queue<Request<'data>, QUEUE_SIZE>,
         responses: &'ch mut Queue<Response<'data>, QUEUE_SIZE>,
     ) -> (
-        RequestQueueSource<'ch, 'data>,
-        RequestQueueSink<'ch, 'data>,
-        ResponseQueueSource<'ch, 'data>,
-        ResponseQueueSink<'ch, 'data>,
+        RequestQueueSource<'ch, 'data, NoopRawMutex>,
+        RequestQueueSink<'ch, 'data, NoopRawMutex>,
+        ResponseQueueSource<'ch, 'data, NoopRawMutex>,
+        ResponseQueueSink<'ch, 'data, NoopRawMutex>,
     ) {
         let (requests_tx, requests_rx): (
             Producer<Request, QUEUE_SIZE>,
@@ -108,18 +217,10 @@ mod tests {
             Producer<Response, QUEUE_SIZE>,
             Consumer<Response, QUEUE_SIZE>,
         ) = responses.split();
-        let requests_rx = RequestQueueSource {
-            consumer: requests_rx,
-        };
-        let requests_tx = RequestQueueSink {
-            producer: requests_tx,
-        };
-        let response_rx = ResponseQueueSource {
-            consumer: response_rx,
-        };
-        let response_tx = ResponseQueueSink {
-            producer: response_tx,
-        };
+        let requests_rx = RequestQueueSource::new(requests_rx);
+        let requests_tx = RequestQueueSink::new(requests_tx);
+        let response_rx = ResponseQueueSource::new(response_rx);
+        let response_tx = ResponseQueueSink::new(response_tx);
         (requests_rx, requests_tx, response_rx, response_tx)
     }
 
@@ -138,20 +239,20 @@ mod tests {
         (key, nonce, plaintext, aad, tag)
     }
 
-    fn init_core<'keystore, 'ch, 'data, M: RawMutex>(
+    fn init_core<'keystore, 'ch, 'data, M: RawMutex + Unpin>(
         key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
-        client_requests: RequestQueueSource<'ch, 'data>,
-        client_responses: ResponseQueueSink<'ch, 'data>,
+        client_requests: RequestQueueSource<'ch, 'data, M>,
+        client_responses: ResponseQueueSink<'ch, 'data, M>,
     ) -> Core<
         'data,
         'keystore,
         M,
-        Enumerate<RequestQueueSource<'ch, 'data>>,
-        ResponseQueueSink<'ch, 'data>,
-        RequestQueueSink<'ch, 'data>,
-        Enumerate<ResponseQueueSource<'ch, 'data>>,
+        RequestQueueSource<'ch, 'data, M>,
+        ResponseQueueSink<'ch, 'data, M>,
+        RequestQueueSink<'ch, 'data, M>,
+        ResponseQueueSource<'ch, 'data, M>,
     > {
-        Core::new(key_store, client_requests.enumerate(), client_responses)
+        Core::new(key_store, client_requests, client_responses)
     }
 
     fn init_key_store(
@@ -164,8 +265,8 @@ mod tests {
     }
 
     // TODO: Use API object in integration tests instead of raw queues
-    #[test]
-    fn get_random() {
+    #[async_std::test]
+    async fn get_random() {
         const REQUEST_SIZE: usize = 16;
         let mut random_output = [0u8; REQUEST_SIZE];
         let rng = init_rng();
@@ -182,23 +283,25 @@ mod tests {
             Some(Mutex::new(&mut key_store));
         let mut rng_worker = RngWorker {
             rng,
-            requests: rng_requests_rx.enumerate(),
+            requests: rng_requests_rx,
             responses: rng_responses_tx,
         };
         let mut core = init_core::<NoopRawMutex>(key_store.as_ref(), req_client_rx, resp_client_tx);
-        core.add_worker_channel(
-            &[RequestType::GetRandom],
-            rng_requests_tx,
-            rng_responses_rx.enumerate(),
-        );
+        core.add_worker_channel(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx);
         let request = Request::GetRandom {
             output: &mut random_output,
         };
-        req_client_tx.send(request).expect("failed to send request");
-        core.execute().expect("failed to forward request");
-        rng_worker.execute().expect("failed to process request");
-        core.execute().expect("failed to forward response");
-        match resp_client_rx.next() {
+        req_client_tx
+            .send(request)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        rng_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        match resp_client_rx.next().await {
             Some(response) => match response {
                 Response::GetRandom { data } => assert_eq!(data.len(), REQUEST_SIZE),
                 _ => panic!("Unexpected response type {:?}", response),
@@ -207,8 +310,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn get_random_request_too_large() {
+    #[async_std::test]
+    async fn get_random_request_too_large() {
         const REQUEST_SIZE: usize = MAX_RANDOM_SIZE + 1;
         let mut random_output = [0u8; REQUEST_SIZE];
         let rng = init_rng();
@@ -225,23 +328,25 @@ mod tests {
             Some(Mutex::new(&mut key_store));
         let mut rng_worker = RngWorker {
             rng,
-            requests: rng_requests_rx.enumerate(),
+            requests: rng_requests_rx,
             responses: rng_responses_tx,
         };
         let mut core = init_core::<NoopRawMutex>(key_store.as_ref(), req_client_rx, resp_client_tx);
-        core.add_worker_channel(
-            &[RequestType::GetRandom],
-            rng_requests_tx,
-            rng_responses_rx.enumerate(),
-        );
+        core.add_worker_channel(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx);
         let request = Request::GetRandom {
             output: &mut random_output,
         };
-        req_client_tx.send(request).expect("failed to send request");
-        core.execute().expect("failed to forward request");
-        rng_worker.execute().expect("failed to process request");
-        core.execute().expect("failed to forward response");
-        match resp_client_rx.next() {
+        req_client_tx
+            .send(request)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        rng_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        match resp_client_rx.next().await {
             Some(response) => match response {
                 Response::Error(jobs::Error::RequestTooLarge) => {}
                 _ => panic!("Unexpected response type {:?}", response),
@@ -250,8 +355,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn encrypt_chachapoly() {
+    #[async_std::test]
+    async fn encrypt_chachapoly() {
         let (key, nonce, mut plaintext, aad, mut tag) = alloc_chachapoly_vars();
         let org_plaintext = plaintext;
         let mut client_requests = Queue::<Request, QUEUE_SIZE>::new();
@@ -271,7 +376,7 @@ mod tests {
             Some(Mutex::new(&mut key_store));
         let mut chacha_worker = ChaChaPolyWorker {
             key_store: key_store.as_ref(),
-            requests: chachapoly_requests_rx.enumerate(),
+            requests: chachapoly_requests_rx,
             responses: chachapoly_responses_tx,
         };
         let mut core = init_core::<NoopRawMutex>(key_store.as_ref(), req_client_rx, resp_client_tx);
@@ -283,7 +388,7 @@ mod tests {
                 RequestType::DecryptChaChaPolyExternalKey,
             ],
             chachapoly_requests_tx,
-            chachapoly_responses_rx.enumerate(),
+            chachapoly_responses_rx,
         );
 
         // Import key
@@ -291,10 +396,16 @@ mod tests {
             key_id: KEY3.id,
             data: &key,
         };
-        req_client_tx.send(request).expect("failed to send request");
-        core.execute().expect("failed to process next request");
+        req_client_tx
+            .send(request)
+            .await
+            .expect("failed to send request");
+        core.execute()
+            .await
+            .expect("failed to process next request");
         let response = resp_client_rx
             .next()
+            .await
             .expect("Failed to receive expected response");
         match response {
             Response::ImportKey {} => {}
@@ -309,13 +420,20 @@ mod tests {
             aad: &aad,
             tag: &mut tag,
         };
-        req_client_tx.send(request).expect("failed to send request");
+        req_client_tx
+            .send(request)
+            .await
+            .expect("failed to send request");
 
-        core.execute().expect("failed to forward request");
-        chacha_worker.execute().expect("failed to process request");
-        core.execute().expect("failed to forward response");
+        core.execute().await.expect("failed to forward request");
+        chacha_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
         let (ciphertext, tag) = match resp_client_rx
             .next()
+            .await
             .expect("Failed to receive expected response")
         {
             Response::EncryptChaChaPoly { ciphertext, tag } => (ciphertext, tag),
@@ -330,12 +448,19 @@ mod tests {
             aad: &aad,
             tag,
         };
-        req_client_tx.send(request).expect("failed to send request");
-        core.execute().expect("failed to forward request");
-        chacha_worker.execute().expect("failed to process request");
-        core.execute().expect("failed to forward response");
+        req_client_tx
+            .send(request)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        chacha_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
         let plaintext = match resp_client_rx
             .next()
+            .await
             .expect("Failed to receive expected response")
         {
             Response::DecryptChaChaPoly { plaintext } => plaintext,
@@ -344,8 +469,8 @@ mod tests {
         assert_eq!(plaintext, org_plaintext);
     }
 
-    #[test]
-    fn encrypt_chachapoly_external_key() {
+    #[async_std::test]
+    async fn encrypt_chachapoly_external_key() {
         let (key, nonce, mut plaintext, aad, mut tag) = alloc_chachapoly_vars();
         let org_plaintext = plaintext;
         let mut client_requests = Queue::<Request, QUEUE_SIZE>::new();
@@ -365,7 +490,7 @@ mod tests {
             Some(Mutex::new(&mut key_store));
         let mut chacha_worker = ChaChaPolyWorker {
             key_store: key_store.as_ref(),
-            requests: chachapoly_requests_rx.enumerate(),
+            requests: chachapoly_requests_rx,
             responses: chachapoly_responses_tx,
         };
         let mut core = init_core::<NoopRawMutex>(key_store.as_ref(), req_client_rx, resp_client_tx);
@@ -377,7 +502,7 @@ mod tests {
                 RequestType::DecryptChaChaPolyExternalKey,
             ],
             chachapoly_requests_tx,
-            chachapoly_responses_rx.enumerate(),
+            chachapoly_responses_rx,
         );
 
         // Encrypt data
@@ -388,12 +513,19 @@ mod tests {
             plaintext: &mut plaintext,
             tag: &mut tag,
         };
-        req_client_tx.send(request).expect("failed to send request");
-        core.execute().expect("failed to forward request");
-        chacha_worker.execute().expect("failed to process request");
-        core.execute().expect("failed to forward response");
+        req_client_tx
+            .send(request)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        chacha_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
         let (ciphertext, tag) = match resp_client_rx
             .next()
+            .await
             .expect("Failed to receive expected response")
         {
             Response::EncryptChaChaPoly { ciphertext, tag } => (ciphertext, tag),
@@ -408,12 +540,19 @@ mod tests {
             aad: &aad,
             tag,
         };
-        req_client_tx.send(request).expect("failed to send request");
-        core.execute().expect("failed to forward request");
-        chacha_worker.execute().expect("failed to process request");
-        core.execute().expect("failed to forward response");
+        req_client_tx
+            .send(request)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        chacha_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
         let plaintext = match resp_client_rx
             .next()
+            .await
             .expect("Failed to receive expected response")
         {
             Response::DecryptChaChaPoly { plaintext } => plaintext,
