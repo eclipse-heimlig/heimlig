@@ -10,7 +10,8 @@ name = "linux"
 path = "src/main.rs"
 
 [dependencies]
-embassy-executor = { version = "0.2", features = ["arch-std", "executor-thread", "integrated-timers", "log", "nightly"] }
+embassy-executor = { version = "0.3", features = ["arch-std", "executor-thread", "integrated-timers", "log", "nightly"] }
+embassy-sync = { version = "0.3", default-features = false }
 embassy-time = { version = "0.1", features = ["log", "std"] }
 heapless = "0.7"
 hex = "0.4"

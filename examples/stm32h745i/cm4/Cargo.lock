@@ -515,7 +515,7 @@ source = "git+https://github.com/embassy-rs/embassy.git#2a4ebdc150ba7c32d7dacc12
 dependencies = [
  "defmt",
  "embassy-futures",
- "embassy-sync",
+ "embassy-sync 0.2.0 (git+https://github.com/embassy-rs/embassy.git)",
  "embassy-time",
  "embedded-hal 0.2.7",
  "embedded-hal 1.0.0-rc.1",
@@ -593,14 +593,14 @@ dependencies = [
  "embassy-futures",
  "embassy-hal-internal",
  "embassy-net-driver",
- "embassy-sync",
+ "embassy-sync 0.2.0 (git+https://github.com/embassy-rs/embassy.git)",
  "embassy-time",
  "embassy-usb-driver",
  "embedded-hal 0.2.7",
  "embedded-hal 1.0.0-rc.1",
  "embedded-hal-async",
  "embedded-hal-nb",
- "embedded-io",
+ "embedded-io 0.5.0",
  "embedded-io-async",
  "embedded-storage",
  "embedded-storage-async",
@@ -614,6 +614,19 @@ dependencies = [
  "stm32-fmc",
  "stm32-metapac",
  "vcell",
+]
+
+[[package]]
+name = "embassy-sync"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0dad296a6f70bfdc32ef52442a31f98c28e1608893c1cecc9b6f419bab005a0"
+dependencies = [
+ "cfg-if",
+ "critical-section",
+ "embedded-io 0.4.0",
+ "futures-util",
+ "heapless",
 ]
 
 [[package]]
@@ -689,6 +702,12 @@ dependencies = [
 
 [[package]]
 name = "embedded-io"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef1a6892d9eef45c8fa6b9e0086428a2cca8491aca8f787c534a3d6d0bcb3ced"
+
+[[package]]
+name = "embedded-io"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "658bbadc628dc286b9ae02f0cb0f5411c056eb7487b72f0083203f115de94060"
@@ -703,7 +722,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1394754ad749a560b25a0c70dcd2b66a450824a1311fc475bb2ccbfabe7f8414"
 dependencies = [
  "defmt",
- "embedded-io",
+ "embedded-io 0.5.0",
 ]
 
 [[package]]
@@ -883,6 +902,7 @@ dependencies = [
  "ecdsa",
  "ed25519-dalek",
  "elliptic-curve",
+ "embassy-sync 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "generic-array",
  "heapless",
  "p256",

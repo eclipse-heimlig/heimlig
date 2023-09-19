@@ -1,52 +1,48 @@
 use crate::common::jobs::{Request, Response};
-
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub enum Error {
-    /// Attempted to push to a full queue.
-    QueueFull,
-}
-
-/// Sink where the requests to the Core can be pushed to
-pub trait RequestSink<'a> {
-    /// Send a [Request] to the client through this sink.
-    fn send(&mut self, request: Request<'a>) -> Result<(), Error>;
-    fn ready(&self) -> bool;
-}
+use crate::common::queues;
+use crate::common::queues::RequestSink;
 
 /// An interface to send [Request]s to the HSM core and receive [Response]es from it.
 pub struct Api<'a, Req: RequestSink<'a>, Resp: Iterator<Item = Response<'a>>> {
-    requests_sink: Req,
-    responses_source: Resp,
+    requests: Req,
+    responses: Resp,
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum Error {
+    Queue(queues::Error),
 }
 
 impl<'a, Req: RequestSink<'a>, Resp: Iterator<Item = Response<'a>>> Api<'a, Req, Resp> {
     /// Create a new instance of the HSM API.
-    pub fn new(requests_sink: Req, responses_source: Resp) -> Self {
+    pub fn new(requests: Req, responses: Resp) -> Self {
         Api {
-            requests_sink,
-            responses_source,
+            requests,
+            responses,
         }
     }
 
     /// Request `size` many random bytes.
     pub fn get_random(&mut self, output: &'a mut [u8]) -> Result<(), Error> {
-        if self.requests_sink.ready() {
-            self.requests_sink.send(Request::GetRandom { output })
-        } else {
-            Err(Error::QueueFull)
+        if !self.requests.ready() {
+            return Err(Error::Queue(queues::Error::NotReady));
         }
+        self.requests
+            .send(Request::GetRandom { output })
+            .map_err(Error::Queue)
     }
 
     /// Attempt to poll a response and return it.
     pub fn recv_response(&mut self) -> Option<Response> {
-        self.responses_source.next()
+        self.responses.next()
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::client::api::{Api, Error, RequestSink};
+    use crate::client::api::{Api, RequestSink};
     use crate::common::jobs::{Request, Response};
+    use crate::common::queues;
     use heapless::spsc::{Consumer, Producer, Queue};
 
     const QUEUE_SIZE: usize = 8;
@@ -56,8 +52,10 @@ mod test {
     }
 
     impl<'a> RequestSink<'a> for RequestQueueSink<'_, 'a> {
-        fn send(&mut self, request: Request<'a>) -> Result<(), Error> {
-            self.producer.enqueue(request).map_err(|_| Error::QueueFull)
+        fn send(&mut self, request: Request<'a>) -> Result<(), queues::Error> {
+            self.producer
+                .enqueue(request)
+                .map_err(|_| queues::Error::Enqueue)
         }
 
         fn ready(&self) -> bool {
@@ -89,15 +87,15 @@ mod test {
         let (requests_tx, mut requests_rx) = requests.split();
         let (mut responses_tx, responses_rx) = responses.split();
 
-        let requests_sink = RequestQueueSink {
+        let requests = RequestQueueSink {
             producer: requests_tx,
         };
 
-        let responses_source = ResponseQueueSource {
+        let responses = ResponseQueueSource {
             consumer: responses_rx,
         };
 
-        let mut api = Api::new(requests_sink, responses_source);
+        let mut api = Api::new(requests, responses);
 
         // Send request
         api.get_random(&mut random_output)

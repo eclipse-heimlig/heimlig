@@ -1,74 +1,146 @@
-use crate::common::jobs::{Request, Response};
-use crate::crypto::rng::{EntropySource, Rng};
-use crate::hsm::keystore::{KeyStore, NoKeyStore};
-use crate::hsm::scheduler::{Job, Scheduler};
+use crate::common::jobs::{Request, RequestType, Response};
+use crate::common::queues::{RequestSink, ResponseSink};
+use crate::common::{jobs, queues};
+use crate::hsm::keystore::KeyStore;
+use core::ops::DerefMut;
+use embassy_sync::blocking_mutex::raw::RawMutex;
+use embassy_sync::mutex::Mutex;
+use heapless::Vec;
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum Error {
-    /// No [Channel] found for given ID.
-    UnknownChannelId,
-    /// Attempted to push to a full queue.
-    QueueFull,
+    /// Queue specific error
+    Queue(queues::Error),
+    /// Job specific error
+    Job(jobs::Error),
 }
 
-/// Sink where the responses from the Core can be pushed to
-pub trait ResponseSink<'a> {
-    /// Send a [Response] to the client through this sink.
-    fn send(&mut self, response: Response<'a>) -> Result<(), Error>;
-    fn ready(&self) -> bool;
-}
-
-/// HSM core that waits for [Request]s from [Channel]s and send [Response]s once they are ready.   
+/// HSM core that waits for [Request]s from clients and send [Response]s once they are ready.   
 pub struct Core<
-    'a,
-    E: EntropySource,
-    K: KeyStore,
-    Req: Iterator<Item = (usize, Request<'a>)>,
-    Resp: ResponseSink<'a>,
+    'data,
+    'keystore,
+    M: RawMutex,
+    ReqSrc: Iterator<Item = (usize, Request<'data>)>,
+    RespSink: ResponseSink<'data>,
+    ReqSink: RequestSink<'data>,
+    RespSrc: Iterator<Item = (usize, Response<'data>)>,
+    const MAX_REQUEST_TYPES: usize = 8,
+    const MAX_WORKERS: usize = 8,
 > {
-    scheduler: Scheduler<E, K>,
-    requests_source: Req,
-    responses_sink: Resp,
+    key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
+    client: ClientChannel<'data, ReqSrc, RespSink>, // TODO: Support multiple clients
+    workers: Vec<WorkerChannel<'data, ReqSink, RespSrc, MAX_REQUEST_TYPES>, MAX_WORKERS>,
 }
 
-impl<'a, E: EntropySource, Req: Iterator<Item = (usize, Request<'a>)>, Resp: ResponseSink<'a>>
-    Core<'a, E, NoKeyStore, Req, Resp>
-{
-    /// Create a new HSM core.
-    /// This variant does not configure a [KeyStore] so this core will not be able to store
-    /// cryptographic material.
-    ///
-    /// # Arguments
-    ///
-    /// * `rng`: Random number generator (RNG) used to seed the core RNG.
-    /// * `response_channels`: List of [Channel]s to send responses back to the clients.
-    pub fn new_without_key_store(rng: Rng<E>, requests_source: Req, responses_sink: Resp) -> Self {
-        Self::new(rng, requests_source, responses_sink, NoKeyStore)
-    }
+struct ClientChannel<
+    'data,
+    ReqSrc: Iterator<Item = (usize, Request<'data>)>,
+    RespSink: ResponseSink<'data>,
+> {
+    requests: ReqSrc,
+    responses: RespSink,
+}
+
+/// Associate request types with request sink and response source of the responsible worker
+struct WorkerChannel<
+    'data,
+    ReqSink: RequestSink<'data>,
+    RespSrc: Iterator<Item = (usize, Response<'data>)>,
+    const MAX_REQUEST_TYPES_PER_WORKER: usize,
+> {
+    pub req_types: Vec<RequestType, MAX_REQUEST_TYPES_PER_WORKER>,
+    pub requests: ReqSink,
+    pub responses: RespSrc,
 }
 
 impl<
-        'a,
-        E: EntropySource,
-        K: KeyStore,
-        Req: Iterator<Item = (usize, Request<'a>)>,
-        Resp: ResponseSink<'a>,
-    > Core<'a, E, K, Req, Resp>
+        'data,
+        'keystore,
+        M: RawMutex,
+        ReqSrc: Iterator<Item = (usize, Request<'data>)>,
+        RespSink: ResponseSink<'data>,
+        ReqSink: RequestSink<'data>,
+        RespSrc: Iterator<Item = (usize, Response<'data>)>,
+        const MAX_REQUESTS_PER_WORKER: usize,
+        const MAX_WORKERS: usize,
+    >
+    Core<
+        'data,
+        'keystore,
+        M,
+        ReqSrc,
+        RespSink,
+        ReqSink,
+        RespSrc,
+        MAX_REQUESTS_PER_WORKER,
+        MAX_WORKERS,
+    >
 {
     /// Create a new HSM core.
     /// The core accepts requests and forwards the responses once they are ready.
     ///
     /// # Arguments
     ///
-    /// * `rng`: Random number generator (RNG) used to seed the core RNG.
-    /// * `response_channels`: List of [Channel]s to send responses back to the clients.
     /// * `key_store`: The [KeyStore] to hold cryptographic key material.
-    pub fn new(rng: Rng<E>, requests_source: Req, responses_sink: Resp, key_store: K) -> Self {
+    /// * `requests`: Source from where the core received requests.
+    /// * `responses`: Sink to where the core sends responses.
+    pub fn new(
+        key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
+        requests: ReqSrc,
+        responses: RespSink,
+    ) -> Self {
         Self {
-            scheduler: Scheduler::new(rng, key_store),
-            requests_source,
-            responses_sink,
+            key_store,
+            client: ClientChannel {
+                requests,
+                responses,
+            },
+            workers: Default::default(),
         }
+    }
+
+    pub fn add_worker_channel(
+        &mut self,
+        req_types: &[RequestType],
+        requests: ReqSink,
+        responses: RespSrc,
+    ) {
+        for channel in &self.workers {
+            for req_type in req_types {
+                if channel.req_types.contains(req_type) {
+                    panic!("Channel for given request type already exists");
+                }
+            }
+        }
+        if self
+            .workers
+            .push(WorkerChannel {
+                req_types: Vec::from_slice(req_types)
+                    .expect("Maximum number of request types for single worker exceeded"),
+                requests,
+                responses,
+            })
+            .is_err()
+        {
+            panic!("Failed to add worker channel");
+        };
+    }
+
+    pub fn execute(&mut self) -> Result<(), Error> {
+        self.process_worker_responses()?;
+        self.process_client_requests()?;
+        Ok(())
+    }
+
+    fn process_worker_responses(&mut self) -> Result<(), Error> {
+        for channel in &mut self.workers {
+            if self.client.responses.ready() {
+                if let Some((_id, response)) = channel.responses.next() {
+                    self.client.responses.send(response).map_err(Error::Queue)?
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Search all input channels for a new request and process it.
@@ -77,127 +149,49 @@ impl<
     /// # Returns
     ///
     /// * `Ok(true)` if a [Request] was found and successfully processed.
-    /// * `Ok(false)` if no [Request] was found in any input [Channel].
+    /// * `Ok(false)` if no [Request] was found in any input [ClientChannel].
     /// * `Err(core::Error)` if a processing error occurred.
-    pub fn process_next(&mut self) -> Result<(), Error> {
-        if self.responses_sink.ready() {
-            let maybe_request = self.requests_source.next();
-            if let Some((request_id, request)) = maybe_request {
-                return self.process(request_id, request);
-            }
-            Ok(()) // Nothing to process
-        } else {
-            Err(Error::QueueFull)
+    fn process_client_requests(&mut self) -> Result<(), Error> {
+        if !self.client.responses.ready() {
+            return Err(Error::Queue(queues::Error::NotReady));
         }
+        let request = self.client.requests.next();
+        if let Some((request_id, request)) = request {
+            return self.process(request_id, request);
+        }
+        Ok(()) // Nothing to process
     }
 
-    fn process(&mut self, request_id: usize, request: Request<'a>) -> Result<(), Error> {
-        // Schedule job
-        let job = Job {
-            request_id,
-            request,
-        };
-        // TODO: Retrieve result asynchronously
-        let result = self.scheduler.schedule(job);
-
-        self.responses_sink.send(result.response).expect(
-            "We checked response sink not full at beggining of process_next, this should not fail.",
-        );
+    // TODO: Move request ID into Request struct
+    fn process(&mut self, _request_id: usize, request: Request<'data>) -> Result<(), Error> {
+        match request {
+            Request::ImportKey { key_id, data } => {
+                let response = {
+                    if let Some(key_store) = self.key_store {
+                        match key_store
+                            .try_lock()
+                            .expect("Failed to lock key store")
+                            .deref_mut()
+                            .import(key_id, data)
+                        {
+                            Ok(()) => Response::ImportKey,
+                            Err(e) => Response::Error(jobs::Error::KeyStore(e)),
+                        }
+                    } else {
+                        Response::Error(jobs::Error::NoKeyStore)
+                    }
+                };
+                self.client.responses.send(response).map_err(Error::Queue)?;
+            }
+            _ => {
+                let channel = self
+                    .workers
+                    .iter_mut()
+                    .find(|c| c.req_types.contains(&request.get_type()))
+                    .expect("Failed to find worker channel for request type");
+                channel.requests.send(request).map_err(Error::Queue)?;
+            }
+        }
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::config;
-    use crate::config::keystore::{KEY1, KEY2, KEY3};
-    use crate::crypto::rng;
-    use crate::hsm::keystore::MemoryKeyStore;
-    use heapless::spsc::{Consumer, Producer, Queue};
-
-    const QUEUE_SIZE: usize = 8;
-
-    struct RequestQueueSource<'ch, 'a> {
-        consumer: Consumer<'ch, Request<'a>, QUEUE_SIZE>,
-    }
-
-    impl<'a> Iterator for RequestQueueSource<'_, 'a> {
-        type Item = Request<'a>;
-
-        fn next(&mut self) -> Option<Self::Item> {
-            self.consumer.dequeue()
-        }
-    }
-    struct ResponseQueueSink<'ch, 'a> {
-        producer: Producer<'ch, Response<'a>, QUEUE_SIZE>,
-    }
-
-    impl<'a> ResponseSink<'a> for ResponseQueueSink<'_, 'a> {
-        fn send(&mut self, response: Response<'a>) -> Result<(), Error> {
-            self.producer
-                .enqueue(response)
-                .map_err(|_| Error::QueueFull)
-        }
-        fn ready(&self) -> bool {
-            self.producer.ready()
-        }
-    }
-
-    #[test]
-    fn multiple_clients() {
-        const REQUEST_SIZE: usize = 16;
-        let mut random_output = [0u8; REQUEST_SIZE];
-
-        // RNG
-        let entropy = rng::test::TestEntropySource::default();
-        let rng = Rng::new(entropy, None);
-
-        // Queues
-        let mut requests = Queue::<Request, QUEUE_SIZE>::new();
-        let mut responses = Queue::<Response, QUEUE_SIZE>::new();
-
-        let (mut requests_tx, requests_rx) = requests.split();
-        let (responses_tx, mut responses_rx) = responses.split();
-
-        let requests_source = RequestQueueSource {
-            consumer: requests_rx,
-        };
-
-        let responses_sink = ResponseQueueSink {
-            producer: responses_tx,
-        };
-
-        // Core
-        let key_infos = [KEY1, KEY2, KEY3];
-        let key_store = MemoryKeyStore::<
-            { config::keystore::TOTAL_SIZE },
-            { config::keystore::NUM_KEYS },
-        >::try_new(&key_infos)
-        .expect("failed to create key store");
-
-        let mut core = Core::new(rng, requests_source.enumerate(), responses_sink, key_store);
-
-        requests_tx
-            .enqueue(Request::GetRandom {
-                output: &mut random_output,
-            })
-            .expect("failed to send request");
-
-        core.process_next().expect("failed to process next request");
-
-        match responses_rx.dequeue() {
-            Some(response) => match response {
-                Response::GetRandom { data } => {
-                    assert_eq!(data.len(), REQUEST_SIZE)
-                }
-                _ => {
-                    panic!("Unexpected response type {:?}", response);
-                }
-            },
-            None => {
-                panic!("Failed to receive expected response");
-            }
-        }
     }
 }

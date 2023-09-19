@@ -1,8 +1,104 @@
-use crate::common::jobs::{Error, Response};
+use crate::common::jobs::Error::NoKeyStore;
+use crate::common::jobs::{Error, Request, Response};
+use crate::common::queues;
+use crate::common::queues::ResponseSink;
+use crate::config::keystore::MAX_KEY_SIZE;
+use crate::hsm::keystore::KeyStore;
+use core::ops::DerefMut;
+use embassy_sync::blocking_mutex::raw::RawMutex;
+use embassy_sync::mutex::Mutex;
+use zeroize::Zeroizing;
 
-pub struct ChachaPolyWorker;
+pub struct ChaChaPolyWorker<
+    'data,
+    'keystore,
+    M: RawMutex,
+    ReqSrc: Iterator<Item = (usize, Request<'data>)>,
+    RespSink: ResponseSink<'data>,
+> {
+    pub key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
+    pub requests: ReqSrc,
+    pub responses: RespSink,
+}
 
-impl ChachaPolyWorker {
+impl<
+        'data,
+        'keystore,
+        M: RawMutex,
+        ReqSrc: Iterator<Item = (usize, Request<'data>)>,
+        RespSink: ResponseSink<'data>,
+    > ChaChaPolyWorker<'data, 'keystore, M, ReqSrc, RespSink>
+{
+    pub fn execute(&mut self) -> Result<(), queues::Error> {
+        if self.responses.ready() {
+            let mut key_buffer = Zeroizing::new([0u8; MAX_KEY_SIZE]);
+            if let Some((_request_id, request)) = self.requests.next() {
+                let response = match request {
+                    Request::EncryptChaChaPoly {
+                        key_id,
+                        nonce,
+                        plaintext,
+                        aad,
+                        tag,
+                    } => {
+                        if let Some(key_store) = self.key_store {
+                            let export = key_store
+                                .try_lock()
+                                .expect("Failed to lock key store")
+                                .deref_mut()
+                                .export(key_id, key_buffer.as_mut_slice());
+                            match export {
+                                Ok(key) => self.encrypt(key, nonce, aad, plaintext, tag),
+                                Err(e) => Response::Error(Error::KeyStore(e)),
+                            }
+                        } else {
+                            Response::Error(NoKeyStore)
+                        }
+                    }
+                    Request::EncryptChaChaPolyExternalKey {
+                        key,
+                        nonce,
+                        plaintext,
+                        aad,
+                        tag,
+                    } => self.encrypt_external_key(key, nonce, aad, plaintext, tag),
+                    Request::DecryptChaChaPoly {
+                        key_id,
+                        nonce,
+                        ciphertext,
+                        aad,
+                        tag,
+                    } => {
+                        if let Some(key_store) = self.key_store {
+                            let export = key_store
+                                .try_lock()
+                                .expect("Failed to lock key store")
+                                .deref_mut()
+                                .export(key_id, key_buffer.as_mut_slice());
+                            match export {
+                                Ok(key) => self.decrypt(key, nonce, aad, ciphertext, tag),
+                                Err(e) => Response::Error(Error::KeyStore(e)),
+                            }
+                        } else {
+                            Response::Error(NoKeyStore)
+                        }
+                    }
+                    Request::DecryptChaChaPolyExternalKey {
+                        key,
+                        nonce,
+                        ciphertext,
+                        aad,
+                        tag,
+                    } => self.decrypt_external_key(key, nonce, aad, ciphertext, tag),
+                    _ => panic!("Encountered unexpected request"), // TODO: Integration error. Return error here instead?
+                };
+                return self.responses.send(response);
+            }
+            Ok(())
+        } else {
+            Err(queues::Error::NotReady)
+        }
+    }
     pub fn encrypt_external_key<'a>(
         &mut self,
         key: &[u8],

@@ -1,6 +1,6 @@
 pub type Id = u32;
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum Error {
     /// The requested ID is not defined.
     InvalidKeyId,
@@ -20,44 +20,23 @@ pub trait KeyStore {
     /// Returns whether or not a key for the given 'id' is present in the store.
     fn is_stored(&self, id: Id) -> bool;
 
-    /// Get the size if a key.
+    /// Get the size of a key.
     fn size(&self, id: Id) -> Result<usize, Error>;
 
     /// Write key from `src` to storage.
     /// Storing a key of size 0 has the same effect as deleting the key.
-    fn store(&mut self, id: Id, src: &[u8]) -> Result<(), Error>;
+    fn import(&mut self, id: Id, src: &[u8]) -> Result<(), Error>;
 
     /// Read key from storage and write it to `dest`.
     ///
     /// returns: The number of bytes written to `dest` or and error.
-    fn get(&self, id: Id, dest: &mut [u8]) -> Result<usize, Error>;
+    fn export<'a>(&self, id: Id, dest: &'a mut [u8]) -> Result<&'a [u8], Error>;
 
     /// Delete the key belonging to `id`.
     ///
     /// return: An error, if the key could not be found.
     fn delete(&mut self, id: Id) -> Result<(), Error> {
-        self.store(id, &[])
-    }
-}
-
-/// Dummy key store that always returns [Error::KeyNotFound]. It used if a core is built without a KeyStore.
-pub struct NoKeyStore;
-
-impl KeyStore for NoKeyStore {
-    fn is_stored(&self, _id: Id) -> bool {
-        false
-    }
-
-    fn size(&self, _id: Id) -> Result<usize, Error> {
-        Err(Error::KeyNotFound)
-    }
-
-    fn store(&mut self, _id: Id, _src: &[u8]) -> Result<(), Error> {
-        Err(Error::KeyNotFound)
-    }
-
-    fn get(&self, _id: Id, _dest: &mut [u8]) -> Result<usize, Error> {
-        Err(Error::KeyNotFound)
+        self.import(id, &[])
     }
 }
 
@@ -144,18 +123,13 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         }
     }
 
-    fn store(&mut self, id: Id, src: &[u8]) -> Result<(), Error> {
+    fn import(&mut self, id: Id, src: &[u8]) -> Result<(), Error> {
         match self.infos.iter_mut().find(|key_info| key_info.id == id) {
             None => Err(Error::InvalidKeyId),
             Some(key_info) => {
                 if src.len() > key_info.max_size {
                     return Err(Error::BufferTooLarge);
                 }
-
-                // Scrub block
-                self.storage[key_info.offset..(key_info.offset + key_info.max_size)].fill(0);
-
-                // Store key
                 let dest = &mut self.storage[key_info.offset..(key_info.offset + src.len())];
                 dest.copy_from_slice(src);
                 key_info.actual_size = src.len();
@@ -164,7 +138,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         }
     }
 
-    fn get(&self, id: Id, dest: &mut [u8]) -> Result<usize, Error> {
+    fn export<'a>(&self, id: Id, dest: &'a mut [u8]) -> Result<&'a [u8], Error> {
         match self.infos.iter().find(|key_info| key_info.id == id) {
             None => Err(Error::InvalidKeyId),
             Some(key_info) => {
@@ -175,8 +149,9 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
                     return Err(Error::BufferTooSmall);
                 }
                 let src = &self.storage[key_info.offset..(key_info.offset + key_info.actual_size)];
-                dest[..src.len()].copy_from_slice(src);
-                Ok(src.len())
+                let dest = &mut dest[..src.len()];
+                dest.copy_from_slice(src);
+                Ok(dest)
             }
         }
     }
@@ -211,17 +186,18 @@ pub(crate) mod test {
         for id in 0..10 {
             assert!(!key_store.is_stored(id));
             assert!(key_store.size(id).is_err());
-            assert!(key_store.get(id, &mut dest_buffer).is_err());
+            assert!(key_store.export(id, &mut dest_buffer).is_err());
         }
 
         // Store first key
         src_buffer.fill(1);
-        assert!(key_store.store(KEY1_ID, &src_buffer[0..KEY1_SIZE]).is_ok());
+        assert!(key_store.import(KEY1_ID, &src_buffer[0..KEY1_SIZE]).is_ok());
         assert!(key_store.is_stored(KEY1_ID));
         assert_eq!(
             key_store
-                .get(KEY1_ID, &mut dest_buffer)
-                .expect("failed to retrieve key from store"),
+                .export(KEY1_ID, &mut dest_buffer)
+                .expect("failed to retrieve key from store")
+                .len(),
             KEY1_SIZE
         );
         assert!(dest_buffer[0..KEY1_SIZE].iter().all(|byte| *byte == 1));
@@ -229,13 +205,14 @@ pub(crate) mod test {
 
         // Store second key
         src_buffer.fill(2);
-        assert!(key_store.store(KEY2_ID, &src_buffer[0..KEY2_SIZE]).is_ok());
+        assert!(key_store.import(KEY2_ID, &src_buffer[0..KEY2_SIZE]).is_ok());
         assert!(key_store.is_stored(KEY2_ID));
         assert!(key_store.is_stored(KEY1_ID));
         assert_eq!(
             key_store
-                .get(KEY2_ID, &mut dest_buffer)
-                .expect("failed to retrieve key from store"),
+                .export(KEY2_ID, &mut dest_buffer)
+                .expect("failed to retrieve key from store")
+                .len(),
             KEY2_SIZE
         );
         assert!(dest_buffer[0..KEY2_SIZE].iter().all(|byte| *byte == 2));
@@ -245,7 +222,7 @@ pub(crate) mod test {
         assert_eq!(key_store.delete(UNKNOWN_KEY_ID), Err(Error::InvalidKeyId));
         assert!(key_store.delete(KEY1_ID).is_ok());
         assert!(!key_store.is_stored(KEY1_ID));
-        assert!(key_store.store(KEY2_ID, &[]).is_ok());
+        assert!(key_store.import(KEY2_ID, &[]).is_ok());
         assert!(!key_store.is_stored(KEY2_ID));
     }
 }
