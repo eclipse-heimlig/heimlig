@@ -1,5 +1,5 @@
+use crate::common::jobs;
 use crate::common::jobs::{Request, RequestType, Response};
-use crate::common::{jobs, queues};
 use crate::hsm::keystore::KeyStore;
 use core::ops::DerefMut;
 use embassy_sync::blocking_mutex::raw::RawMutex;
@@ -10,7 +10,7 @@ use heapless::Vec;
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum Error {
     /// Queue specific error
-    Queue(queues::Error), // Use Source and Sink errors as arguments
+    Send,
     /// Job specific error
     Job(jobs::Error),
 }
@@ -136,7 +136,7 @@ impl<
                     .responses
                     .send(response)
                     .await
-                    .map_err(|_e| Error::Queue(queues::Error::Enqueue))?;
+                    .map_err(|_e| Error::Send)?;
             }
         }
         Ok(())
@@ -158,7 +158,6 @@ impl<
         Ok(()) // Nothing to process
     }
 
-    // TODO: Move request ID into Request struct
     async fn process(&mut self, request: Request<'data>) -> Result<(), Error> {
         match request {
             Request::ImportKey { key_id, data } => {
@@ -181,7 +180,7 @@ impl<
                     .responses
                     .send(response)
                     .await
-                    .map_err(|_e| Error::Queue(queues::Error::Enqueue))?;
+                    .map_err(|_e| Error::Send)?;
             }
             _ => {
                 let channel = self
@@ -193,7 +192,7 @@ impl<
                     .requests
                     .send(request)
                     .await
-                    .map_err(|_e| Error::Queue(queues::Error::Enqueue))?;
+                    .map_err(|_e| Error::Send)?;
             }
         }
         Ok(())

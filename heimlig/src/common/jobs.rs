@@ -11,6 +11,8 @@ pub enum Error {
     NoKeyStore,
     /// A key store error occurred.
     KeyStore(keystore::Error),
+    /// Failed to send through channel
+    Send,
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]

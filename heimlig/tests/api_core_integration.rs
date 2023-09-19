@@ -264,7 +264,7 @@ mod tests {
         .expect("failed to create key store")
     }
 
-    // TODO: Use API object in integration tests instead of raw queues
+    // TODO: Use API object in integration tests instead of raw queues. Merge with API test cases.
     #[async_std::test]
     async fn get_random() {
         const REQUEST_SIZE: usize = 16;

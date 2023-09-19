@@ -1,5 +1,4 @@
 use crate::common::jobs::{Request, Response};
-use crate::common::queues;
 use futures::{Sink, SinkExt, Stream, StreamExt};
 
 /// An interface to send [Request]s to the HSM core and receive [Response]es from it.
@@ -10,7 +9,7 @@ pub struct Api<'data, Req: Sink<Request<'data>>, Resp: Stream<Item = Response<'d
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum Error {
-    Queue(queues::Error),
+    Send,
 }
 
 impl<
@@ -32,7 +31,7 @@ impl<
         self.requests
             .send(Request::GetRandom { output })
             .await
-            .map_err(|_e| Error::Queue(queues::Error::Enqueue))
+            .map_err(|_e| Error::Send)
     }
 
     /// Attempt to poll a response and return it.

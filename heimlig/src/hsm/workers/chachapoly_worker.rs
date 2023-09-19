@@ -1,6 +1,5 @@
 use crate::common::jobs::Error::NoKeyStore;
 use crate::common::jobs::{Error, Request, Response};
-use crate::common::queues;
 use crate::config::keystore::MAX_KEY_SIZE;
 use crate::hsm::keystore::KeyStore;
 use core::ops::DerefMut;
@@ -29,7 +28,7 @@ impl<
         RespSink: Sink<Response<'data>> + Unpin,
     > ChaChaPolyWorker<'data, 'keystore, M, ReqSrc, RespSink>
 {
-    pub async fn execute(&mut self) -> Result<(), queues::Error> {
+    pub async fn execute(&mut self) -> Result<(), Error> {
         let mut key_buffer = Zeroizing::new([0u8; MAX_KEY_SIZE]);
         if let Some(request) = self.requests.next().await {
             let response = match request {
@@ -95,7 +94,7 @@ impl<
                 .responses
                 .send(response)
                 .await
-                .map_err(|_e| queues::Error::Enqueue);
+                .map_err(|_e| Error::Send);
         }
         Ok(())
     }

@@ -1,7 +1,6 @@
 use crate::common::jobs::Response::GetRandom;
 use crate::common::jobs::{Error, Request, Response};
 use crate::common::limits::MAX_RANDOM_SIZE;
-use crate::common::queues;
 use crate::crypto::rng::{EntropySource, Rng};
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use rand_core::RngCore;
@@ -24,7 +23,7 @@ impl<
         RespSink: Sink<Response<'data>> + Unpin,
     > RngWorker<'data, E, ReqSrc, RespSink>
 {
-    pub async fn execute(&mut self) -> Result<(), queues::Error> {
+    pub async fn execute(&mut self) -> Result<(), Error> {
         match self.requests.next().await {
             None => Ok(()), // Nothing to process
             Some(Request::GetRandom { output }) => {
@@ -32,7 +31,7 @@ impl<
                 self.responses
                     .send(response)
                     .await
-                    .map_err(|_e| queues::Error::Enqueue)
+                    .map_err(|_e| Error::Send)
             }
             _ => panic!("Encountered unexpected request"), // TODO: Integration error. Return error here instead?
         }
