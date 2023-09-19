@@ -32,79 +32,66 @@ impl<
     pub fn execute(&mut self) -> Result<(), queues::Error> {
         if self.responses.ready() {
             let mut key_buffer = Zeroizing::new([0u8; MAX_KEY_SIZE]);
-            let response = match self.requests.next() {
-                None => None, // Nothing to process
-                Some((
-                    _request_id,
-                    Request::DecryptChaChaPoly {
-                        key_id,
-                        nonce,
-                        ciphertext,
-                        aad,
-                        tag,
-                    },
-                )) => {
-                    if let Some(key_store) = self.key_store {
-                        let export = key_store
-                            .try_lock()
-                            .expect("Failed to lock key store")
-                            .deref_mut()
-                            .export(key_id, key_buffer.as_mut_slice());
-                        match export {
-                            Ok(key) => Some(self.decrypt(key, nonce, aad, ciphertext, tag)),
-                            Err(e) => Some(Response::Error(Error::KeyStore(e))),
-                        }
-                    } else {
-                        Some(Response::Error(NoKeyStore))
-                    }
-                }
-                Some((
-                    _request_id,
+            if let Some((_request_id, request)) = self.requests.next() {
+                let response = match request {
                     Request::EncryptChaChaPoly {
                         key_id,
                         nonce,
                         plaintext,
                         aad,
                         tag,
-                    },
-                )) => {
-                    if let Some(key_store) = self.key_store {
-                        let export = key_store
-                            .try_lock()
-                            .expect("Failed to lock key store")
-                            .deref_mut()
-                            .export(key_id, key_buffer.as_mut_slice());
-                        match export {
-                            Ok(key) => Some(self.encrypt(key, nonce, aad, plaintext, tag)),
-                            Err(e) => Some(Response::Error(Error::KeyStore(e))),
+                    } => {
+                        if let Some(key_store) = self.key_store {
+                            let export = key_store
+                                .try_lock()
+                                .expect("Failed to lock key store")
+                                .deref_mut()
+                                .export(key_id, key_buffer.as_mut_slice());
+                            match export {
+                                Ok(key) => self.encrypt(key, nonce, aad, plaintext, tag),
+                                Err(e) => Response::Error(Error::KeyStore(e)),
+                            }
+                        } else {
+                            Response::Error(NoKeyStore)
                         }
-                    } else {
-                        Some(Response::Error(NoKeyStore))
                     }
-                }
-                Some((
-                    _request_id,
                     Request::EncryptChaChaPolyExternalKey {
                         key,
                         nonce,
                         plaintext,
                         aad,
                         tag,
-                    },
-                )) => Some(self.encrypt_external_key(key, nonce, aad, plaintext, tag)),
-                Some((
-                    _request_id,
+                    } => self.encrypt_external_key(key, nonce, aad, plaintext, tag),
+                    Request::DecryptChaChaPoly {
+                        key_id,
+                        nonce,
+                        ciphertext,
+                        aad,
+                        tag,
+                    } => {
+                        if let Some(key_store) = self.key_store {
+                            let export = key_store
+                                .try_lock()
+                                .expect("Failed to lock key store")
+                                .deref_mut()
+                                .export(key_id, key_buffer.as_mut_slice());
+                            match export {
+                                Ok(key) => self.decrypt(key, nonce, aad, ciphertext, tag),
+                                Err(e) => Response::Error(Error::KeyStore(e)),
+                            }
+                        } else {
+                            Response::Error(NoKeyStore)
+                        }
+                    }
                     Request::DecryptChaChaPolyExternalKey {
                         key,
                         nonce,
                         ciphertext,
                         aad,
                         tag,
-                    },
-                )) => Some(self.decrypt_external_key(key, nonce, aad, ciphertext, tag)),
-                _ => panic!("Encountered unexpected request"), // TODO: Integration error. Return error here instead?
-            };
-            if let Some(response) = response {
+                    } => self.decrypt_external_key(key, nonce, aad, ciphertext, tag),
+                    _ => panic!("Encountered unexpected request"), // TODO: Integration error. Return error here instead?
+                };
                 return self.responses.send(response);
             }
             Ok(())

@@ -129,7 +129,6 @@ impl<
     pub fn execute(&mut self) -> Result<(), Error> {
         self.process_worker_responses()?;
         self.process_client_requests()?;
-        self.process_worker_responses()?;
         Ok(())
     }
 
@@ -165,34 +164,30 @@ impl<
 
     // TODO: Move request ID into Request struct
     fn process(&mut self, _request_id: usize, request: Request<'data>) -> Result<(), Error> {
-        let req_type = request.get_type();
-        match req_type {
-            RequestType::ImportKey => match request {
-                Request::ImportKey { key_id, data } => {
-                    let response = {
-                        if let Some(key_store) = self.key_store {
-                            match key_store
-                                .try_lock()
-                                .expect("Failed to lock key store")
-                                .deref_mut()
-                                .import(key_id, data)
-                            {
-                                Ok(()) => Response::ImportKey,
-                                Err(e) => Response::Error(jobs::Error::KeyStore(e)),
-                            }
-                        } else {
-                            Response::Error(jobs::Error::NoKeyStore)
+        match request {
+            Request::ImportKey { key_id, data } => {
+                let response = {
+                    if let Some(key_store) = self.key_store {
+                        match key_store
+                            .try_lock()
+                            .expect("Failed to lock key store")
+                            .deref_mut()
+                            .import(key_id, data)
+                        {
+                            Ok(()) => Response::ImportKey,
+                            Err(e) => Response::Error(jobs::Error::KeyStore(e)),
                         }
-                    };
-                    self.client.responses.send(response).map_err(Error::Queue)?;
-                }
-                _ => panic!("Mismatch of request type and content"),
-            },
+                    } else {
+                        Response::Error(jobs::Error::NoKeyStore)
+                    }
+                };
+                self.client.responses.send(response).map_err(Error::Queue)?;
+            }
             _ => {
                 let channel = self
                     .workers
                     .iter_mut()
-                    .find(|c| c.req_types.contains(&req_type))
+                    .find(|c| c.req_types.contains(&request.get_type()))
                     .expect("Failed to find worker channel for request type");
                 channel.requests.send(request).map_err(Error::Queue)?;
             }
