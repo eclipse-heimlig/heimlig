@@ -19,7 +19,7 @@ pub enum Error {
 pub struct Core<
     'data,
     'keystore,
-    M: RawMutex,
+    M: RawMutex, // TODO: Get rid of embassy specific mutex outside of integration code
     ReqSrc: Stream<Item = Request<'data>>,
     RespSink: Sink<Response<'data>>,
     ReqSink: Sink<Request<'data>>,

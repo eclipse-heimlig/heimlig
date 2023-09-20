@@ -1,9 +1,6 @@
 mod tests {
-    use core::cell::RefCell;
-    use embassy_sync::blocking_mutex;
     use embassy_sync::blocking_mutex::raw::{NoopRawMutex, RawMutex};
     use embassy_sync::mutex::Mutex;
-    use embassy_sync::waitqueue::WakerRegistration;
     use futures::{SinkExt, StreamExt};
     use heapless::spsc::{Consumer, Producer, Queue};
     use heimlig::common::jobs;
@@ -17,8 +14,9 @@ mod tests {
     use heimlig::hsm::keystore::{KeyStore, MemoryKeyStore};
     use heimlig::hsm::workers::chachapoly_worker::ChaChaPolyWorker;
     use heimlig::hsm::workers::rng_worker::RngWorker;
-    use std::pin::Pin;
-    use std::task::{Context, Poll};
+    use heimlig::integration::embassy::{
+        RequestQueueSink, RequestQueueSource, ResponseQueueSink, ResponseQueueSource,
+    };
 
     const QUEUE_SIZE: usize = 8;
     const PLAINTEXT_SIZE: usize = 36;
@@ -41,161 +39,6 @@ mod tests {
         }
     }
 
-    struct RequestQueueSource<'ch, 'data, M: RawMutex + Unpin> {
-        consumer: Consumer<'ch, Request<'data>, QUEUE_SIZE>,
-        sender_waker: blocking_mutex::Mutex<M, RefCell<WakerRegistration>>,
-    }
-
-    struct ResponseQueueSink<'ch, 'data, M: RawMutex + Unpin> {
-        producer: Producer<'ch, Response<'data>, QUEUE_SIZE>,
-        receiver_waker: blocking_mutex::Mutex<M, RefCell<WakerRegistration>>,
-        sender_waker: blocking_mutex::Mutex<M, RefCell<WakerRegistration>>,
-    }
-
-    struct ResponseQueueSource<'ch, 'data, M: RawMutex + Unpin> {
-        consumer: Consumer<'ch, Response<'data>, QUEUE_SIZE>,
-        senders_waker: blocking_mutex::Mutex<M, RefCell<WakerRegistration>>,
-    }
-
-    struct RequestQueueSink<'ch, 'data, M: RawMutex + Unpin> {
-        producer: Producer<'ch, Request<'data>, QUEUE_SIZE>,
-        receiver_waker: blocking_mutex::Mutex<M, RefCell<WakerRegistration>>,
-        sender_waker: blocking_mutex::Mutex<M, RefCell<WakerRegistration>>,
-    }
-
-    impl<'data, M: RawMutex + Unpin> futures::Stream for RequestQueueSource<'_, 'data, M> {
-        type Item = Request<'data>;
-
-        fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-            self.sender_waker.lock(|w| w.borrow_mut().wake());
-            // No need to return pending and wake a receiver waker as dequeue() always returns directly
-            Poll::Ready(self.get_mut().consumer.dequeue())
-        }
-    }
-
-    impl<'ch, 'data, M: RawMutex + Unpin> RequestQueueSource<'ch, 'data, M> {
-        pub fn new(requests: Consumer<'ch, Request<'data>, QUEUE_SIZE>) -> Self {
-            RequestQueueSource {
-                consumer: requests,
-                sender_waker: blocking_mutex::Mutex::new(RefCell::new(WakerRegistration::new())),
-            }
-        }
-    }
-
-    impl<'data, M: RawMutex + Unpin> futures::Sink<Response<'data>>
-        for ResponseQueueSink<'_, 'data, M>
-    {
-        type Error = ();
-
-        fn poll_ready(
-            self: Pin<&mut Self>,
-            _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
-            if self.producer.ready() {
-                Poll::Ready(Ok(()))
-            } else {
-                self.sender_waker.lock(|w| w.borrow_mut().wake());
-                Poll::Pending
-            }
-        }
-
-        fn start_send(self: Pin<&mut Self>, response: Response<'data>) -> Result<(), Self::Error> {
-            self.receiver_waker.lock(|w| w.borrow_mut().wake());
-            // A full queue is not possible as a previous successful call to poll_ready can be assumed by contract
-            let _response = self.get_mut().producer.enqueue(response);
-            Ok(())
-        }
-
-        fn poll_flush(
-            self: Pin<&mut Self>,
-            _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
-            Poll::Ready(Ok(()))
-        }
-
-        fn poll_close(
-            self: Pin<&mut Self>,
-            _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
-            Poll::Ready(Ok(()))
-        }
-    }
-
-    impl<'ch, 'data, M: RawMutex + Unpin> ResponseQueueSink<'ch, 'data, M> {
-        pub fn new(responses: Producer<'ch, Response<'data>, QUEUE_SIZE>) -> Self {
-            ResponseQueueSink {
-                producer: responses,
-                receiver_waker: blocking_mutex::Mutex::new(RefCell::new(WakerRegistration::new())),
-                sender_waker: blocking_mutex::Mutex::new(RefCell::new(WakerRegistration::new())),
-            }
-        }
-    }
-
-    impl<'data, M: RawMutex + Unpin> futures::Stream for ResponseQueueSource<'_, 'data, M> {
-        type Item = Response<'data>;
-
-        fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-            self.senders_waker.lock(|w| w.borrow_mut().wake());
-            // No need to return pending and wake a receiver waker as dequeue() always returns directly
-            Poll::Ready(self.get_mut().consumer.dequeue())
-        }
-    }
-
-    impl<'ch, 'data, M: RawMutex + Unpin> ResponseQueueSource<'ch, 'data, M> {
-        pub fn new(responses: Consumer<'ch, Response<'data>, QUEUE_SIZE>) -> Self {
-            ResponseQueueSource {
-                consumer: responses,
-                senders_waker: blocking_mutex::Mutex::new(RefCell::new(WakerRegistration::new())),
-            }
-        }
-    }
-
-    impl<'data, M: RawMutex + Unpin> futures::Sink<Request<'data>> for RequestQueueSink<'_, 'data, M> {
-        type Error = ();
-
-        fn poll_ready(
-            self: Pin<&mut Self>,
-            _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
-            if self.producer.ready() {
-                Poll::Ready(Ok(()))
-            } else {
-                self.sender_waker.lock(|w| w.borrow_mut().wake());
-                Poll::Pending
-            }
-        }
-
-        fn start_send(self: Pin<&mut Self>, request: Request<'data>) -> Result<(), Self::Error> {
-            self.receiver_waker.lock(|w| w.borrow_mut().wake());
-            let _request = self.get_mut().producer.enqueue(request);
-            Ok(())
-        }
-
-        fn poll_flush(
-            self: Pin<&mut Self>,
-            _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
-            Poll::Ready(Ok(()))
-        }
-
-        fn poll_close(
-            self: Pin<&mut Self>,
-            _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
-            Poll::Ready(Ok(()))
-        }
-    }
-
-    impl<'ch, 'data, M: RawMutex + Unpin> RequestQueueSink<'ch, 'data, M> {
-        pub fn new(requests: Producer<'ch, Request<'data>, QUEUE_SIZE>) -> Self {
-            RequestQueueSink {
-                producer: requests,
-                receiver_waker: blocking_mutex::Mutex::new(RefCell::new(WakerRegistration::new())),
-                sender_waker: blocking_mutex::Mutex::new(RefCell::new(WakerRegistration::new())),
-            }
-        }
-    }
-
     fn init_rng() -> Rng<TestEntropySource> {
         Rng::new(TestEntropySource::default(), None)
     }
@@ -204,10 +47,10 @@ mod tests {
         requests: &'ch mut Queue<Request<'data>, QUEUE_SIZE>,
         responses: &'ch mut Queue<Response<'data>, QUEUE_SIZE>,
     ) -> (
-        RequestQueueSource<'ch, 'data, NoopRawMutex>,
-        RequestQueueSink<'ch, 'data, NoopRawMutex>,
-        ResponseQueueSource<'ch, 'data, NoopRawMutex>,
-        ResponseQueueSink<'ch, 'data, NoopRawMutex>,
+        RequestQueueSource<'ch, 'data, NoopRawMutex, QUEUE_SIZE>,
+        RequestQueueSink<'ch, 'data, NoopRawMutex, QUEUE_SIZE>,
+        ResponseQueueSource<'ch, 'data, NoopRawMutex, QUEUE_SIZE>,
+        ResponseQueueSink<'ch, 'data, NoopRawMutex, QUEUE_SIZE>,
     ) {
         let (requests_tx, requests_rx): (
             Producer<Request, QUEUE_SIZE>,
@@ -241,16 +84,16 @@ mod tests {
 
     fn init_core<'keystore, 'ch, 'data, M: RawMutex + Unpin>(
         key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
-        client_requests: RequestQueueSource<'ch, 'data, M>,
-        client_responses: ResponseQueueSink<'ch, 'data, M>,
+        client_requests: RequestQueueSource<'ch, 'data, M, QUEUE_SIZE>,
+        client_responses: ResponseQueueSink<'ch, 'data, M, QUEUE_SIZE>,
     ) -> Core<
         'data,
         'keystore,
         M,
-        RequestQueueSource<'ch, 'data, M>,
-        ResponseQueueSink<'ch, 'data, M>,
-        RequestQueueSink<'ch, 'data, M>,
-        ResponseQueueSource<'ch, 'data, M>,
+        RequestQueueSource<'ch, 'data, M, QUEUE_SIZE>,
+        ResponseQueueSink<'ch, 'data, M, QUEUE_SIZE>,
+        RequestQueueSink<'ch, 'data, M, QUEUE_SIZE>,
+        ResponseQueueSource<'ch, 'data, M, QUEUE_SIZE>,
     > {
         Core::new(key_store, client_requests, client_responses)
     }
