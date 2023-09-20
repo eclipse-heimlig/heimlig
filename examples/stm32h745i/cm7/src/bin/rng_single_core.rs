@@ -2,7 +2,6 @@
 #![no_main]
 #![feature(type_alias_impl_trait)]
 
-use core::iter::Enumerate;
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_stm32::bind_interrupts;
@@ -14,11 +13,12 @@ use embassy_time::{Duration, Timer};
 use heapless::spsc::{Consumer, Producer, Queue};
 use heimlig::client::api::Api;
 use heimlig::common::jobs::{Request, RequestType, Response};
-use heimlig::common::queues;
-use heimlig::common::queues::{RequestSink, ResponseSink};
 use heimlig::crypto::rng;
 use heimlig::hsm::core::Core;
 use heimlig::hsm::workers::rng_worker::RngWorker;
+use heimlig::integration::embassy::{
+    RequestQueueSink, RequestQueueSource, ResponseQueueSink, ResponseQueueSource,
+};
 use rand_core::RngCore;
 
 use {defmt_rtt as _, panic_probe as _};
@@ -48,60 +48,6 @@ impl rng::EntropySource for EntropySource {
         buf
     }
 }
-struct RequestQueueSink<'ch, 'a> {
-    producer: Producer<'ch, Request<'a>, QUEUE_SIZE>,
-}
-
-impl<'a> RequestSink<'a> for RequestQueueSink<'_, 'a> {
-    fn send(&mut self, request: Request<'a>) -> Result<(), queues::Error> {
-        self.producer
-            .enqueue(request)
-            .map_err(|_| queues::Error::Enqueue)
-    }
-
-    fn ready(&self) -> bool {
-        self.producer.ready()
-    }
-}
-
-struct RequestQueueSource<'ch, 'a> {
-    consumer: Consumer<'ch, Request<'a>, QUEUE_SIZE>,
-}
-
-impl<'a> Iterator for RequestQueueSource<'_, 'a> {
-    type Item = Request<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.consumer.dequeue()
-    }
-}
-
-struct ResponseQueueSink<'ch, 'a> {
-    producer: Producer<'ch, Response<'a>, QUEUE_SIZE>,
-}
-
-impl<'a> ResponseSink<'a> for ResponseQueueSink<'_, 'a> {
-    fn send(&mut self, response: Response<'a>) -> Result<(), queues::Error> {
-        self.producer
-            .enqueue(response)
-            .map_err(|_| queues::Error::Enqueue)
-    }
-    fn ready(&self) -> bool {
-        self.producer.ready()
-    }
-}
-
-struct ResponseQueueSource<'ch, 'a> {
-    consumer: Consumer<'ch, Response<'a>, QUEUE_SIZE>,
-}
-
-impl<'a> Iterator for ResponseQueueSource<'_, 'a> {
-    type Item = Response<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.consumer.dequeue()
-    }
-}
 
 #[embassy_executor::task]
 async fn hsm_task(
@@ -116,47 +62,40 @@ async fn hsm_task(
     info!("HSM task started");
 
     // Channels
-    let client_requests = RequestQueueSource {
-        consumer: client_req_rx,
-    };
-    let client_responses = ResponseQueueSink {
-        producer: client_resp_tx,
-    };
-    let rng_requests_rx = RequestQueueSource {
-        consumer: rng_req_rx,
-    };
-    let rng_requests_tx = RequestQueueSink {
-        producer: rng_req_tx,
-    };
-    let rng_responses_rx = ResponseQueueSource {
-        consumer: rng_resp_rx,
-    };
-    let rng_responses_tx = ResponseQueueSink {
-        producer: rng_resp_tx,
-    };
+    let client_requests: RequestQueueSource<NoopRawMutex, QUEUE_SIZE> =
+        RequestQueueSource::new(client_req_rx);
+    let client_responses: ResponseQueueSink<NoopRawMutex, QUEUE_SIZE> =
+        ResponseQueueSink::new(client_resp_tx);
+    let rng_requests_rx: RequestQueueSource<NoopRawMutex, QUEUE_SIZE> =
+        RequestQueueSource::new(rng_req_rx);
+    let rng_requests_tx: RequestQueueSink<NoopRawMutex, QUEUE_SIZE> =
+        RequestQueueSink::new(rng_req_tx);
+    let rng_responses_rx: ResponseQueueSource<NoopRawMutex, QUEUE_SIZE> =
+        ResponseQueueSource::new(rng_resp_rx);
+    let rng_responses_tx: ResponseQueueSink<NoopRawMutex, QUEUE_SIZE> =
+        ResponseQueueSink::new(rng_resp_tx);
 
     let rng = rng::Rng::new(EntropySource { rng }, None);
     let mut rng_worker = RngWorker {
         rng,
-        requests: rng_requests_rx.enumerate(),
+        requests: rng_requests_rx,
         responses: rng_responses_tx,
     };
     let mut core: Core<
         NoopRawMutex,
-        Enumerate<RequestQueueSource<'_, '_>>,
-        ResponseQueueSink<'_, '_>,
-        RequestQueueSink<'_, '_>,
-        Enumerate<ResponseQueueSource<'_, '_>>,
-    > = Core::new(None, client_requests.enumerate(), client_responses);
-    core.add_worker_channel(
-        &[RequestType::GetRandom],
-        rng_requests_tx,
-        rng_responses_rx.enumerate(),
-    );
+        RequestQueueSource<'_, '_, NoopRawMutex, QUEUE_SIZE>,
+        ResponseQueueSink<'_, '_, NoopRawMutex, QUEUE_SIZE>,
+        RequestQueueSink<'_, '_, NoopRawMutex, QUEUE_SIZE>,
+        ResponseQueueSource<'_, '_, NoopRawMutex, QUEUE_SIZE>,
+    > = Core::new(None, client_requests, client_responses);
+    core.add_worker_channel(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx);
 
     loop {
-        core.execute().expect("failed to forward request");
-        rng_worker.execute().expect("failed to process request");
+        core.execute().await.expect("failed to forward request");
+        rng_worker
+            .execute()
+            .await
+            .expect("failed to process request");
         Timer::after(Duration::from_millis(100)).await;
     }
 }
@@ -175,11 +114,12 @@ async fn client_task(
     pool.grow(unsafe { &mut MEMORY });
 
     // Channel
-    let requests_sink = RequestQueueSink { producer: req_tx };
-    let responses_source = ResponseQueueSource { consumer: resp_rx };
+    let requests: RequestQueueSink<NoopRawMutex, QUEUE_SIZE> = RequestQueueSink::new(req_tx);
+    let responses: ResponseQueueSource<NoopRawMutex, QUEUE_SIZE> =
+        ResponseQueueSource::new(resp_rx);
 
     // Api
-    let mut api = Api::new(requests_sink, responses_source);
+    let mut api = Api::new(requests, responses);
 
     loop {
         // Send requests
@@ -206,11 +146,12 @@ async fn client_task(
             random_buffer.len()
         );
         api.get_random(random_buffer)
+            .await
             .expect("failed to call randomness API");
 
         // Receive response
         loop {
-            if let Some(response) = api.recv_response() {
+            if let Some(response) = api.recv_response().await {
                 match response {
                     Response::GetRandom { data } => {
                         info!(
