@@ -1,7 +1,6 @@
 #![feature(type_alias_impl_trait)] // Required for embassy
 
 use core::cell::RefCell;
-use core::iter::Enumerate;
 use embassy_executor::Spawner;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
@@ -10,12 +9,13 @@ use embassy_time::Timer;
 use heapless::spsc::{Consumer, Producer, Queue};
 use heimlig::client::api::Api;
 use heimlig::common::jobs::{Request, RequestType, Response};
-use heimlig::common::queues;
-use heimlig::common::queues::{RequestSink, ResponseSink};
 use heimlig::crypto::rng;
 use heimlig::crypto::rng::Rng;
 use heimlig::hsm::core::Core;
 use heimlig::hsm::workers::rng_worker::RngWorker;
+use heimlig::integration::embassy::{
+    RequestQueueSink, RequestQueueSource, ResponseQueueSink, ResponseQueueSource,
+};
 use log::{error, info};
 use rand::RngCore;
 
@@ -33,17 +33,25 @@ static CORE: Mutex<
         Option<
             Core<
                 CriticalSectionRawMutex,
-                Enumerate<RequestQueueSource<'static, 'static>>,
-                ResponseQueueSink<'static, 'static>,
-                RequestQueueSink<'static, 'static>,
-                Enumerate<ResponseQueueSource<'static, 'static>>,
+                RequestQueueSource<'static, 'static, CriticalSectionRawMutex, QUEUE_SIZE>,
+                ResponseQueueSink<'static, 'static, CriticalSectionRawMutex, QUEUE_SIZE>,
+                RequestQueueSink<'static, 'static, CriticalSectionRawMutex, QUEUE_SIZE>,
+                ResponseQueueSource<'static, 'static, CriticalSectionRawMutex, QUEUE_SIZE>,
             >,
         >,
     >,
 > = Mutex::new(RefCell::new(None));
 static RNG_WORKER: Mutex<
     CriticalSectionRawMutex,
-    RefCell<Option<RngWorker<EntropySource, Enumerate<RequestQueueSource>, ResponseQueueSink>>>,
+    RefCell<
+        Option<
+            RngWorker<
+                EntropySource,
+                RequestQueueSource<CriticalSectionRawMutex, QUEUE_SIZE>,
+                ResponseQueueSink<CriticalSectionRawMutex, QUEUE_SIZE>,
+            >,
+        >,
+    >,
 > = Mutex::new(RefCell::new(None));
 
 struct EntropySource {}
@@ -56,61 +64,6 @@ impl rng::EntropySource for EntropySource {
     }
 }
 
-struct RequestQueueSink<'ch, 'data> {
-    producer: Producer<'ch, Request<'data>, QUEUE_SIZE>,
-}
-
-impl<'data> RequestSink<'data> for RequestQueueSink<'_, 'data> {
-    fn send(&mut self, request: Request<'data>) -> Result<(), queues::Error> {
-        self.producer
-            .enqueue(request)
-            .map_err(|_| queues::Error::Enqueue)
-    }
-
-    fn ready(&self) -> bool {
-        self.producer.ready()
-    }
-}
-
-struct RequestQueueSource<'ch, 'data> {
-    consumer: Consumer<'ch, Request<'data>, QUEUE_SIZE>,
-}
-
-impl<'data> Iterator for RequestQueueSource<'_, 'data> {
-    type Item = Request<'data>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.consumer.dequeue()
-    }
-}
-
-struct ResponseQueueSink<'ch, 'data> {
-    producer: Producer<'ch, Response<'data>, QUEUE_SIZE>,
-}
-
-impl<'data> ResponseSink<'data> for ResponseQueueSink<'_, 'data> {
-    fn send(&mut self, response: Response<'data>) -> Result<(), queues::Error> {
-        self.producer
-            .enqueue(response)
-            .map_err(|_| queues::Error::Enqueue)
-    }
-    fn ready(&self) -> bool {
-        self.producer.ready()
-    }
-}
-
-struct ResponseQueueSource<'ch, 'a> {
-    consumer: Consumer<'ch, Response<'a>, QUEUE_SIZE>,
-}
-
-impl<'a> Iterator for ResponseQueueSource<'_, 'a> {
-    type Item = Response<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.consumer.dequeue()
-    }
-}
-
 #[embassy_executor::task]
 async fn core_task() {
     loop {
@@ -118,7 +71,7 @@ async fn core_task() {
             let core = CORE.try_lock().expect("Failed to lock core");
             let mut core = core.borrow_mut();
             let core = core.as_mut().expect("Core was not initialized");
-            core.execute().expect("failed to forward request");
+            core.execute().await.expect("failed to forward request");
         }
         Timer::after(Duration::from_millis(100)).await;
     }
@@ -131,7 +84,10 @@ async fn worker_task() {
             let rng_worker = RNG_WORKER.try_lock().expect("Failed to lock RNG worker");
             let mut rng_worker = rng_worker.borrow_mut();
             let rng_worker = rng_worker.as_mut().expect("Core was not initialized");
-            rng_worker.execute().expect("failed to process request");
+            rng_worker
+                .execute()
+                .await
+                .expect("failed to process request");
         }
         Timer::after(Duration::from_millis(100)).await;
     }
@@ -143,11 +99,13 @@ async fn client_task(
     req_tx: Producer<'static, Request<'_>, QUEUE_SIZE>,
 ) {
     // Channel
-    let requests_sink = RequestQueueSink { producer: req_tx };
-    let responses_source = ResponseQueueSource { consumer: resp_rx };
+    let requests: RequestQueueSink<CriticalSectionRawMutex, QUEUE_SIZE> =
+        RequestQueueSink::new(req_tx);
+    let responses: ResponseQueueSource<CriticalSectionRawMutex, QUEUE_SIZE> =
+        ResponseQueueSource::new(resp_rx);
 
     // Api
-    let mut api = Api::new(requests_sink, responses_source);
+    let mut api = Api::new(requests, responses);
 
     loop {
         // Send request
@@ -155,11 +113,12 @@ async fn client_task(
         let random_output = Box::leak(Box::new([0u8; 16]));
         info!(target: "CLIENT", "Sending request: random data (size={})", random_output.len());
         api.get_random(random_output.as_mut_slice())
+            .await
             .expect("failed to call randomness API");
 
         // Receive response
         loop {
-            match api.recv_response() {
+            match api.recv_response().await {
                 None => Timer::after(Duration::from_millis(10)).await, // Continue waiting for response
                 Some(response) => {
                     match response {
@@ -195,29 +154,17 @@ async fn main(spawner: Spawner) {
     let (rng_req_tx, rng_req_rx) = unsafe { RNG_WORKER_TO_CORE.split() };
 
     // Channels
-    let client_requests = RequestQueueSource {
-        consumer: client_req_rx,
-    };
-    let client_responses = ResponseQueueSink {
-        producer: client_resp_tx,
-    };
-    let rng_requests_rx = RequestQueueSource {
-        consumer: rng_req_rx,
-    };
-    let rng_requests_tx = RequestQueueSink {
-        producer: rng_req_tx,
-    };
-    let rng_responses_rx = ResponseQueueSource {
-        consumer: rng_resp_rx,
-    };
-    let rng_responses_tx = ResponseQueueSink {
-        producer: rng_resp_tx,
-    };
+    let client_requests = RequestQueueSource::new(client_req_rx);
+    let client_responses = ResponseQueueSink::new(client_resp_tx);
+    let rng_requests_rx = RequestQueueSource::new(rng_req_rx);
+    let rng_requests_tx = RequestQueueSink::new(rng_req_tx);
+    let rng_responses_rx = ResponseQueueSource::new(rng_resp_rx);
+    let rng_responses_tx = ResponseQueueSink::new(rng_resp_tx);
 
     let rng = Rng::new(EntropySource {}, None);
     let rng_worker = RngWorker {
         rng,
-        requests: rng_requests_rx.enumerate(),
+        requests: rng_requests_rx,
         responses: rng_responses_tx,
     };
     RNG_WORKER
@@ -226,16 +173,12 @@ async fn main(spawner: Spawner) {
         .replace(Some(rng_worker));
     let mut core: Core<
         CriticalSectionRawMutex,
-        Enumerate<RequestQueueSource<'_, '_>>,
-        ResponseQueueSink<'_, '_>,
-        RequestQueueSink<'_, '_>,
-        Enumerate<ResponseQueueSource<'_, '_>>,
-    > = Core::new(None, client_requests.enumerate(), client_responses);
-    core.add_worker_channel(
-        &[RequestType::GetRandom],
-        rng_requests_tx,
-        rng_responses_rx.enumerate(),
-    );
+        RequestQueueSource<'_, '_, CriticalSectionRawMutex, QUEUE_SIZE>,
+        ResponseQueueSink<'_, '_, CriticalSectionRawMutex, QUEUE_SIZE>,
+        RequestQueueSink<'_, '_, CriticalSectionRawMutex, QUEUE_SIZE>,
+        ResponseQueueSource<'_, '_, CriticalSectionRawMutex, QUEUE_SIZE>,
+    > = Core::new(None, client_requests, client_responses);
+    core.add_worker_channel(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx);
     CORE.try_lock()
         .expect("Failed to lock CORE")
         .replace(Some(core));
