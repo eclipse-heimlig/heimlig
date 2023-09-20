@@ -1,4 +1,5 @@
-pub type Id = u32;
+/// Identifier to reference HSM keys
+pub type KeyId = u32;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum Error {
@@ -18,37 +19,37 @@ pub enum Error {
 
 pub trait KeyStore {
     /// Returns whether or not a key for the given 'id' is present in the store.
-    fn is_stored(&self, id: Id) -> bool;
+    fn is_stored(&self, id: KeyId) -> bool;
 
     /// Get the size of a key.
-    fn size(&self, id: Id) -> Result<usize, Error>;
+    fn size(&self, id: KeyId) -> Result<usize, Error>;
 
     /// Write key from `src` to storage.
     /// Storing a key of size 0 has the same effect as deleting the key.
-    fn import(&mut self, id: Id, src: &[u8]) -> Result<(), Error>;
+    fn import(&mut self, id: KeyId, src: &[u8]) -> Result<(), Error>;
 
     /// Read key from storage and write it to `dest`.
     ///
     /// returns: The number of bytes written to `dest` or and error.
-    fn export<'a>(&self, id: Id, dest: &'a mut [u8]) -> Result<&'a [u8], Error>;
+    fn export<'a>(&self, id: KeyId, dest: &'a mut [u8]) -> Result<&'a [u8], Error>;
 
     /// Delete the key belonging to `id`.
     ///
     /// return: An error, if the key could not be found.
-    fn delete(&mut self, id: Id) -> Result<(), Error> {
+    fn delete(&mut self, id: KeyId) -> Result<(), Error> {
         self.import(id, &[])
     }
 }
 
 #[derive(Debug)]
 pub struct KeyInfo {
-    pub id: Id,
+    pub id: KeyId,
     pub max_size: usize,
 }
 
 #[derive(Debug)]
 struct KeyInfoInternal {
-    id: Id,
+    id: KeyId,
     offset: usize,
     max_size: usize,
     actual_size: usize,
@@ -104,14 +105,14 @@ impl<const STORAGE_SIZE: usize, const MAX_KEYS: usize> MemoryKeyStore<STORAGE_SI
 impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
     for MemoryKeyStore<STORAGE_SIZE, NUM_KEYS>
 {
-    fn is_stored(&self, id: Id) -> bool {
+    fn is_stored(&self, id: KeyId) -> bool {
         match self.infos.iter().find(|key_info| key_info.id == id) {
             None => false,
             Some(key_info) => key_info.actual_size > 0,
         }
     }
 
-    fn size(&self, id: Id) -> Result<usize, Error> {
+    fn size(&self, id: KeyId) -> Result<usize, Error> {
         match self.infos.iter().find(|key_info| key_info.id == id) {
             None => Err(Error::InvalidKeyId),
             Some(key_info) => {
@@ -123,7 +124,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         }
     }
 
-    fn import(&mut self, id: Id, src: &[u8]) -> Result<(), Error> {
+    fn import(&mut self, id: KeyId, src: &[u8]) -> Result<(), Error> {
         match self.infos.iter_mut().find(|key_info| key_info.id == id) {
             None => Err(Error::InvalidKeyId),
             Some(key_info) => {
@@ -138,7 +139,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         }
     }
 
-    fn export<'a>(&self, id: Id, dest: &'a mut [u8]) -> Result<&'a [u8], Error> {
+    fn export<'a>(&self, id: KeyId, dest: &'a mut [u8]) -> Result<&'a [u8], Error> {
         match self.infos.iter().find(|key_info| key_info.id == id) {
             None => Err(Error::InvalidKeyId),
             Some(key_info) => {
@@ -160,18 +161,18 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
 #[cfg(test)]
 pub(crate) mod test {
     use crate::config;
-    use crate::hsm::keystore::{Error, Id, KeyInfo, KeyStore, MemoryKeyStore};
+    use crate::hsm::keystore::{Error, KeyId, KeyInfo, KeyStore, MemoryKeyStore};
 
     #[test]
     fn store_get_delete() {
-        const UNKNOWN_KEY_ID: Id = 1;
-        const KEY1_ID: Id = 5;
+        const UNKNOWN_KEY_ID: KeyId = 1;
+        const KEY1_ID: KeyId = 5;
         const KEY1_SIZE: usize = 16;
         let key1_info = KeyInfo {
             id: KEY1_ID,
             max_size: KEY1_SIZE,
         };
-        const KEY2_ID: Id = 3;
+        const KEY2_ID: KeyId = 3;
         const KEY2_SIZE: usize = 64;
         let key2_info = KeyInfo {
             id: KEY2_ID,

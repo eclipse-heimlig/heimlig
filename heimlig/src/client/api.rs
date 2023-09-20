@@ -1,4 +1,5 @@
 use crate::common::jobs::{Request, Response};
+use crate::hsm::keystore::KeyId;
 use futures::{Sink, SinkExt, Stream, StreamExt};
 
 /// An interface to send [Request]s to the HSM core and receive [Response]es from it.
@@ -10,6 +11,11 @@ pub struct Api<'data, Req: Sink<Request<'data>>, Resp: Stream<Item = Response<'d
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum Error {
     Send,
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum SymmetricEncryptionAlgorithm {
+    ChaCha20Poly1305,
 }
 
 impl<
@@ -26,7 +32,12 @@ impl<
         }
     }
 
-    /// Request `size` many random bytes.
+    /// Attempt to poll a response and return it.
+    pub async fn recv_response<'api>(&'api mut self) -> Option<Response<'data>> {
+        self.responses.next().await
+    }
+
+    /// Request random bytes and write to provided buffer.
     pub async fn get_random(&mut self, output: &'data mut [u8]) -> Result<(), Error> {
         self.requests
             .send(Request::GetRandom { output })
@@ -34,64 +45,106 @@ impl<
             .map_err(|_e| Error::Send)
     }
 
-    /// Attempt to poll a response and return it.
-    pub async fn recv_response(&mut self) -> Option<Response> {
-        self.responses.next().await
+    pub async fn import_key(&mut self, key_id: KeyId, data: &'data [u8]) -> Result<(), Error> {
+        self.requests
+            .send(Request::ImportKey { key_id, data })
+            .await
+            .map_err(|_e| Error::Send)
     }
-}
 
-#[cfg(test)]
-mod test {
-    use crate::client::api::Api;
-    use crate::common::jobs::{Request, Response};
-    use crate::integration::embassy::{RequestQueueSink, ResponseQueueSource};
-    use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-    use heapless::spsc::Queue;
-
-    const QUEUE_SIZE: usize = 8;
-
-    #[async_std::test]
-    async fn send_request() {
-        const REQUEST_SIZE: usize = 16;
-        let mut random_output = [0u8; REQUEST_SIZE];
-        let mut random_output_response = [0u8; REQUEST_SIZE];
-
-        let mut requests = Queue::<Request, QUEUE_SIZE>::new();
-        let mut responses = Queue::<Response, QUEUE_SIZE>::new();
-
-        let (requests_tx, mut requests_rx) = requests.split();
-        let (mut responses_tx, responses_rx) = responses.split();
-
-        let requests: RequestQueueSink<NoopRawMutex, QUEUE_SIZE> =
-            RequestQueueSink::new(requests_tx);
-        let responses: ResponseQueueSource<NoopRawMutex, QUEUE_SIZE> =
-            ResponseQueueSource::new(responses_rx);
-
-        let mut api = Api::new(requests, responses);
-
-        // Send request
-        api.get_random(&mut random_output)
-            .await
-            .expect("failed to call randomness API");
-        let request = requests_rx.dequeue().expect("failed to receive request");
-        match request {
-            Request::GetRandom { output } => assert_eq!(output.len(), REQUEST_SIZE),
-            _ => panic!("Unexpected request type"),
+    pub async fn encrypt(
+        &mut self,
+        algorithm: SymmetricEncryptionAlgorithm,
+        key_id: KeyId,
+        nonce: &'data [u8],
+        plaintext: &'data mut [u8],
+        aad: &'data [u8],
+        tag: &'data mut [u8],
+    ) -> Result<(), Error> {
+        match algorithm {
+            SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => self
+                .requests
+                .send(Request::EncryptChaChaPoly {
+                    key_id,
+                    nonce,
+                    plaintext,
+                    aad,
+                    tag,
+                })
+                .await
+                .map_err(|_e| Error::Send),
         }
+    }
 
-        // Receive response
-        responses_tx
-            .enqueue(Response::GetRandom {
-                data: &mut random_output_response,
-            })
-            .expect("failed to send response");
-        let response = api
-            .recv_response()
-            .await
-            .expect("failed to receive response");
-        match response {
-            Response::GetRandom { data } => assert_eq!(data.len(), REQUEST_SIZE),
-            _ => panic!("Unexpected response type"),
+    pub async fn encrypt_external_key(
+        &mut self,
+        algorithm: SymmetricEncryptionAlgorithm,
+        key: &'data [u8],
+        nonce: &'data [u8],
+        plaintext: &'data mut [u8],
+        aad: &'data [u8],
+        tag: &'data mut [u8],
+    ) -> Result<(), Error> {
+        match algorithm {
+            SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => self
+                .requests
+                .send(Request::EncryptChaChaPolyExternalKey {
+                    key,
+                    nonce,
+                    plaintext,
+                    aad,
+                    tag,
+                })
+                .await
+                .map_err(|_e| Error::Send),
+        }
+    }
+
+    pub async fn decrypt(
+        &mut self,
+        algorithm: SymmetricEncryptionAlgorithm,
+        key_id: KeyId,
+        nonce: &'data [u8],
+        ciphertext: &'data mut [u8],
+        aad: &'data [u8],
+        tag: &'data [u8],
+    ) -> Result<(), Error> {
+        match algorithm {
+            SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => self
+                .requests
+                .send(Request::DecryptChaChaPoly {
+                    key_id,
+                    nonce,
+                    ciphertext,
+                    aad,
+                    tag,
+                })
+                .await
+                .map_err(|_e| Error::Send),
+        }
+    }
+
+    pub async fn decrypt_external_key(
+        &mut self,
+        algorithm: SymmetricEncryptionAlgorithm,
+        key: &'data [u8],
+        nonce: &'data [u8],
+        ciphertext: &'data mut [u8],
+        aad: &'data [u8],
+        tag: &'data [u8],
+    ) -> Result<(), Error> {
+        match algorithm {
+            SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => self
+                .requests
+                .send(Request::DecryptChaChaPolyExternalKey {
+                    key,
+                    nonce,
+                    ciphertext,
+                    aad,
+                    tag,
+                })
+                .await
+                .map_err(|_e| Error::Send),
         }
     }
 }

@@ -1,5 +1,5 @@
 use crate::hsm::keystore;
-use crate::hsm::keystore::Id;
+use crate::hsm::keystore::KeyId;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum Error {
@@ -29,14 +29,14 @@ pub enum RequestType {
 #[derive(Eq, PartialEq, Debug)]
 pub enum Request<'a> {
     ImportKey {
-        key_id: Id,
+        key_id: KeyId,
         data: &'a [u8],
     },
     GetRandom {
         output: &'a mut [u8],
     },
     EncryptChaChaPoly {
-        key_id: Id,
+        key_id: KeyId,
         nonce: &'a [u8],
         plaintext: &'a mut [u8],
         aad: &'a [u8],
@@ -50,7 +50,7 @@ pub enum Request<'a> {
         tag: &'a mut [u8],
     },
     DecryptChaChaPoly {
-        key_id: Id,
+        key_id: KeyId,
         nonce: &'a [u8],
         ciphertext: &'a mut [u8],
         aad: &'a [u8],

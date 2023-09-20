@@ -1,8 +1,9 @@
 mod tests {
     use embassy_sync::blocking_mutex::raw::{NoopRawMutex, RawMutex};
     use embassy_sync::mutex::Mutex;
-    use futures::{SinkExt, StreamExt};
     use heapless::spsc::{Consumer, Producer, Queue};
+    use heimlig::client::api::Api;
+    use heimlig::client::api::SymmetricEncryptionAlgorithm::ChaCha20Poly1305;
     use heimlig::common::jobs;
     use heimlig::common::jobs::{Request, RequestType, Response};
     use heimlig::common::limits::MAX_RANDOM_SIZE;
@@ -107,7 +108,6 @@ mod tests {
         .expect("failed to create key store")
     }
 
-    // TODO: Use API object in integration tests instead of raw queues. Merge with API test cases.
     #[async_std::test]
     async fn get_random() {
         const REQUEST_SIZE: usize = 16;
@@ -117,7 +117,7 @@ mod tests {
         let mut client_responses = Queue::<Response, QUEUE_SIZE>::new();
         let mut rng_requests = Queue::<Request, QUEUE_SIZE>::new();
         let mut rng_responses = Queue::<Response, QUEUE_SIZE>::new();
-        let (req_client_rx, mut req_client_tx, mut resp_client_rx, resp_client_tx) =
+        let (req_client_rx, req_client_tx, resp_client_rx, resp_client_tx) =
             split_queues(&mut client_requests, &mut client_responses);
         let (rng_requests_rx, rng_requests_tx, rng_responses_rx, rng_responses_tx) =
             split_queues(&mut rng_requests, &mut rng_responses);
@@ -131,11 +131,9 @@ mod tests {
         };
         let mut core = init_core::<NoopRawMutex>(key_store.as_ref(), req_client_rx, resp_client_tx);
         core.add_worker_channel(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx);
-        let request = Request::GetRandom {
-            output: &mut random_output,
-        };
-        req_client_tx
-            .send(request)
+        let mut api = Api::new(req_client_tx, resp_client_rx);
+
+        api.get_random(&mut random_output)
             .await
             .expect("failed to send request");
         core.execute().await.expect("failed to forward request");
@@ -144,12 +142,12 @@ mod tests {
             .await
             .expect("failed to process request");
         core.execute().await.expect("failed to forward response");
-        match resp_client_rx.next().await {
+        match api.recv_response().await {
+            None => panic!("Failed to receive expected response"),
             Some(response) => match response {
                 Response::GetRandom { data } => assert_eq!(data.len(), REQUEST_SIZE),
                 _ => panic!("Unexpected response type {:?}", response),
             },
-            None => panic!("Failed to receive expected response"),
         }
     }
 
@@ -162,7 +160,7 @@ mod tests {
         let mut client_responses = Queue::<Response, QUEUE_SIZE>::new();
         let mut rng_requests = Queue::<Request, QUEUE_SIZE>::new();
         let mut rng_responses = Queue::<Response, QUEUE_SIZE>::new();
-        let (req_client_rx, mut req_client_tx, mut resp_client_rx, resp_client_tx) =
+        let (req_client_rx, req_client_tx, resp_client_rx, resp_client_tx) =
             split_queues(&mut client_requests, &mut client_responses);
         let (rng_requests_rx, rng_requests_tx, rng_responses_rx, rng_responses_tx) =
             split_queues(&mut rng_requests, &mut rng_responses);
@@ -176,11 +174,9 @@ mod tests {
         };
         let mut core = init_core::<NoopRawMutex>(key_store.as_ref(), req_client_rx, resp_client_tx);
         core.add_worker_channel(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx);
-        let request = Request::GetRandom {
-            output: &mut random_output,
-        };
-        req_client_tx
-            .send(request)
+        let mut api = Api::new(req_client_tx, resp_client_rx);
+
+        api.get_random(&mut random_output)
             .await
             .expect("failed to send request");
         core.execute().await.expect("failed to forward request");
@@ -189,12 +185,12 @@ mod tests {
             .await
             .expect("failed to process request");
         core.execute().await.expect("failed to forward response");
-        match resp_client_rx.next().await {
+        match api.recv_response().await {
+            None => panic!("Failed to receive expected response"),
             Some(response) => match response {
                 Response::Error(jobs::Error::RequestTooLarge) => {}
                 _ => panic!("Unexpected response type {:?}", response),
             },
-            None => panic!("Failed to receive expected response"),
         }
     }
 
@@ -206,7 +202,7 @@ mod tests {
         let mut client_responses = Queue::<Response, QUEUE_SIZE>::new();
         let mut chachapoly_requests = Queue::<Request, QUEUE_SIZE>::new();
         let mut chachapoly_responses = Queue::<Response, QUEUE_SIZE>::new();
-        let (req_client_rx, mut req_client_tx, mut resp_client_rx, resp_client_tx) =
+        let (req_client_rx, req_client_tx, resp_client_rx, resp_client_tx) =
             split_queues(&mut client_requests, &mut client_responses);
         let (
             chachapoly_requests_rx,
@@ -233,21 +229,17 @@ mod tests {
             chachapoly_requests_tx,
             chachapoly_responses_rx,
         );
+        let mut api = Api::new(req_client_tx, resp_client_rx);
 
         // Import key
-        let request = Request::ImportKey {
-            key_id: KEY3.id,
-            data: &key,
-        };
-        req_client_tx
-            .send(request)
+        api.import_key(KEY3.id, &key)
             .await
             .expect("failed to send request");
         core.execute()
             .await
             .expect("failed to process next request");
-        let response = resp_client_rx
-            .next()
+        let response = api
+            .recv_response()
             .await
             .expect("Failed to receive expected response");
         match response {
@@ -256,26 +248,24 @@ mod tests {
         };
 
         // Encrypt data
-        let request = Request::EncryptChaChaPoly {
-            key_id: KEY3.id,
-            nonce: &nonce,
-            plaintext: &mut plaintext,
-            aad: &aad,
-            tag: &mut tag,
-        };
-        req_client_tx
-            .send(request)
-            .await
-            .expect("failed to send request");
-
+        api.encrypt(
+            ChaCha20Poly1305,
+            KEY3.id,
+            &nonce,
+            &mut plaintext,
+            &aad,
+            &mut tag,
+        )
+        .await
+        .expect("failed to send request");
         core.execute().await.expect("failed to forward request");
         chacha_worker
             .execute()
             .await
             .expect("failed to process request");
         core.execute().await.expect("failed to forward response");
-        let (ciphertext, tag) = match resp_client_rx
-            .next()
+        let (ciphertext, tag) = match api
+            .recv_response()
             .await
             .expect("Failed to receive expected response")
         {
@@ -284,15 +274,7 @@ mod tests {
         };
 
         // Decrypt data
-        let request = Request::DecryptChaChaPoly {
-            key_id: KEY3.id,
-            nonce: &nonce,
-            ciphertext,
-            aad: &aad,
-            tag,
-        };
-        req_client_tx
-            .send(request)
+        api.decrypt(ChaCha20Poly1305, KEY3.id, &nonce, ciphertext, &aad, tag)
             .await
             .expect("failed to send request");
         core.execute().await.expect("failed to forward request");
@@ -301,8 +283,8 @@ mod tests {
             .await
             .expect("failed to process request");
         core.execute().await.expect("failed to forward response");
-        let plaintext = match resp_client_rx
-            .next()
+        let plaintext = match api
+            .recv_response()
             .await
             .expect("Failed to receive expected response")
         {
@@ -320,7 +302,7 @@ mod tests {
         let mut client_responses = Queue::<Response, QUEUE_SIZE>::new();
         let mut chachapoly_requests = Queue::<Request, QUEUE_SIZE>::new();
         let mut chachapoly_responses = Queue::<Response, QUEUE_SIZE>::new();
-        let (req_client_rx, mut req_client_tx, mut resp_client_rx, resp_client_tx) =
+        let (req_client_rx, req_client_tx, resp_client_rx, resp_client_tx) =
             split_queues(&mut client_requests, &mut client_responses);
         let (
             chachapoly_requests_rx,
@@ -347,27 +329,27 @@ mod tests {
             chachapoly_requests_tx,
             chachapoly_responses_rx,
         );
+        let mut api = Api::new(req_client_tx, resp_client_rx);
 
         // Encrypt data
-        let request = Request::EncryptChaChaPolyExternalKey {
-            key: &key,
-            nonce: &nonce,
-            aad: &aad,
-            plaintext: &mut plaintext,
-            tag: &mut tag,
-        };
-        req_client_tx
-            .send(request)
-            .await
-            .expect("failed to send request");
+        api.encrypt_external_key(
+            ChaCha20Poly1305,
+            &key,
+            &nonce,
+            &mut plaintext,
+            &aad,
+            &mut tag,
+        )
+        .await
+        .expect("failed to send request");
         core.execute().await.expect("failed to forward request");
         chacha_worker
             .execute()
             .await
             .expect("failed to process request");
         core.execute().await.expect("failed to forward response");
-        let (ciphertext, tag) = match resp_client_rx
-            .next()
+        let (ciphertext, tag) = match api
+            .recv_response()
             .await
             .expect("Failed to receive expected response")
         {
@@ -376,15 +358,7 @@ mod tests {
         };
 
         // Decrypt data
-        let request = Request::DecryptChaChaPolyExternalKey {
-            key: &key,
-            nonce: &nonce,
-            ciphertext,
-            aad: &aad,
-            tag,
-        };
-        req_client_tx
-            .send(request)
+        api.decrypt_external_key(ChaCha20Poly1305, &key, &nonce, ciphertext, &aad, tag)
             .await
             .expect("failed to send request");
         core.execute().await.expect("failed to forward request");
@@ -393,8 +367,8 @@ mod tests {
             .await
             .expect("failed to process request");
         core.execute().await.expect("failed to forward response");
-        let plaintext = match resp_client_rx
-            .next()
+        let plaintext = match api
+            .recv_response()
             .await
             .expect("Failed to receive expected response")
         {
