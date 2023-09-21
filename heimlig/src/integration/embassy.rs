@@ -68,8 +68,11 @@ impl<'data, M: RawMutex + Unpin, const QUEUE_SIZE: usize> futures::Sink<Response
 
     fn start_send(self: Pin<&mut Self>, response: Response<'data>) -> Result<(), Self::Error> {
         self.receiver_waker.lock(|w| w.borrow_mut().wake());
-        // A full queue is not possible as a previous successful call to poll_ready can be assumed by contract
-        let _response = self.get_mut().producer.enqueue(response);
+        self.get_mut()
+            .producer
+            .enqueue(response)
+            // Should never happen as a previous successful call to poll_ready can be assumed by contract
+            .expect("Queue was full");
         Ok(())
     }
 
@@ -133,7 +136,11 @@ impl<'data, M: RawMutex + Unpin, const QUEUE_SIZE: usize> futures::Sink<Request<
 
     fn start_send(self: Pin<&mut Self>, request: Request<'data>) -> Result<(), Self::Error> {
         self.receiver_waker.lock(|w| w.borrow_mut().wake());
-        let _request = self.get_mut().producer.enqueue(request);
+        self.get_mut()
+            .producer
+            .enqueue(request)
+            // Should never happen as a previous successful call to poll_ready can be assumed by contract
+            .expect("Queue was full");
         Ok(())
     }
 

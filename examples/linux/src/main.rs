@@ -111,10 +111,12 @@ async fn client_task(
         // Send request
         Timer::after(Duration::from_millis(1000)).await;
         let random_output = Box::leak(Box::new([0u8; 16]));
-        info!(target: "CLIENT", "Sending request: random data (size={})", random_output.len());
-        api.get_random(random_output.as_mut_slice())
+        let request_size = random_output.len();
+        let request_id = api
+            .get_random(random_output.as_mut_slice())
             .await
             .expect("failed to call randomness API");
+        info!(target: "CLIENT", "--> request:  random data (id={request_id}) (size={request_size})");
 
         // Receive response
         loop {
@@ -122,9 +124,9 @@ async fn client_task(
                 None => Timer::after(Duration::from_millis(10)).await, // Continue waiting for response
                 Some(response) => {
                     match response {
-                        Response::GetRandom { data } => {
+                        Response::GetRandom { request_id, data } => {
                             info!(target: "CLIENT",
-                                "Received response: random data (size={}): {}",
+                                "<-- response: random data (id={request_id}) (size={}): {}",
                                 data.len(),
                                 hex::encode(&data)
                             );

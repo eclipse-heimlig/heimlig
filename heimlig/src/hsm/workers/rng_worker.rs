@@ -1,5 +1,5 @@
 use crate::common::jobs::Response::GetRandom;
-use crate::common::jobs::{Error, Request, Response};
+use crate::common::jobs::{Error, Request, RequestId, Response};
 use crate::common::limits::MAX_RANDOM_SIZE;
 use crate::crypto::rng::{EntropySource, Rng};
 use futures::{Sink, SinkExt, Stream, StreamExt};
@@ -26,8 +26,8 @@ impl<
     pub async fn execute(&mut self) -> Result<(), Error> {
         match self.requests.next().await {
             None => Ok(()), // Nothing to process
-            Some(Request::GetRandom { output }) => {
-                let response = self.get_random(output);
+            Some(Request::GetRandom { request_id, output }) => {
+                let response = self.get_random(request_id, output);
                 self.responses
                     .send(response)
                     .await
@@ -37,11 +37,17 @@ impl<
         }
     }
 
-    fn get_random<'a>(&mut self, output: &'a mut [u8]) -> Response<'a> {
+    fn get_random<'a>(&mut self, request_id: RequestId, output: &'a mut [u8]) -> Response<'a> {
         if output.len() >= MAX_RANDOM_SIZE {
-            return Response::Error(Error::RequestTooLarge);
+            return Response::Error {
+                request_id,
+                error: Error::RequestTooLarge,
+            };
         }
         self.rng.fill_bytes(output);
-        GetRandom { data: output }
+        GetRandom {
+            request_id,
+            data: output,
+        }
     }
 }

@@ -133,7 +133,8 @@ mod tests {
         core.add_worker_channel(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx);
         let mut api = Api::new(req_client_tx, resp_client_rx);
 
-        api.get_random(&mut random_output)
+        let org_request_id = api
+            .get_random(&mut random_output)
             .await
             .expect("failed to send request");
         core.execute().await.expect("failed to forward request");
@@ -145,7 +146,10 @@ mod tests {
         match api.recv_response().await {
             None => panic!("Failed to receive expected response"),
             Some(response) => match response {
-                Response::GetRandom { data } => assert_eq!(data.len(), REQUEST_SIZE),
+                Response::GetRandom { request_id, data } => {
+                    assert_eq!(request_id, org_request_id);
+                    assert_eq!(data.len(), REQUEST_SIZE)
+                }
                 _ => panic!("Unexpected response type {:?}", response),
             },
         }
@@ -176,7 +180,8 @@ mod tests {
         core.add_worker_channel(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx);
         let mut api = Api::new(req_client_tx, resp_client_rx);
 
-        api.get_random(&mut random_output)
+        let org_request_id = api
+            .get_random(&mut random_output)
             .await
             .expect("failed to send request");
         core.execute().await.expect("failed to forward request");
@@ -188,7 +193,10 @@ mod tests {
         match api.recv_response().await {
             None => panic!("Failed to receive expected response"),
             Some(response) => match response {
-                Response::Error(jobs::Error::RequestTooLarge) => {}
+                Response::Error { request_id, error } => {
+                    assert_eq!(request_id, org_request_id);
+                    assert_eq!(error, jobs::Error::RequestTooLarge);
+                }
                 _ => panic!("Unexpected response type {:?}", response),
             },
         }
@@ -232,7 +240,8 @@ mod tests {
         let mut api = Api::new(req_client_tx, resp_client_rx);
 
         // Import key
-        api.import_key(KEY3.id, &key)
+        let org_request_id = api
+            .import_key(KEY3.id, &key)
             .await
             .expect("failed to send request");
         core.execute()
@@ -243,38 +252,22 @@ mod tests {
             .await
             .expect("Failed to receive expected response");
         match response {
-            Response::ImportKey {} => {}
+            Response::ImportKey { request_id } => {
+                assert_eq!(org_request_id, request_id)
+            }
             _ => panic!("Unexpected response type"),
         };
 
         // Encrypt data
-        api.encrypt(
-            ChaCha20Poly1305,
-            KEY3.id,
-            &nonce,
-            &mut plaintext,
-            &aad,
-            &mut tag,
-        )
-        .await
-        .expect("failed to send request");
-        core.execute().await.expect("failed to forward request");
-        chacha_worker
-            .execute()
-            .await
-            .expect("failed to process request");
-        core.execute().await.expect("failed to forward response");
-        let (ciphertext, tag) = match api
-            .recv_response()
-            .await
-            .expect("Failed to receive expected response")
-        {
-            Response::EncryptChaChaPoly { ciphertext, tag } => (ciphertext, tag),
-            _ => panic!("Unexpected response type"),
-        };
-
-        // Decrypt data
-        api.decrypt(ChaCha20Poly1305, KEY3.id, &nonce, ciphertext, &aad, tag)
+        let org_request_id = api
+            .encrypt(
+                ChaCha20Poly1305,
+                KEY3.id,
+                &nonce,
+                &mut plaintext,
+                &aad,
+                &mut tag,
+            )
             .await
             .expect("failed to send request");
         core.execute().await.expect("failed to forward request");
@@ -283,14 +276,43 @@ mod tests {
             .await
             .expect("failed to process request");
         core.execute().await.expect("failed to forward response");
-        let plaintext = match api
+        let (request_id, ciphertext, tag) = match api
             .recv_response()
             .await
             .expect("Failed to receive expected response")
         {
-            Response::DecryptChaChaPoly { plaintext } => plaintext,
+            Response::EncryptChaChaPoly {
+                request_id,
+                ciphertext,
+                tag,
+            } => (request_id, ciphertext, tag),
+            _ => panic!("Unexpected response type"),
+        };
+        assert_eq!(request_id, org_request_id);
+
+        // Decrypt data
+        let org_request_id = api
+            .decrypt(ChaCha20Poly1305, KEY3.id, &nonce, ciphertext, &aad, tag)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        chacha_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let (request_id, plaintext) = match api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response")
+        {
+            Response::DecryptChaChaPoly {
+                request_id,
+                plaintext,
+            } => (request_id, plaintext),
             resp => panic!("Unexpected response type {:?}", resp),
         };
+        assert_eq!(request_id, org_request_id);
         assert_eq!(plaintext, org_plaintext);
     }
 
@@ -332,33 +354,15 @@ mod tests {
         let mut api = Api::new(req_client_tx, resp_client_rx);
 
         // Encrypt data
-        api.encrypt_external_key(
-            ChaCha20Poly1305,
-            &key,
-            &nonce,
-            &mut plaintext,
-            &aad,
-            &mut tag,
-        )
-        .await
-        .expect("failed to send request");
-        core.execute().await.expect("failed to forward request");
-        chacha_worker
-            .execute()
-            .await
-            .expect("failed to process request");
-        core.execute().await.expect("failed to forward response");
-        let (ciphertext, tag) = match api
-            .recv_response()
-            .await
-            .expect("Failed to receive expected response")
-        {
-            Response::EncryptChaChaPoly { ciphertext, tag } => (ciphertext, tag),
-            _ => panic!("Unexpected response type"),
-        };
-
-        // Decrypt data
-        api.decrypt_external_key(ChaCha20Poly1305, &key, &nonce, ciphertext, &aad, tag)
+        let org_request_id = api
+            .encrypt_external_key(
+                ChaCha20Poly1305,
+                &key,
+                &nonce,
+                &mut plaintext,
+                &aad,
+                &mut tag,
+            )
             .await
             .expect("failed to send request");
         core.execute().await.expect("failed to forward request");
@@ -367,14 +371,43 @@ mod tests {
             .await
             .expect("failed to process request");
         core.execute().await.expect("failed to forward response");
-        let plaintext = match api
+        let (request_id, ciphertext, tag) = match api
             .recv_response()
             .await
             .expect("Failed to receive expected response")
         {
-            Response::DecryptChaChaPoly { plaintext } => plaintext,
+            Response::EncryptChaChaPoly {
+                request_id,
+                ciphertext,
+                tag,
+            } => (request_id, ciphertext, tag),
             _ => panic!("Unexpected response type"),
         };
+        assert_eq!(request_id, org_request_id);
+
+        // Decrypt data
+        let org_request_id = api
+            .decrypt_external_key(ChaCha20Poly1305, &key, &nonce, ciphertext, &aad, tag)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        chacha_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let (request_id, plaintext) = match api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response")
+        {
+            Response::DecryptChaChaPoly {
+                request_id,
+                plaintext,
+            } => (request_id, plaintext),
+            _ => panic!("Unexpected response type"),
+        };
+        assert_eq!(request_id, org_request_id);
         assert_eq!(plaintext, org_plaintext)
     }
 }

@@ -1,4 +1,4 @@
-use crate::common::jobs::{Request, Response};
+use crate::common::jobs::{Request, RequestId, Response};
 use crate::hsm::keystore::KeyId;
 use futures::{Sink, SinkExt, Stream, StreamExt};
 
@@ -6,6 +6,7 @@ use futures::{Sink, SinkExt, Stream, StreamExt};
 pub struct Api<'data, Req: Sink<Request<'data>>, Resp: Stream<Item = Response<'data>>> {
     requests: Req,
     responses: Resp,
+    request_counter: RequestId,
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -27,6 +28,7 @@ impl<
     /// Create a new instance of the HSM API.
     pub fn new(requests: Req, responses: Resp) -> Self {
         Api {
+            request_counter: 0,
             requests,
             responses,
         }
@@ -38,18 +40,30 @@ impl<
     }
 
     /// Request random bytes and write to provided buffer.
-    pub async fn get_random(&mut self, output: &'data mut [u8]) -> Result<(), Error> {
+    pub async fn get_random(&mut self, output: &'data mut [u8]) -> Result<RequestId, Error> {
+        let request_id = self.next_request_id();
         self.requests
-            .send(Request::GetRandom { output })
+            .send(Request::GetRandom { request_id, output })
             .await
-            .map_err(|_e| Error::Send)
+            .map_err(|_e| Error::Send)?;
+        Ok(request_id)
     }
 
-    pub async fn import_key(&mut self, key_id: KeyId, data: &'data [u8]) -> Result<(), Error> {
+    pub async fn import_key(
+        &mut self,
+        key_id: KeyId,
+        data: &'data [u8],
+    ) -> Result<RequestId, Error> {
+        let request_id = self.next_request_id();
         self.requests
-            .send(Request::ImportKey { key_id, data })
+            .send(Request::ImportKey {
+                request_id,
+                key_id,
+                data,
+            })
             .await
-            .map_err(|_e| Error::Send)
+            .map_err(|_e| Error::Send)?;
+        Ok(request_id)
     }
 
     pub async fn encrypt(
@@ -60,11 +74,13 @@ impl<
         plaintext: &'data mut [u8],
         aad: &'data [u8],
         tag: &'data mut [u8],
-    ) -> Result<(), Error> {
+    ) -> Result<RequestId, Error> {
+        let request_id = self.next_request_id();
         match algorithm {
             SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => self
                 .requests
                 .send(Request::EncryptChaChaPoly {
+                    request_id,
                     key_id,
                     nonce,
                     plaintext,
@@ -73,7 +89,8 @@ impl<
                 })
                 .await
                 .map_err(|_e| Error::Send),
-        }
+        }?;
+        Ok(request_id)
     }
 
     pub async fn encrypt_external_key(
@@ -84,11 +101,13 @@ impl<
         plaintext: &'data mut [u8],
         aad: &'data [u8],
         tag: &'data mut [u8],
-    ) -> Result<(), Error> {
+    ) -> Result<RequestId, Error> {
+        let request_id = self.next_request_id();
         match algorithm {
             SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => self
                 .requests
                 .send(Request::EncryptChaChaPolyExternalKey {
+                    request_id,
                     key,
                     nonce,
                     plaintext,
@@ -97,7 +116,8 @@ impl<
                 })
                 .await
                 .map_err(|_e| Error::Send),
-        }
+        }?;
+        Ok(request_id)
     }
 
     pub async fn decrypt(
@@ -108,11 +128,13 @@ impl<
         ciphertext: &'data mut [u8],
         aad: &'data [u8],
         tag: &'data [u8],
-    ) -> Result<(), Error> {
+    ) -> Result<RequestId, Error> {
+        let request_id = self.next_request_id();
         match algorithm {
             SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => self
                 .requests
                 .send(Request::DecryptChaChaPoly {
+                    request_id,
                     key_id,
                     nonce,
                     ciphertext,
@@ -121,7 +143,8 @@ impl<
                 })
                 .await
                 .map_err(|_e| Error::Send),
-        }
+        }?;
+        Ok(request_id)
     }
 
     pub async fn decrypt_external_key(
@@ -132,11 +155,13 @@ impl<
         ciphertext: &'data mut [u8],
         aad: &'data [u8],
         tag: &'data [u8],
-    ) -> Result<(), Error> {
+    ) -> Result<RequestId, Error> {
+        let request_id = self.next_request_id();
         match algorithm {
             SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => self
                 .requests
                 .send(Request::DecryptChaChaPolyExternalKey {
+                    request_id,
                     key,
                     nonce,
                     ciphertext,
@@ -145,6 +170,13 @@ impl<
                 })
                 .await
                 .map_err(|_e| Error::Send),
-        }
+        }?;
+        Ok(request_id)
+    }
+
+    fn next_request_id(&mut self) -> RequestId {
+        let id = self.request_counter;
+        self.request_counter += 1;
+        id
     }
 }

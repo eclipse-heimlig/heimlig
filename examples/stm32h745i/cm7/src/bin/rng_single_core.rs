@@ -141,21 +141,24 @@ async fn client_task(
         // cannot unleak this. heapless::pool::Box would need to implement an interface similar to
         // std::Box::from_raw.
         core::mem::forget(random_buffer_alloc);
-        info!(
-            "Sending request: random data (size={})",
-            random_buffer.len()
-        );
-        api.get_random(random_buffer)
+        let request_size = random_buffer.len();
+        let request_id = api
+            .get_random(random_buffer)
             .await
             .expect("failed to call randomness API");
+        info!(
+            "--> request:  random data (id={}) (size={})",
+            request_id, request_size
+        );
 
         // Receive response
         loop {
             if let Some(response) = api.recv_response().await {
                 match response {
-                    Response::GetRandom { data } => {
+                    Response::GetRandom { request_id, data } => {
                         info!(
-                            "Received response: random data (size={}): {:02x}",
+                            "<-- response: random data (id={}) (size={}): {}",
+                            request_id,
                             data.len(),
                             data
                         );

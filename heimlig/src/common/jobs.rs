@@ -15,6 +15,8 @@ pub enum Error {
     Send,
 }
 
+pub type RequestId = u32;
+
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum RequestType {
     ImportKey,
@@ -29,13 +31,16 @@ pub enum RequestType {
 #[derive(Eq, PartialEq, Debug)]
 pub enum Request<'a> {
     ImportKey {
+        request_id: RequestId,
         key_id: KeyId,
         data: &'a [u8],
     },
     GetRandom {
+        request_id: RequestId,
         output: &'a mut [u8],
     },
     EncryptChaChaPoly {
+        request_id: RequestId,
         key_id: KeyId,
         nonce: &'a [u8],
         plaintext: &'a mut [u8],
@@ -43,6 +48,7 @@ pub enum Request<'a> {
         tag: &'a mut [u8],
     },
     EncryptChaChaPolyExternalKey {
+        request_id: RequestId,
         key: &'a [u8],
         nonce: &'a [u8],
         plaintext: &'a mut [u8],
@@ -50,6 +56,7 @@ pub enum Request<'a> {
         tag: &'a mut [u8],
     },
     DecryptChaChaPoly {
+        request_id: RequestId,
         key_id: KeyId,
         nonce: &'a [u8],
         ciphertext: &'a mut [u8],
@@ -57,6 +64,7 @@ pub enum Request<'a> {
         tag: &'a [u8],
     },
     DecryptChaChaPolyExternalKey {
+        request_id: RequestId,
         key: &'a [u8],
         nonce: &'a [u8],
         ciphertext: &'a mut [u8],
@@ -85,16 +93,24 @@ impl<'data> Request<'data> {
 /// A response from the HSM containing the results of a cryptographic task.
 #[derive(Eq, PartialEq, Debug)]
 pub enum Response<'a> {
-    ImportKey,
-    Error(Error),
+    ImportKey {
+        request_id: RequestId,
+    },
+    Error {
+        request_id: RequestId,
+        error: Error,
+    },
     GetRandom {
+        request_id: RequestId,
         data: &'a mut [u8],
     },
     EncryptChaChaPoly {
+        request_id: RequestId,
         ciphertext: &'a mut [u8],
         tag: &'a mut [u8],
     },
     DecryptChaChaPoly {
+        request_id: RequestId,
         plaintext: &'a mut [u8],
     },
 }

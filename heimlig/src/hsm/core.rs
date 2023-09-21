@@ -160,7 +160,11 @@ impl<
 
     async fn process(&mut self, request: Request<'data>) -> Result<(), Error> {
         match request {
-            Request::ImportKey { key_id, data } => {
+            Request::ImportKey {
+                request_id,
+                key_id,
+                data,
+            } => {
                 let response = {
                     if let Some(key_store) = self.key_store {
                         match key_store
@@ -169,11 +173,17 @@ impl<
                             .deref_mut()
                             .import(key_id, data)
                         {
-                            Ok(()) => Response::ImportKey,
-                            Err(e) => Response::Error(jobs::Error::KeyStore(e)),
+                            Ok(()) => Response::ImportKey { request_id },
+                            Err(e) => Response::Error {
+                                request_id,
+                                error: jobs::Error::KeyStore(e),
+                            },
                         }
                     } else {
-                        Response::Error(jobs::Error::NoKeyStore)
+                        Response::Error {
+                            request_id,
+                            error: jobs::Error::NoKeyStore,
+                        }
                     }
                 };
                 self.client
