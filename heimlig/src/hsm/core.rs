@@ -1,5 +1,5 @@
 use crate::common::jobs;
-use crate::common::jobs::{Request, RequestType, Response};
+use crate::common::jobs::{ClientId, Request, RequestType, Response};
 use crate::hsm::keystore::KeyStore;
 use core::ops::DerefMut;
 use embassy_sync::blocking_mutex::raw::RawMutex;
@@ -25,10 +25,11 @@ pub struct Core<
     ReqSink: Sink<Request<'data>>,
     RespSrc: Stream<Item = Response<'data>>,
     const MAX_REQUEST_TYPES: usize = 8,
+    const MAX_CLIENTS: usize = 8,
     const MAX_WORKERS: usize = 8,
 > {
     key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
-    client: ClientChannel<'data, ReqSrc, RespSink>, // TODO: Support multiple clients
+    clients: Vec<ClientChannel<'data, ReqSrc, RespSink>, MAX_CLIENTS>,
     workers: Vec<WorkerChannel<'data, ReqSink, RespSrc, MAX_REQUEST_TYPES>, MAX_WORKERS>,
 }
 
@@ -50,6 +51,23 @@ struct WorkerChannel<
     pub responses: RespSrc,
 }
 
+pub struct Builder<
+    'data,
+    'keystore,
+    M: RawMutex, // TODO: Get rid of embassy specific mutex outside of integration code
+    ReqSrc: Stream<Item = Request<'data>>,
+    RespSink: Sink<Response<'data>>,
+    ReqSink: Sink<Request<'data>>,
+    RespSrc: Stream<Item = Response<'data>>,
+    const MAX_REQUEST_TYPES: usize = 8,
+    const MAX_CLIENTS: usize = 8,
+    const MAX_WORKERS: usize = 8,
+> {
+    key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
+    clients: Vec<ClientChannel<'data, ReqSrc, RespSink>, MAX_CLIENTS>,
+    workers: Vec<WorkerChannel<'data, ReqSink, RespSrc, MAX_REQUEST_TYPES>, MAX_WORKERS>,
+}
+
 impl<
         'data,
         'keystore,
@@ -59,9 +77,10 @@ impl<
         ReqSink: Sink<Request<'data>> + Unpin,
         RespSrc: Stream<Item = Response<'data>> + Unpin,
         const MAX_REQUESTS_PER_WORKER: usize,
+        const MAX_CLIENTS: usize,
         const MAX_WORKERS: usize,
-    >
-    Core<
+    > Default
+    for Builder<
         'data,
         'keystore,
         M,
@@ -70,38 +89,87 @@ impl<
         ReqSink,
         RespSrc,
         MAX_REQUESTS_PER_WORKER,
+        MAX_CLIENTS,
         MAX_WORKERS,
     >
 {
-    /// Create a new HSM core.
-    /// The core accepts requests and forwards the responses once they are ready.
-    ///
-    /// # Arguments
-    ///
-    /// * `key_store`: The [KeyStore] to hold cryptographic key material.
-    /// * `requests`: Source from where the core received requests.
-    /// * `responses`: Sink to where the core sends responses.
-    pub fn new(
-        key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
-        requests: ReqSrc,
-        responses: RespSink,
-    ) -> Self {
-        Self {
-            key_store,
-            client: ClientChannel {
-                requests,
-                responses,
-            },
+    fn default() -> Self {
+        Builder::new()
+    }
+}
+
+impl<
+        'data,
+        'keystore,
+        M: RawMutex,
+        ReqSrc: Stream<Item = Request<'data>> + Unpin,
+        RespSink: Sink<Response<'data>> + Unpin,
+        ReqSink: Sink<Request<'data>> + Unpin,
+        RespSrc: Stream<Item = Response<'data>> + Unpin,
+        const MAX_REQUESTS_PER_WORKER: usize,
+        const MAX_CLIENTS: usize,
+        const MAX_WORKERS: usize,
+    >
+    Builder<
+        'data,
+        'keystore,
+        M,
+        ReqSrc,
+        RespSink,
+        ReqSink,
+        RespSrc,
+        MAX_REQUESTS_PER_WORKER,
+        MAX_CLIENTS,
+        MAX_WORKERS,
+    >
+{
+    pub fn new() -> Builder<
+        'data,
+        'keystore,
+        M,
+        ReqSrc,
+        RespSink,
+        ReqSink,
+        RespSrc,
+        MAX_REQUESTS_PER_WORKER,
+        MAX_CLIENTS,
+        MAX_WORKERS,
+    > {
+        Builder {
+            key_store: None,
+            clients: Default::default(),
             workers: Default::default(),
         }
     }
 
-    pub fn add_worker_channel(
-        &mut self,
+    pub fn with_keystore(
+        mut self,
+        key_store: &'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>,
+    ) -> Self {
+        self.key_store = Some(key_store);
+        self
+    }
+
+    pub fn with_client(mut self, requests: ReqSrc, responses: RespSink) -> Self {
+        if self
+            .clients
+            .push(ClientChannel {
+                requests,
+                responses,
+            })
+            .is_err()
+        {
+            panic!("Failed to add client channel");
+        };
+        self
+    }
+
+    pub fn with_worker(
+        mut self,
         req_types: &[RequestType],
         requests: ReqSink,
         responses: RespSrc,
-    ) {
+    ) -> Self {
         for channel in &self.workers {
             for req_type in req_types {
                 if channel.req_types.contains(req_type) {
@@ -121,24 +189,59 @@ impl<
         {
             panic!("Failed to add worker channel");
         };
+        self
     }
 
+    pub fn build(
+        self,
+    ) -> Core<
+        'data,
+        'keystore,
+        M,
+        ReqSrc,
+        RespSink,
+        ReqSink,
+        RespSrc,
+        MAX_REQUESTS_PER_WORKER,
+        MAX_CLIENTS,
+        MAX_WORKERS,
+    > {
+        Core {
+            key_store: self.key_store,
+            clients: self.clients,
+            workers: self.workers,
+        }
+    }
+}
+
+impl<
+        'data,
+        'keystore,
+        M: RawMutex,
+        ReqSrc: Stream<Item = Request<'data>> + Unpin,
+        RespSink: Sink<Response<'data>> + Unpin,
+        ReqSink: Sink<Request<'data>> + Unpin,
+        RespSrc: Stream<Item = Response<'data>> + Unpin,
+        const MAX_REQUESTS_PER_WORKER: usize,
+        const MAX_CLIENTS: usize,
+        const MAX_WORKERS: usize,
+    >
+    Core<
+        'data,
+        'keystore,
+        M,
+        ReqSrc,
+        RespSink,
+        ReqSink,
+        RespSrc,
+        MAX_REQUESTS_PER_WORKER,
+        MAX_CLIENTS,
+        MAX_WORKERS,
+    >
+{
     pub async fn execute(&mut self) -> Result<(), Error> {
         self.process_worker_responses().await?;
         self.process_client_requests().await?;
-        Ok(())
-    }
-
-    async fn process_worker_responses(&mut self) -> Result<(), Error> {
-        for channel in &mut self.workers {
-            if let Some(response) = channel.responses.next().await {
-                self.client
-                    .responses
-                    .send(response)
-                    .await
-                    .map_err(|_e| Error::Send)?;
-            }
-        }
         Ok(())
     }
 
@@ -151,16 +254,36 @@ impl<
     /// * `Ok(false)` if no [Request] was found in any input [ClientChannel].
     /// * `Err(core::Error)` if a processing error occurred.
     async fn process_client_requests(&mut self) -> Result<(), Error> {
-        let request = self.client.requests.next().await;
-        if let Some(request) = request {
-            return self.process(request).await;
+        for (client_id, client) in &mut self.clients.iter_mut().enumerate() {
+            let request = client.requests.next().await;
+            if let Some(mut request) = request {
+                request.set_client_id(client_id as ClientId);
+                return self.process_request(request).await;
+            }
         }
         Ok(()) // Nothing to process
     }
 
-    async fn process(&mut self, request: Request<'data>) -> Result<(), Error> {
+    async fn process_worker_responses(&mut self) -> Result<(), Error> {
+        let workers_len = self.workers.len();
+        for worker_index in 0..workers_len {
+            let worker = self.workers.get_mut(worker_index);
+            if let Some(worker) = worker {
+                let response = worker.responses.next().await;
+                if let Some(response) = response {
+                    self.send_to_client(response).await?;
+                }
+            } else {
+                panic!("Invalid internal worker ID");
+            }
+        }
+        Ok(()) // Nothing to process
+    }
+
+    async fn process_request(&mut self, request: Request<'data>) -> Result<(), Error> {
         match request {
             Request::ImportKey {
+                client_id,
                 request_id,
                 key_id,
                 data,
@@ -173,24 +296,25 @@ impl<
                             .deref_mut()
                             .import(key_id, data)
                         {
-                            Ok(()) => Response::ImportKey { request_id },
+                            Ok(()) => Response::ImportKey {
+                                client_id,
+                                request_id,
+                            },
                             Err(e) => Response::Error {
+                                client_id,
                                 request_id,
                                 error: jobs::Error::KeyStore(e),
                             },
                         }
                     } else {
                         Response::Error {
+                            client_id,
                             request_id,
                             error: jobs::Error::NoKeyStore,
                         }
                     }
                 };
-                self.client
-                    .responses
-                    .send(response)
-                    .await
-                    .map_err(|_e| Error::Send)?;
+                self.send_to_client(response).await?;
             }
             _ => {
                 let channel = self
@@ -204,6 +328,20 @@ impl<
                     .await
                     .map_err(|_e| Error::Send)?;
             }
+        }
+        Ok(())
+    }
+
+    async fn send_to_client(&mut self, response: Response<'data>) -> Result<(), Error> {
+        let client_id = response.get_client_id();
+        if let Some(client) = self.clients.get_mut(client_id as usize) {
+            client
+                .responses
+                .send(response)
+                .await
+                .map_err(|_e| Error::Send)?;
+        } else {
+            panic!("Invalid internal client ID");
         }
         Ok(())
     }

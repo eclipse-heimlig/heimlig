@@ -1,5 +1,5 @@
 use crate::common::jobs::Response::GetRandom;
-use crate::common::jobs::{Error, Request, RequestId, Response};
+use crate::common::jobs::{ClientId, Error, Request, RequestId, Response};
 use crate::common::limits::MAX_RANDOM_SIZE;
 use crate::crypto::rng::{EntropySource, Rng};
 use futures::{Sink, SinkExt, Stream, StreamExt};
@@ -26,26 +26,37 @@ impl<
     pub async fn execute(&mut self) -> Result<(), Error> {
         match self.requests.next().await {
             None => Ok(()), // Nothing to process
-            Some(Request::GetRandom { request_id, output }) => {
-                let response = self.get_random(request_id, output);
+            Some(Request::GetRandom {
+                client_id,
+                request_id,
+                output,
+            }) => {
+                let response = self.get_random(client_id, request_id, output);
                 self.responses
                     .send(response)
                     .await
                     .map_err(|_e| Error::Send)
             }
-            _ => panic!("Encountered unexpected request"), // TODO: Integration error. Return error here instead?
+            _ => panic!("Encountered unexpected request"),
         }
     }
 
-    fn get_random<'a>(&mut self, request_id: RequestId, output: &'a mut [u8]) -> Response<'a> {
+    fn get_random<'a>(
+        &mut self,
+        client_id: ClientId,
+        request_id: RequestId,
+        output: &'a mut [u8],
+    ) -> Response<'a> {
         if output.len() >= MAX_RANDOM_SIZE {
             return Response::Error {
+                client_id,
                 request_id,
                 error: Error::RequestTooLarge,
             };
         }
         self.rng.fill_bytes(output);
         GetRandom {
+            client_id,
             request_id,
             data: output,
         }

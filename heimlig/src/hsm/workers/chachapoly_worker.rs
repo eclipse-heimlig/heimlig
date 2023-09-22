@@ -1,5 +1,5 @@
 use crate::common::jobs::Error::NoKeyStore;
-use crate::common::jobs::{Error, Request, RequestId, Response};
+use crate::common::jobs::{ClientId, Error, Request, RequestId, Response};
 use crate::config::keystore::MAX_KEY_SIZE;
 use crate::crypto;
 use crate::hsm::keystore::KeyStore;
@@ -34,6 +34,7 @@ impl<
         if let Some(request) = self.requests.next().await {
             let response = match request {
                 Request::EncryptChaChaPoly {
+                    client_id,
                     request_id,
                     key_id,
                     nonce,
@@ -48,28 +49,35 @@ impl<
                             .deref_mut()
                             .export(key_id, key_buffer.as_mut_slice());
                         match export {
-                            Ok(key) => self.encrypt(request_id, key, nonce, aad, plaintext, tag),
+                            Ok(key) => {
+                                self.encrypt(client_id, request_id, key, nonce, aad, plaintext, tag)
+                            }
                             Err(e) => Response::Error {
+                                client_id,
                                 request_id,
                                 error: Error::KeyStore(e),
                             },
                         }
                     } else {
                         Response::Error {
+                            client_id,
                             request_id,
                             error: NoKeyStore,
                         }
                     }
                 }
                 Request::EncryptChaChaPolyExternalKey {
+                    client_id,
                     request_id,
                     key,
                     nonce,
                     plaintext,
                     aad,
                     tag,
-                } => self.encrypt_external_key(request_id, key, nonce, aad, plaintext, tag),
+                } => self
+                    .encrypt_external_key(client_id, request_id, key, nonce, aad, plaintext, tag),
                 Request::DecryptChaChaPoly {
+                    client_id,
                     request_id,
                     key_id,
                     nonce,
@@ -84,28 +92,33 @@ impl<
                             .deref_mut()
                             .export(key_id, key_buffer.as_mut_slice());
                         match export {
-                            Ok(key) => self.decrypt(request_id, key, nonce, aad, ciphertext, tag),
+                            Ok(key) => self
+                                .decrypt(client_id, request_id, key, nonce, aad, ciphertext, tag),
                             Err(e) => Response::Error {
+                                client_id,
                                 request_id,
                                 error: Error::KeyStore(e),
                             },
                         }
                     } else {
                         Response::Error {
+                            client_id,
                             request_id,
                             error: NoKeyStore,
                         }
                     }
                 }
                 Request::DecryptChaChaPolyExternalKey {
+                    client_id,
                     request_id,
                     key,
                     nonce,
                     ciphertext,
                     aad,
                     tag,
-                } => self.decrypt_external_key(request_id, key, nonce, aad, ciphertext, tag),
-                _ => panic!("Encountered unexpected request"), // TODO: Integration error. Return error here instead?
+                } => self
+                    .decrypt_external_key(client_id, request_id, key, nonce, aad, ciphertext, tag),
+                _ => panic!("Encountered unexpected request"),
             };
             return self
                 .responses
@@ -115,8 +128,11 @@ impl<
         }
         Ok(())
     }
+
+    #[allow(clippy::too_many_arguments)]
     pub fn encrypt_external_key<'a>(
         &mut self,
+        client_id: ClientId,
         request_id: RequestId,
         key: &[u8],
         nonce: &[u8],
@@ -124,11 +140,13 @@ impl<
         ciphertext: &'a mut [u8],
         tag: &'a mut [u8],
     ) -> Response<'a> {
-        self.encrypt(request_id, key, nonce, aad, ciphertext, tag)
+        self.encrypt(client_id, request_id, key, nonce, aad, ciphertext, tag)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn decrypt_external_key<'a>(
         &mut self,
+        client_id: ClientId,
         request_id: RequestId,
         key: &[u8],
         nonce: &[u8],
@@ -136,11 +154,13 @@ impl<
         plaintext: &'a mut [u8],
         tag: &[u8],
     ) -> Response<'a> {
-        self.decrypt(request_id, key, nonce, aad, plaintext, tag)
+        self.decrypt(client_id, request_id, key, nonce, aad, plaintext, tag)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn encrypt<'a>(
         &mut self,
+        client_id: ClientId,
         request_id: RequestId,
         key: &[u8],
         nonce: &[u8],
@@ -152,26 +172,31 @@ impl<
             Ok(computed_tag) => {
                 if computed_tag.len() != tag.len() {
                     return Response::Error {
+                        client_id,
                         request_id,
                         error: Error::Crypto(crypto::Error::InvalidTagSize),
                     };
                 }
                 tag.copy_from_slice(computed_tag.as_slice());
                 Response::EncryptChaChaPoly {
+                    client_id,
                     request_id,
                     ciphertext,
                     tag,
                 }
             }
             Err(e) => Response::Error {
+                client_id,
                 request_id,
                 error: Error::Crypto(e),
             },
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn decrypt<'a>(
         &mut self,
+        client_id: ClientId,
         request_id: RequestId,
         key: &[u8],
         nonce: &[u8],
@@ -181,10 +206,12 @@ impl<
     ) -> Response<'a> {
         match crypto::chacha20poly1305::decrypt_in_place_detached(key, nonce, aad, plaintext, tag) {
             Ok(()) => Response::DecryptChaChaPoly {
+                client_id,
                 request_id,
                 plaintext,
             },
             Err(e) => Response::Error {
+                client_id,
                 request_id,
                 error: Error::Crypto(e),
             },

@@ -11,7 +11,7 @@ use heimlig::client::api::Api;
 use heimlig::common::jobs::{Request, RequestType, Response};
 use heimlig::crypto::rng;
 use heimlig::crypto::rng::Rng;
-use heimlig::hsm::core::Core;
+use heimlig::hsm::core::{Builder, Core};
 use heimlig::hsm::workers::rng_worker::RngWorker;
 use heimlig::integration::embassy::{
     RequestQueueSink, RequestQueueSource, ResponseQueueSink, ResponseQueueSource,
@@ -124,7 +124,11 @@ async fn client_task(
                 None => Timer::after(Duration::from_millis(10)).await, // Continue waiting for response
                 Some(response) => {
                     match response {
-                        Response::GetRandom { request_id, data } => {
+                        Response::GetRandom {
+                            client_id: _client_id,
+                            request_id,
+                            data,
+                        } => {
                             info!(target: "CLIENT",
                                 "<-- response: random data (id={request_id}) (size={}): {}",
                                 data.len(),
@@ -173,14 +177,16 @@ async fn main(spawner: Spawner) {
         .try_lock()
         .expect("Failed to lock RNG_WORKER")
         .replace(Some(rng_worker));
-    let mut core: Core<
+    let core: Core<
         CriticalSectionRawMutex,
         RequestQueueSource<'_, '_, CriticalSectionRawMutex, QUEUE_SIZE>,
         ResponseQueueSink<'_, '_, CriticalSectionRawMutex, QUEUE_SIZE>,
         RequestQueueSink<'_, '_, CriticalSectionRawMutex, QUEUE_SIZE>,
         ResponseQueueSource<'_, '_, CriticalSectionRawMutex, QUEUE_SIZE>,
-    > = Core::new(None, client_requests, client_responses);
-    core.add_worker_channel(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx);
+    > = Builder::new()
+        .with_client(client_requests, client_responses)
+        .with_worker(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx)
+        .build();
     CORE.try_lock()
         .expect("Failed to lock CORE")
         .replace(Some(core));

@@ -14,7 +14,7 @@ use heapless::spsc::{Consumer, Producer, Queue};
 use heimlig::client::api::Api;
 use heimlig::common::jobs::{Request, RequestType, Response};
 use heimlig::crypto::rng;
-use heimlig::hsm::core::Core;
+use heimlig::hsm::core::{Builder, Core};
 use heimlig::hsm::workers::rng_worker::RngWorker;
 use heimlig::integration::embassy::{
     RequestQueueSink, RequestQueueSource, ResponseQueueSink, ResponseQueueSource,
@@ -87,8 +87,10 @@ async fn hsm_task(
         ResponseQueueSink<'_, '_, NoopRawMutex, QUEUE_SIZE>,
         RequestQueueSink<'_, '_, NoopRawMutex, QUEUE_SIZE>,
         ResponseQueueSource<'_, '_, NoopRawMutex, QUEUE_SIZE>,
-    > = Core::new(None, client_requests, client_responses);
-    core.add_worker_channel(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx);
+    > = Builder::new()
+        .with_client(client_requests, client_responses)
+        .with_worker(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx)
+        .build();
 
     loop {
         core.execute().await.expect("failed to forward request");
@@ -155,7 +157,11 @@ async fn client_task(
         loop {
             if let Some(response) = api.recv_response().await {
                 match response {
-                    Response::GetRandom { request_id, data } => {
+                    Response::GetRandom {
+                        client_id: _,
+                        request_id,
+                        data,
+                    } => {
                         info!(
                             "<-- response: random data (id={}) (size={}): {}",
                             request_id,

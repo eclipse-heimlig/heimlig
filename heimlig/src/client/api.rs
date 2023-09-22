@@ -43,7 +43,11 @@ impl<
     pub async fn get_random(&mut self, output: &'data mut [u8]) -> Result<RequestId, Error> {
         let request_id = self.next_request_id();
         self.requests
-            .send(Request::GetRandom { request_id, output })
+            .send(Request::GetRandom {
+                client_id: 0,
+                request_id,
+                output,
+            })
             .await
             .map_err(|_e| Error::Send)?;
         Ok(request_id)
@@ -57,6 +61,7 @@ impl<
         let request_id = self.next_request_id();
         self.requests
             .send(Request::ImportKey {
+                client_id: 0,
                 request_id,
                 key_id,
                 data,
@@ -80,6 +85,7 @@ impl<
             SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => self
                 .requests
                 .send(Request::EncryptChaChaPoly {
+                    client_id: 0,
                     request_id,
                     key_id,
                     nonce,
@@ -107,6 +113,7 @@ impl<
             SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => self
                 .requests
                 .send(Request::EncryptChaChaPolyExternalKey {
+                    client_id: 0,
                     request_id,
                     key,
                     nonce,
@@ -134,6 +141,7 @@ impl<
             SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => self
                 .requests
                 .send(Request::DecryptChaChaPoly {
+                    client_id: 0,
                     request_id,
                     key_id,
                     nonce,
@@ -161,6 +169,7 @@ impl<
             SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => self
                 .requests
                 .send(Request::DecryptChaChaPolyExternalKey {
+                    client_id: 0,
                     request_id,
                     key,
                     nonce,

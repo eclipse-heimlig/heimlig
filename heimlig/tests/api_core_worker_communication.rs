@@ -11,7 +11,7 @@ mod tests {
     use heimlig::config::keystore::{KEY1, KEY2, KEY3};
     use heimlig::crypto::chacha20poly1305::{KEY_SIZE, NONCE_SIZE};
     use heimlig::crypto::rng::{EntropySource, Rng};
-    use heimlig::hsm::core::Core;
+    use heimlig::hsm::core::Builder;
     use heimlig::hsm::keystore::{KeyStore, MemoryKeyStore};
     use heimlig::hsm::workers::chachapoly_worker::ChaChaPolyWorker;
     use heimlig::hsm::workers::rng_worker::RngWorker;
@@ -83,11 +83,7 @@ mod tests {
         (key, nonce, plaintext, aad, tag)
     }
 
-    fn init_core<'keystore, 'ch, 'data, M: RawMutex + Unpin>(
-        key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
-        client_requests: RequestQueueSource<'ch, 'data, M, QUEUE_SIZE>,
-        client_responses: ResponseQueueSink<'ch, 'data, M, QUEUE_SIZE>,
-    ) -> Core<
+    fn init_core_builder<'keystore, 'ch, 'data, M: RawMutex + Unpin>() -> Builder<
         'data,
         'keystore,
         M,
@@ -96,7 +92,7 @@ mod tests {
         RequestQueueSink<'ch, 'data, M, QUEUE_SIZE>,
         ResponseQueueSource<'ch, 'data, M, QUEUE_SIZE>,
     > {
-        Core::new(key_store, client_requests, client_responses)
+        Builder::default()
     }
 
     fn init_key_store(
@@ -121,16 +117,15 @@ mod tests {
             split_queues(&mut client_requests, &mut client_responses);
         let (rng_requests_rx, rng_requests_tx, rng_responses_rx, rng_responses_tx) =
             split_queues(&mut rng_requests, &mut rng_responses);
-        let mut key_store = init_key_store();
-        let key_store: Option<Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)>> =
-            Some(Mutex::new(&mut key_store));
         let mut rng_worker = RngWorker {
             rng,
             requests: rng_requests_rx,
             responses: rng_responses_tx,
         };
-        let mut core = init_core::<NoopRawMutex>(key_store.as_ref(), req_client_rx, resp_client_tx);
-        core.add_worker_channel(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx);
+        let mut core = init_core_builder::<NoopRawMutex>()
+            .with_client(req_client_rx, resp_client_tx)
+            .with_worker(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx)
+            .build();
         let mut api = Api::new(req_client_tx, resp_client_rx);
 
         let org_request_id = api
@@ -146,9 +141,13 @@ mod tests {
         match api.recv_response().await {
             None => panic!("Failed to receive expected response"),
             Some(response) => match response {
-                Response::GetRandom { request_id, data } => {
+                Response::GetRandom {
+                    client_id: _client_id,
+                    request_id,
+                    data,
+                } => {
                     assert_eq!(request_id, org_request_id);
-                    assert_eq!(data.len(), REQUEST_SIZE)
+                    assert_eq!(data.len(), REQUEST_SIZE);
                 }
                 _ => panic!("Unexpected response type {:?}", response),
             },
@@ -168,16 +167,15 @@ mod tests {
             split_queues(&mut client_requests, &mut client_responses);
         let (rng_requests_rx, rng_requests_tx, rng_responses_rx, rng_responses_tx) =
             split_queues(&mut rng_requests, &mut rng_responses);
-        let mut key_store = init_key_store();
-        let key_store: Option<Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)>> =
-            Some(Mutex::new(&mut key_store));
         let mut rng_worker = RngWorker {
             rng,
             requests: rng_requests_rx,
             responses: rng_responses_tx,
         };
-        let mut core = init_core::<NoopRawMutex>(key_store.as_ref(), req_client_rx, resp_client_tx);
-        core.add_worker_channel(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx);
+        let mut core = init_core_builder::<NoopRawMutex>()
+            .with_client(req_client_rx, resp_client_tx)
+            .with_worker(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx)
+            .build();
         let mut api = Api::new(req_client_tx, resp_client_rx);
 
         let org_request_id = api
@@ -193,7 +191,11 @@ mod tests {
         match api.recv_response().await {
             None => panic!("Failed to receive expected response"),
             Some(response) => match response {
-                Response::Error { request_id, error } => {
+                Response::Error {
+                    client_id: _client_id,
+                    request_id,
+                    error,
+                } => {
                     assert_eq!(request_id, org_request_id);
                     assert_eq!(error, jobs::Error::RequestTooLarge);
                 }
@@ -219,24 +221,26 @@ mod tests {
             chachapoly_responses_tx,
         ) = split_queues(&mut chachapoly_requests, &mut chachapoly_responses);
         let mut key_store = init_key_store();
-        let key_store: Option<Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)>> =
-            Some(Mutex::new(&mut key_store));
+        let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
         let mut chacha_worker = ChaChaPolyWorker {
-            key_store: key_store.as_ref(),
+            key_store: Some(&key_store),
             requests: chachapoly_requests_rx,
             responses: chachapoly_responses_tx,
         };
-        let mut core = init_core::<NoopRawMutex>(key_store.as_ref(), req_client_rx, resp_client_tx);
-        core.add_worker_channel(
-            &[
-                RequestType::EncryptChaChaPoly,
-                RequestType::EncryptChaChaPolyExternalKey,
-                RequestType::DecryptChaChaPoly,
-                RequestType::DecryptChaChaPolyExternalKey,
-            ],
-            chachapoly_requests_tx,
-            chachapoly_responses_rx,
-        );
+        let mut core = init_core_builder::<NoopRawMutex>()
+            .with_keystore(&key_store)
+            .with_client(req_client_rx, resp_client_tx)
+            .with_worker(
+                &[
+                    RequestType::EncryptChaChaPoly,
+                    RequestType::EncryptChaChaPolyExternalKey,
+                    RequestType::DecryptChaChaPoly,
+                    RequestType::DecryptChaChaPolyExternalKey,
+                ],
+                chachapoly_requests_tx,
+                chachapoly_responses_rx,
+            )
+            .build();
         let mut api = Api::new(req_client_tx, resp_client_rx);
 
         // Import key
@@ -252,7 +256,10 @@ mod tests {
             .await
             .expect("Failed to receive expected response");
         match response {
-            Response::ImportKey { request_id } => {
+            Response::ImportKey {
+                client_id: _client_id,
+                request_id,
+            } => {
                 assert_eq!(org_request_id, request_id)
             }
             _ => panic!("Unexpected response type"),
@@ -282,6 +289,7 @@ mod tests {
             .expect("Failed to receive expected response")
         {
             Response::EncryptChaChaPoly {
+                client_id: _client_id,
                 request_id,
                 ciphertext,
                 tag,
@@ -307,6 +315,7 @@ mod tests {
             .expect("Failed to receive expected response")
         {
             Response::DecryptChaChaPoly {
+                client_id: _client_id,
                 request_id,
                 plaintext,
             } => (request_id, plaintext),
@@ -332,25 +341,28 @@ mod tests {
             chachapoly_responses_rx,
             chachapoly_responses_tx,
         ) = split_queues(&mut chachapoly_requests, &mut chachapoly_responses);
+
         let mut key_store = init_key_store();
-        let key_store: Option<Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)>> =
-            Some(Mutex::new(&mut key_store));
+        let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
         let mut chacha_worker = ChaChaPolyWorker {
-            key_store: key_store.as_ref(),
+            key_store: Some(&key_store),
             requests: chachapoly_requests_rx,
             responses: chachapoly_responses_tx,
         };
-        let mut core = init_core::<NoopRawMutex>(key_store.as_ref(), req_client_rx, resp_client_tx);
-        core.add_worker_channel(
-            &[
-                RequestType::EncryptChaChaPoly,
-                RequestType::EncryptChaChaPolyExternalKey,
-                RequestType::DecryptChaChaPoly,
-                RequestType::DecryptChaChaPolyExternalKey,
-            ],
-            chachapoly_requests_tx,
-            chachapoly_responses_rx,
-        );
+        let mut core = init_core_builder::<NoopRawMutex>()
+            .with_keystore(&key_store)
+            .with_client(req_client_rx, resp_client_tx)
+            .with_worker(
+                &[
+                    RequestType::EncryptChaChaPoly,
+                    RequestType::EncryptChaChaPolyExternalKey,
+                    RequestType::DecryptChaChaPoly,
+                    RequestType::DecryptChaChaPolyExternalKey,
+                ],
+                chachapoly_requests_tx,
+                chachapoly_responses_rx,
+            )
+            .build();
         let mut api = Api::new(req_client_tx, resp_client_rx);
 
         // Encrypt data
@@ -377,6 +389,7 @@ mod tests {
             .expect("Failed to receive expected response")
         {
             Response::EncryptChaChaPoly {
+                client_id: _client_id,
                 request_id,
                 ciphertext,
                 tag,
@@ -402,6 +415,7 @@ mod tests {
             .expect("Failed to receive expected response")
         {
             Response::DecryptChaChaPoly {
+                client_id: _client_id,
                 request_id,
                 plaintext,
             } => (request_id, plaintext),
@@ -409,5 +423,86 @@ mod tests {
         };
         assert_eq!(request_id, org_request_id);
         assert_eq!(plaintext, org_plaintext)
+    }
+
+    #[async_std::test]
+    async fn multiple_clients() {
+        const REQUEST1_SIZE: usize = 16;
+        const REQUEST2_SIZE: usize = 17;
+        let mut random_output1 = [0u8; REQUEST1_SIZE];
+        let mut random_output2 = [0u8; REQUEST2_SIZE];
+        let rng = init_rng();
+        let mut client1_requests = Queue::<Request, QUEUE_SIZE>::new();
+        let mut client1_responses = Queue::<Response, QUEUE_SIZE>::new();
+        let mut client2_requests = Queue::<Request, QUEUE_SIZE>::new();
+        let mut client2_responses = Queue::<Response, QUEUE_SIZE>::new();
+        let mut rng_requests = Queue::<Request, QUEUE_SIZE>::new();
+        let mut rng_responses = Queue::<Response, QUEUE_SIZE>::new();
+        let (req_client1_rx, req_client1_tx, resp_client1_rx, resp_client1_tx) =
+            split_queues(&mut client1_requests, &mut client1_responses);
+        let (req_client2_rx, req_client2_tx, resp_client2_rx, resp_client2_tx) =
+            split_queues(&mut client2_requests, &mut client2_responses);
+        let (rng_requests_rx, rng_requests_tx, rng_responses_rx, rng_responses_tx) =
+            split_queues(&mut rng_requests, &mut rng_responses);
+        let mut rng_worker = RngWorker {
+            rng,
+            requests: rng_requests_rx,
+            responses: rng_responses_tx,
+        };
+        let mut core = init_core_builder::<NoopRawMutex>()
+            .with_client(req_client1_rx, resp_client1_tx)
+            .with_client(req_client2_rx, resp_client2_tx)
+            .with_worker(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx)
+            .build();
+        let mut api1 = Api::new(req_client1_tx, resp_client1_rx);
+        let mut api2 = Api::new(req_client2_tx, resp_client2_rx);
+
+        let org_request1_id = api1
+            .get_random(&mut random_output1)
+            .await
+            .expect("failed to send request");
+        let org_request2_id = api2
+            .get_random(&mut random_output2)
+            .await
+            .expect("failed to send request");
+        for _ in 0..2 {
+            core.execute().await.expect("failed to forward request");
+            rng_worker
+                .execute()
+                .await
+                .expect("failed to process request");
+            core.execute().await.expect("failed to forward response");
+        }
+        let client1_id = match api1.recv_response().await {
+            None => panic!("Failed to receive expected response"),
+            Some(response) => match response {
+                Response::GetRandom {
+                    client_id,
+                    request_id,
+                    data,
+                } => {
+                    assert_eq!(request_id, org_request1_id);
+                    assert_eq!(data.len(), REQUEST1_SIZE);
+                    client_id
+                }
+                _ => panic!("Unexpected response type {:?}", response),
+            },
+        };
+        let client2_id = match api2.recv_response().await {
+            None => panic!("Failed to receive expected response"),
+            Some(response) => match response {
+                Response::GetRandom {
+                    client_id,
+                    request_id,
+                    data,
+                } => {
+                    assert_eq!(request_id, org_request2_id);
+                    assert_eq!(data.len(), REQUEST2_SIZE);
+                    client_id
+                }
+                _ => panic!("Unexpected response type {:?}", response),
+            },
+        };
+        assert_ne!(client1_id, client2_id);
     }
 }
