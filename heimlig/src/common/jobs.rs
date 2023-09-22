@@ -33,53 +33,53 @@ pub enum RequestType {
 
 /// A request for the HSM to perform a cryptographic task.
 #[derive(Eq, PartialEq, Debug)]
-pub enum Request<'a> {
+pub enum Request<'data> {
     ImportKey {
         client_id: ClientId,
         request_id: RequestId,
         key_id: KeyId,
-        data: &'a [u8],
+        data: &'data [u8],
     },
     GetRandom {
         client_id: ClientId,
         request_id: RequestId,
-        output: &'a mut [u8],
+        output: &'data mut [u8],
     },
     EncryptChaChaPoly {
         client_id: ClientId,
         request_id: RequestId,
         key_id: KeyId,
-        nonce: &'a [u8],
-        plaintext: &'a mut [u8],
-        aad: &'a [u8],
-        tag: &'a mut [u8],
+        nonce: &'data [u8],
+        plaintext: &'data mut [u8],
+        aad: &'data [u8],
+        tag: &'data mut [u8],
     },
     EncryptChaChaPolyExternalKey {
         client_id: ClientId,
         request_id: RequestId,
-        key: &'a [u8],
-        nonce: &'a [u8],
-        plaintext: &'a mut [u8],
-        aad: &'a [u8],
-        tag: &'a mut [u8],
+        key: &'data [u8],
+        nonce: &'data [u8],
+        plaintext: &'data mut [u8],
+        aad: &'data [u8],
+        tag: &'data mut [u8],
     },
     DecryptChaChaPoly {
         client_id: ClientId,
         request_id: RequestId,
         key_id: KeyId,
-        nonce: &'a [u8],
-        ciphertext: &'a mut [u8],
-        aad: &'a [u8],
-        tag: &'a [u8],
+        nonce: &'data [u8],
+        ciphertext: &'data mut [u8],
+        aad: &'data [u8],
+        tag: &'data [u8],
     },
     DecryptChaChaPolyExternalKey {
         client_id: ClientId,
         request_id: RequestId,
-        key: &'a [u8],
-        nonce: &'a [u8],
-        ciphertext: &'a mut [u8],
-        aad: &'a [u8],
-        tag: &'a [u8],
+        key: &'data [u8],
+        nonce: &'data [u8],
+        ciphertext: &'data mut [u8],
+        aad: &'data [u8],
+        tag: &'data [u8],
     },
 }
 
@@ -125,7 +125,7 @@ impl<'data> Request<'data> {
 
 /// A response from the HSM containing the results of a cryptographic task.
 #[derive(Eq, PartialEq, Debug)]
-pub enum Response<'a> {
+pub enum Response<'data> {
     ImportKey {
         client_id: ClientId,
         request_id: RequestId,
@@ -138,18 +138,18 @@ pub enum Response<'a> {
     GetRandom {
         client_id: ClientId,
         request_id: RequestId,
-        data: &'a mut [u8],
+        data: &'data mut [u8],
     },
     EncryptChaChaPoly {
         client_id: ClientId,
         request_id: RequestId,
-        ciphertext: &'a mut [u8],
-        tag: &'a mut [u8],
+        ciphertext: &'data mut [u8],
+        tag: &'data mut [u8],
     },
     DecryptChaChaPoly {
         client_id: ClientId,
         request_id: RequestId,
-        plaintext: &'a mut [u8],
+        plaintext: &'data mut [u8],
     },
 }
 

@@ -31,12 +31,12 @@ where
 }
 
 /// AES-CBC encryption: generic over an underlying AES implementation.
-fn encrypt_in_place<'a, C, P>(
+fn encrypt_in_place<'data, C, P>(
     key: &[u8],
     iv: &[u8],
-    buffer: &'a mut [u8],
+    buffer: &'data mut [u8],
     plaintext_len: usize,
-) -> Result<&'a [u8], Error>
+) -> Result<&'data [u8], Error>
 where
     C: BlockEncryptMut + BlockCipher + KeyInit,
     P: Padding<C::BlockSize>,
@@ -48,11 +48,11 @@ where
 }
 
 /// AES-CBC decryption: generic over an underlying AES implementation.
-fn decrypt_in_place<'a, C, P>(
+fn decrypt_in_place<'data, C, P>(
     key: &[u8],
     iv: &[u8],
-    buffer: &'a mut [u8],
-) -> Result<&'a [u8], Error>
+    buffer: &'data mut [u8],
+) -> Result<&'data [u8], Error>
 where
     C: BlockDecryptMut + BlockCipher + KeyInit,
     P: Padding<C::BlockSize>,
@@ -69,23 +69,23 @@ macro_rules! define_aes_cbc_impl {
         $decryptor:ident,
         $core:tt
     ) => {
-        pub fn $encryptor<'a, P>(
+        pub fn $encryptor<'data, P>(
             key: &[u8],
             iv: &[u8],
-            buffer: &'a mut [u8],
+            buffer: &'data mut [u8],
             plaintext_len: usize,
-        ) -> Result<&'a [u8], Error>
+        ) -> Result<&'data [u8], Error>
         where
             P: Padding<<$core as BlockSizeUser>::BlockSize>,
         {
             encrypt_in_place::<$core, P>(key, iv, buffer, plaintext_len)
         }
 
-        pub fn $decryptor<'a, P>(
+        pub fn $decryptor<'data, P>(
             key: &[u8],
             iv: &[u8],
-            buffer: &'a mut [u8],
-        ) -> Result<&'a [u8], Error>
+            buffer: &'data mut [u8],
+        ) -> Result<&'data [u8], Error>
         where
             P: Padding<<$core as BlockSizeUser>::BlockSize>,
         {

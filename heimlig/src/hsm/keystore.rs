@@ -31,7 +31,7 @@ pub trait KeyStore {
     /// Read key from storage and write it to `dest`.
     ///
     /// returns: The number of bytes written to `dest` or and error.
-    fn export<'a>(&self, id: KeyId, dest: &'a mut [u8]) -> Result<&'a [u8], Error>;
+    fn export<'data>(&self, id: KeyId, dest: &'data mut [u8]) -> Result<&'data [u8], Error>;
 
     /// Delete the key belonging to `id`.
     ///
@@ -139,7 +139,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         }
     }
 
-    fn export<'a>(&self, id: KeyId, dest: &'a mut [u8]) -> Result<&'a [u8], Error> {
+    fn export<'data>(&self, id: KeyId, dest: &'data mut [u8]) -> Result<&'data [u8], Error> {
         match self.infos.iter().find(|key_info| key_info.id == id) {
             None => Err(Error::InvalidKeyId),
             Some(key_info) => {

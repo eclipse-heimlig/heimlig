@@ -130,44 +130,44 @@ impl<
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn encrypt_external_key<'a>(
+    pub fn encrypt_external_key(
         &mut self,
         client_id: ClientId,
         request_id: RequestId,
         key: &[u8],
         nonce: &[u8],
         aad: &[u8],
-        ciphertext: &'a mut [u8],
-        tag: &'a mut [u8],
-    ) -> Response<'a> {
+        ciphertext: &'data mut [u8],
+        tag: &'data mut [u8],
+    ) -> Response<'data> {
         self.encrypt(client_id, request_id, key, nonce, aad, ciphertext, tag)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn decrypt_external_key<'a>(
+    pub fn decrypt_external_key(
         &mut self,
         client_id: ClientId,
         request_id: RequestId,
         key: &[u8],
         nonce: &[u8],
         aad: &[u8],
-        plaintext: &'a mut [u8],
+        plaintext: &'data mut [u8],
         tag: &[u8],
-    ) -> Response<'a> {
+    ) -> Response<'data> {
         self.decrypt(client_id, request_id, key, nonce, aad, plaintext, tag)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn encrypt<'a>(
+    pub fn encrypt(
         &mut self,
         client_id: ClientId,
         request_id: RequestId,
         key: &[u8],
         nonce: &[u8],
         aad: &[u8],
-        ciphertext: &'a mut [u8],
-        tag: &'a mut [u8],
-    ) -> Response<'a> {
+        ciphertext: &'data mut [u8],
+        tag: &'data mut [u8],
+    ) -> Response<'data> {
         match crypto::chacha20poly1305::encrypt_in_place_detached(key, nonce, aad, ciphertext) {
             Ok(computed_tag) => {
                 if computed_tag.len() != tag.len() {
@@ -194,16 +194,16 @@ impl<
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn decrypt<'a>(
+    pub fn decrypt(
         &mut self,
         client_id: ClientId,
         request_id: RequestId,
         key: &[u8],
         nonce: &[u8],
         aad: &[u8],
-        plaintext: &'a mut [u8],
+        plaintext: &'data mut [u8],
         tag: &[u8],
-    ) -> Response<'a> {
+    ) -> Response<'data> {
         match crypto::chacha20poly1305::decrypt_in_place_detached(key, nonce, aad, plaintext, tag) {
             Ok(()) => Response::DecryptChaChaPoly {
                 client_id,

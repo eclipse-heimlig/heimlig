@@ -41,12 +41,12 @@ impl<
         }
     }
 
-    fn get_random<'a>(
+    fn get_random(
         &mut self,
         client_id: ClientId,
         request_id: RequestId,
-        output: &'a mut [u8],
-    ) -> Response<'a> {
+        output: &'data mut [u8],
+    ) -> Response<'data> {
         if output.len() >= MAX_RANDOM_SIZE {
             return Response::Error {
                 client_id,
