@@ -4,9 +4,9 @@
 
 ## Overview
 
-Internally, Heimlig works by process requests for cryptographic work and returning corresponding
-responses. Every request must be answered by exactly on response that contains the result or an
-error. These requests-responses pairs are exchanged between three main component groups:
+Internally, Heimlig works by processing requests for cryptographic work and returning corresponding
+responses. Every request must be answered by exactly one response that contains the result or an
+error. These request-response pairs are exchanged between three main component groups:
 
 1. The HSM API running on the host cores where client applications are located.
 2. The Heimlig core running on the HSM core that handles incoming requests and outgoing responses.
@@ -22,9 +22,9 @@ The flow of request-response pairs is as follows:
 - A client application running on a host core calls the HSM API to do some cryptographic work.
 - The host-side API generates a request message and adds it to the queue leading to the Heimlig
   core.
-- The core receives the requests, checks if for validity and forwards it to the corresponding crypto
+- The core receives the request, checks it for validity and forwards it to the corresponding crypto
   worker via the queue to that worker.
-- The crypto worker accepts the requests, processes the desired cryptographic operation and returns
+- The crypto worker accepts the request, processes the desired cryptographic operation and returns
   it to the core.
 - The core receives the response and forwards it to the client that sent the original request.
 - The host-side API receives the response and either copies the received data to the application or
@@ -33,12 +33,13 @@ The flow of request-response pairs is as follows:
 ## Allocation
 
 Heimlig is a [`no_std`](https://docs.rust-embedded.org/book/intro/no-std.html) crate, meaning it
-does not use the heap or use the Rust standard library. For stack allocations, Heimlig requires a
+uses neither the heap nor the Rust standard library. For stack allocations, Heimlig requires an
 exclusive protected memory region.
 
 For data that is referenced in requests and responses, memory is usually allocated in a shared
 memory region that is visible from both the host and the HSM cores. To prevent data races between
-these cores, allocating and deallocating are done by the host only. This means that the memory that might be required by a non-error response is already allocated when the request is generated.
+these cores, allocating and deallocating are done by the host only. This means that the memory
+that might be required by a non-error response is already allocated when the request is generated.
 
 If a client calls the API on the host, the API allocates memory from the shared memory region and
 copies data from the client to it. References to the allocated memory are then handed over to the
@@ -53,11 +54,11 @@ means that both the core as well as each individual crypto worker can run in sep
 For example,
 [`embassy_executor::task`](https://docs.embassy.dev/embassy-executor/git/cortex-m/attr.task.html)
 can be used for this purpose. Synchronization between different tasks is done by communicating via
-single producer single consumer queues like
+queues like
 [`embassy_sync::channel`](https://docs.embassy.dev/embassy-sync/git/default/channel/index.html) or
 [`heapless::spsc::Queue`](https://docs.rs/heapless/latest/heapless/spsc/index.html).
 
-## Separation Heimlig and Integration Code
+## Separation of Heimlig and Integration Code
 
 As a low-level component, Heimlig consists of both hardware-independent and -dependent parts. Where
 possible, interfacing with hardware-dependent parts is modelled with traits that then have to be
