@@ -2,77 +2,102 @@ use crate::common::jobs::{Request, Response};
 use core::cell::RefCell;
 use core::pin::Pin;
 use core::task::{Context, Poll};
-use embassy_sync::blocking_mutex;
-use embassy_sync::blocking_mutex::raw::RawMutex;
+use critical_section::Mutex;
 use embassy_sync::waitqueue::WakerRegistration;
-use heapless::spsc::{Consumer, Producer};
+use heapless::spsc::{Consumer, Producer, Queue};
 
-pub struct RequestQueueSource<'ch, 'data, M: RawMutex + Unpin, const QUEUE_SIZE: usize> {
-    consumer: Consumer<'ch, Request<'data>, QUEUE_SIZE>,
-    sender_waker: blocking_mutex::Mutex<M, RefCell<WakerRegistration>>,
+pub type RequestQueueSink<'ch, 'data, const QUEUE_SIZE: usize> =
+    AsyncQueueSink<'ch, Request<'data>, QUEUE_SIZE>;
+
+pub type RequestQueueSource<'ch, 'data, const QUEUE_SIZE: usize> =
+    AsyncQueueSource<'ch, Request<'data>, QUEUE_SIZE>;
+
+pub type ResponseQueueSink<'ch, 'data, const QUEUE_SIZE: usize> =
+    AsyncQueueSink<'ch, Response<'data>, QUEUE_SIZE>;
+
+pub type ResponseQueueSource<'ch, 'data, const QUEUE_SIZE: usize> =
+    AsyncQueueSource<'ch, Response<'data>, QUEUE_SIZE>;
+
+pub struct AsyncQueue<T, const QUEUE_SIZE: usize> {
+    queue: Queue<T, QUEUE_SIZE>,
+    receiver_waker: Mutex<RefCell<WakerRegistration>>,
+    sender_waker: Mutex<RefCell<WakerRegistration>>,
 }
 
-pub struct ResponseQueueSink<'ch, 'data, M: RawMutex + Unpin, const QUEUE_SIZE: usize> {
-    producer: Producer<'ch, Response<'data>, QUEUE_SIZE>,
-    receiver_waker: blocking_mutex::Mutex<M, RefCell<WakerRegistration>>,
-    sender_waker: blocking_mutex::Mutex<M, RefCell<WakerRegistration>>,
-}
+impl<T, const QUEUE_SIZE: usize> AsyncQueue<T, QUEUE_SIZE> {
+    pub fn new() -> Self {
+        Self {
+            queue: Default::default(),
+            receiver_waker: Mutex::new(RefCell::new(WakerRegistration::new())),
+            sender_waker: Mutex::new(RefCell::new(WakerRegistration::new())),
+        }
+    }
 
-pub struct ResponseQueueSource<'ch, 'data, M: RawMutex + Unpin, const QUEUE_SIZE: usize> {
-    consumer: Consumer<'ch, Response<'data>, QUEUE_SIZE>,
-    senders_waker: blocking_mutex::Mutex<M, RefCell<WakerRegistration>>,
-}
-
-pub struct RequestQueueSink<'ch, 'data, M: RawMutex + Unpin, const QUEUE_SIZE: usize> {
-    producer: Producer<'ch, Request<'data>, QUEUE_SIZE>,
-    receiver_waker: blocking_mutex::Mutex<M, RefCell<WakerRegistration>>,
-    sender_waker: blocking_mutex::Mutex<M, RefCell<WakerRegistration>>,
-}
-
-impl<'data, M: RawMutex + Unpin, const QUEUE_SIZE: usize> futures::Stream
-    for RequestQueueSource<'_, 'data, M, QUEUE_SIZE>
-{
-    type Item = Request<'data>;
-
-    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.sender_waker.lock(|w| w.borrow_mut().wake());
-        // No need to return pending and wake a receiver waker as dequeue() always returns directly
-        Poll::Ready(self.get_mut().consumer.dequeue())
+    pub fn split(
+        &mut self,
+    ) -> (
+        AsyncQueueSink<'_, T, QUEUE_SIZE>,
+        AsyncQueueSource<'_, T, QUEUE_SIZE>,
+    ) {
+        let (producer, consumer) = self.queue.split();
+        (
+            AsyncQueueSink {
+                producer,
+                receiver_waker: &self.receiver_waker,
+                sender_waker: &self.sender_waker,
+            },
+            AsyncQueueSource {
+                consumer,
+                receiver_waker: &self.receiver_waker,
+                sender_waker: &self.sender_waker,
+            },
+        )
     }
 }
 
-impl<'ch, 'data, M: RawMutex + Unpin, const QUEUE_SIZE: usize>
-    RequestQueueSource<'ch, 'data, M, QUEUE_SIZE>
-{
-    pub fn new(requests: Consumer<'ch, Request<'data>, QUEUE_SIZE>) -> Self {
-        RequestQueueSource {
-            consumer: requests,
-            sender_waker: blocking_mutex::Mutex::new(RefCell::new(WakerRegistration::new())),
+pub struct AsyncQueueSource<'ch, T, const QUEUE_SIZE: usize> {
+    consumer: Consumer<'ch, T, QUEUE_SIZE>,
+    receiver_waker: &'ch Mutex<RefCell<WakerRegistration>>,
+    sender_waker: &'ch Mutex<RefCell<WakerRegistration>>,
+}
+
+pub struct AsyncQueueSink<'ch, T, const QUEUE_SIZE: usize> {
+    producer: Producer<'ch, T, QUEUE_SIZE>,
+    receiver_waker: &'ch Mutex<RefCell<WakerRegistration>>,
+    sender_waker: &'ch Mutex<RefCell<WakerRegistration>>,
+}
+
+impl<T, const QUEUE_SIZE: usize> futures::Stream for AsyncQueueSource<'_, T, QUEUE_SIZE> {
+    type Item = T;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if let Some(item) = self.consumer.dequeue() {
+            critical_section::with(|cs| self.sender_waker.borrow_ref_mut(cs).wake());
+            Poll::Ready(Some(item))
+        } else {
+            critical_section::with(|cs| {
+                self.receiver_waker.borrow_ref_mut(cs).register(cx.waker())
+            });
+            Poll::Pending
         }
     }
 }
 
-impl<'data, M: RawMutex + Unpin, const QUEUE_SIZE: usize> futures::Sink<Response<'data>>
-    for ResponseQueueSink<'_, 'data, M, QUEUE_SIZE>
-{
+impl<T, const QUEUE_SIZE: usize> futures::Sink<T> for AsyncQueueSink<'_, T, QUEUE_SIZE> {
     type Error = ();
 
-    fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         if self.producer.ready() {
             Poll::Ready(Ok(()))
         } else {
-            self.sender_waker.lock(|w| w.borrow_mut().wake());
+            critical_section::with(|cs| self.sender_waker.borrow_ref_mut(cs).register(cx.waker()));
             Poll::Pending
         }
     }
 
-    fn start_send(self: Pin<&mut Self>, response: Response<'data>) -> Result<(), Self::Error> {
-        self.receiver_waker.lock(|w| w.borrow_mut().wake());
-        self.get_mut()
-            .producer
-            .enqueue(response)
-            // Should never happen as a previous successful call to poll_ready can be assumed by contract
-            .expect("Queue was full");
+    fn start_send(self: Pin<&mut Self>, item: T) -> Result<(), Self::Error> {
+        critical_section::with(|cs| self.receiver_waker.borrow_ref_mut(cs).wake());
+        let _ = self.get_mut().producer.enqueue(item);
         Ok(())
     }
 
@@ -82,85 +107,5 @@ impl<'data, M: RawMutex + Unpin, const QUEUE_SIZE: usize> futures::Sink<Response
 
     fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
-    }
-}
-
-impl<'ch, 'data, M: RawMutex + Unpin, const QUEUE_SIZE: usize>
-    ResponseQueueSink<'ch, 'data, M, QUEUE_SIZE>
-{
-    pub fn new(responses: Producer<'ch, Response<'data>, QUEUE_SIZE>) -> Self {
-        ResponseQueueSink {
-            producer: responses,
-            receiver_waker: blocking_mutex::Mutex::new(RefCell::new(WakerRegistration::new())),
-            sender_waker: blocking_mutex::Mutex::new(RefCell::new(WakerRegistration::new())),
-        }
-    }
-}
-
-impl<'data, M: RawMutex + Unpin, const QUEUE_SIZE: usize> futures::Stream
-    for ResponseQueueSource<'_, 'data, M, QUEUE_SIZE>
-{
-    type Item = Response<'data>;
-
-    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.senders_waker.lock(|w| w.borrow_mut().wake());
-        // No need to return pending and wake a receiver waker as dequeue() always returns directly
-        Poll::Ready(self.get_mut().consumer.dequeue())
-    }
-}
-
-impl<'ch, 'data, M: RawMutex + Unpin, const QUEUE_SIZE: usize>
-    ResponseQueueSource<'ch, 'data, M, QUEUE_SIZE>
-{
-    pub fn new(responses: Consumer<'ch, Response<'data>, QUEUE_SIZE>) -> Self {
-        ResponseQueueSource {
-            consumer: responses,
-            senders_waker: blocking_mutex::Mutex::new(RefCell::new(WakerRegistration::new())),
-        }
-    }
-}
-
-impl<'data, M: RawMutex + Unpin, const QUEUE_SIZE: usize> futures::Sink<Request<'data>>
-    for RequestQueueSink<'_, 'data, M, QUEUE_SIZE>
-{
-    type Error = ();
-
-    fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        if self.producer.ready() {
-            Poll::Ready(Ok(()))
-        } else {
-            self.sender_waker.lock(|w| w.borrow_mut().wake());
-            Poll::Pending
-        }
-    }
-
-    fn start_send(self: Pin<&mut Self>, request: Request<'data>) -> Result<(), Self::Error> {
-        self.receiver_waker.lock(|w| w.borrow_mut().wake());
-        self.get_mut()
-            .producer
-            .enqueue(request)
-            // Should never happen as a previous successful call to poll_ready can be assumed by contract
-            .expect("Queue was full");
-        Ok(())
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-}
-
-impl<'ch, 'data, M: RawMutex + Unpin, const QUEUE_SIZE: usize>
-    RequestQueueSink<'ch, 'data, M, QUEUE_SIZE>
-{
-    pub fn new(requests: Producer<'ch, Request<'data>, QUEUE_SIZE>) -> Self {
-        RequestQueueSink {
-            producer: requests,
-            receiver_waker: blocking_mutex::Mutex::new(RefCell::new(WakerRegistration::new())),
-            sender_waker: blocking_mutex::Mutex::new(RefCell::new(WakerRegistration::new())),
-        }
     }
 }

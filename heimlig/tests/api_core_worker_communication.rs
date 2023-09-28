@@ -1,7 +1,6 @@
 mod tests {
     use embassy_sync::blocking_mutex::raw::{NoopRawMutex, RawMutex};
     use embassy_sync::mutex::Mutex;
-    use heapless::spsc::{Consumer, Producer, Queue};
     use heimlig::client::api::Api;
     use heimlig::client::api::SymmetricEncryptionAlgorithm::ChaCha20Poly1305;
     use heimlig::common::jobs;
@@ -16,7 +15,7 @@ mod tests {
     use heimlig::hsm::workers::chachapoly_worker::ChaChaPolyWorker;
     use heimlig::hsm::workers::rng_worker::RngWorker;
     use heimlig::integration::embassy::{
-        RequestQueueSink, RequestQueueSource, ResponseQueueSink, ResponseQueueSource,
+        AsyncQueue, RequestQueueSink, RequestQueueSource, ResponseQueueSink, ResponseQueueSource,
     };
 
     const QUEUE_SIZE: usize = 8;
@@ -45,26 +44,17 @@ mod tests {
     }
 
     fn split_queues<'ch, 'data>(
-        requests: &'ch mut Queue<Request<'data>, QUEUE_SIZE>,
-        responses: &'ch mut Queue<Response<'data>, QUEUE_SIZE>,
+        requests: &'ch mut AsyncQueue<Request<'data>, QUEUE_SIZE>,
+        responses: &'ch mut AsyncQueue<Response<'data>, QUEUE_SIZE>,
     ) -> (
-        RequestQueueSource<'ch, 'data, NoopRawMutex, QUEUE_SIZE>,
-        RequestQueueSink<'ch, 'data, NoopRawMutex, QUEUE_SIZE>,
-        ResponseQueueSource<'ch, 'data, NoopRawMutex, QUEUE_SIZE>,
-        ResponseQueueSink<'ch, 'data, NoopRawMutex, QUEUE_SIZE>,
+        RequestQueueSource<'ch, 'data, QUEUE_SIZE>,
+        RequestQueueSink<'ch, 'data, QUEUE_SIZE>,
+        ResponseQueueSource<'ch, 'data, QUEUE_SIZE>,
+        ResponseQueueSink<'ch, 'data, QUEUE_SIZE>,
     ) {
-        let (requests_tx, requests_rx): (
-            Producer<Request, QUEUE_SIZE>,
-            Consumer<Request, QUEUE_SIZE>,
-        ) = requests.split();
-        let (response_tx, response_rx): (
-            Producer<Response, QUEUE_SIZE>,
-            Consumer<Response, QUEUE_SIZE>,
-        ) = responses.split();
-        let requests_rx = RequestQueueSource::new(requests_rx);
-        let requests_tx = RequestQueueSink::new(requests_tx);
-        let response_rx = ResponseQueueSource::new(response_rx);
-        let response_tx = ResponseQueueSink::new(response_tx);
+        let (requests_tx, requests_rx) = requests.split();
+        let (response_tx, response_rx) = responses.split();
+
         (requests_rx, requests_tx, response_rx, response_tx)
     }
 
@@ -87,10 +77,10 @@ mod tests {
         'data,
         'keystore,
         M,
-        RequestQueueSource<'ch, 'data, M, QUEUE_SIZE>,
-        ResponseQueueSink<'ch, 'data, M, QUEUE_SIZE>,
-        RequestQueueSink<'ch, 'data, M, QUEUE_SIZE>,
-        ResponseQueueSource<'ch, 'data, M, QUEUE_SIZE>,
+        RequestQueueSource<'ch, 'data, QUEUE_SIZE>,
+        ResponseQueueSink<'ch, 'data, QUEUE_SIZE>,
+        RequestQueueSink<'ch, 'data, QUEUE_SIZE>,
+        ResponseQueueSource<'ch, 'data, QUEUE_SIZE>,
     > {
         Builder::default()
     }
@@ -109,10 +99,10 @@ mod tests {
         const REQUEST_SIZE: usize = 16;
         let mut random_output = [0u8; REQUEST_SIZE];
         let rng = init_rng();
-        let mut client_requests = Queue::<Request, QUEUE_SIZE>::new();
-        let mut client_responses = Queue::<Response, QUEUE_SIZE>::new();
-        let mut rng_requests = Queue::<Request, QUEUE_SIZE>::new();
-        let mut rng_responses = Queue::<Response, QUEUE_SIZE>::new();
+        let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut client_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let mut rng_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut rng_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
         let (req_client_rx, req_client_tx, resp_client_rx, resp_client_tx) =
             split_queues(&mut client_requests, &mut client_responses);
         let (rng_requests_rx, rng_requests_tx, rng_responses_rx, rng_responses_tx) =
@@ -159,10 +149,10 @@ mod tests {
         const REQUEST_SIZE: usize = MAX_RANDOM_SIZE + 1;
         let mut random_output = [0u8; REQUEST_SIZE];
         let rng = init_rng();
-        let mut client_requests = Queue::<Request, QUEUE_SIZE>::new();
-        let mut client_responses = Queue::<Response, QUEUE_SIZE>::new();
-        let mut rng_requests = Queue::<Request, QUEUE_SIZE>::new();
-        let mut rng_responses = Queue::<Response, QUEUE_SIZE>::new();
+        let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut client_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let mut rng_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut rng_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
         let (req_client_rx, req_client_tx, resp_client_rx, resp_client_tx) =
             split_queues(&mut client_requests, &mut client_responses);
         let (rng_requests_rx, rng_requests_tx, rng_responses_rx, rng_responses_tx) =
@@ -208,10 +198,10 @@ mod tests {
     async fn encrypt_chachapoly() {
         let (key, nonce, mut plaintext, aad, mut tag) = alloc_chachapoly_vars();
         let org_plaintext = plaintext;
-        let mut client_requests = Queue::<Request, QUEUE_SIZE>::new();
-        let mut client_responses = Queue::<Response, QUEUE_SIZE>::new();
-        let mut chachapoly_requests = Queue::<Request, QUEUE_SIZE>::new();
-        let mut chachapoly_responses = Queue::<Response, QUEUE_SIZE>::new();
+        let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut client_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let mut chachapoly_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut chachapoly_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
         let (req_client_rx, req_client_tx, resp_client_rx, resp_client_tx) =
             split_queues(&mut client_requests, &mut client_responses);
         let (
@@ -329,10 +319,10 @@ mod tests {
     async fn encrypt_chachapoly_external_key() {
         let (key, nonce, mut plaintext, aad, mut tag) = alloc_chachapoly_vars();
         let org_plaintext = plaintext;
-        let mut client_requests = Queue::<Request, QUEUE_SIZE>::new();
-        let mut client_responses = Queue::<Response, QUEUE_SIZE>::new();
-        let mut chachapoly_requests = Queue::<Request, QUEUE_SIZE>::new();
-        let mut chachapoly_responses = Queue::<Response, QUEUE_SIZE>::new();
+        let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut client_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let mut chachapoly_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut chachapoly_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
         let (req_client_rx, req_client_tx, resp_client_rx, resp_client_tx) =
             split_queues(&mut client_requests, &mut client_responses);
         let (
@@ -432,12 +422,12 @@ mod tests {
         let mut random_output1 = [0u8; REQUEST1_SIZE];
         let mut random_output2 = [0u8; REQUEST2_SIZE];
         let rng = init_rng();
-        let mut client1_requests = Queue::<Request, QUEUE_SIZE>::new();
-        let mut client1_responses = Queue::<Response, QUEUE_SIZE>::new();
-        let mut client2_requests = Queue::<Request, QUEUE_SIZE>::new();
-        let mut client2_responses = Queue::<Response, QUEUE_SIZE>::new();
-        let mut rng_requests = Queue::<Request, QUEUE_SIZE>::new();
-        let mut rng_responses = Queue::<Response, QUEUE_SIZE>::new();
+        let mut client1_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut client1_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let mut client2_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut client2_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let mut rng_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut rng_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
         let (req_client1_rx, req_client1_tx, resp_client1_rx, resp_client1_tx) =
             split_queues(&mut client1_requests, &mut client1_responses);
         let (req_client2_rx, req_client2_tx, resp_client2_rx, resp_client2_tx) =

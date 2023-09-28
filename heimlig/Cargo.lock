@@ -721,6 +721,7 @@ dependencies = [
  "cbc",
  "ccm",
  "chacha20poly1305",
+ "critical-section",
  "ecdsa",
  "ed25519-dalek",
  "elliptic-curve",
