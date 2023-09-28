@@ -1,4 +1,5 @@
 use crate::crypto::{check_sizes, check_sizes_with_tag, Error};
+use aes::{cipher::typenum::Same, cipher::Unsigned};
 use aes_gcm::{
     aead::{
         consts::{U12, U16},
@@ -6,7 +7,6 @@ use aes_gcm::{
     },
     AeadInPlace, Aes128Gcm, Aes256Gcm, KeyInit,
 };
-use generic_array::typenum::{Same, Unsigned};
 
 pub type SupportedNonceSize = U12;
 pub type SupportedTagSize = U16;
