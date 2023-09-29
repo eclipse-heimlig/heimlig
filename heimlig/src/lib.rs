@@ -1,4 +1,5 @@
 #![no_std]
+#![feature(async_closure)]
 
 pub mod client;
 pub mod common;
