@@ -1,11 +1,21 @@
+use crate::client;
 use crate::common::jobs;
 use crate::common::jobs::{ClientId, Request, RequestType, Response};
 use crate::hsm::keystore::KeyStore;
+use core::borrow::BorrowMut;
+use core::cell::RefCell;
+use core::future::{pending, poll_fn, ready};
 use core::ops::DerefMut;
+use core::pin::Pin;
+use core::task::Poll;
+use embassy_futures::select::select_array;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
-use futures::{Sink, SinkExt, Stream, StreamExt};
+use futures::future::{join, select, Either};
+use futures::{FutureExt, Sink, SinkExt, Stream, StreamExt};
 use heapless::Vec;
+
+use super::util::join_vec;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum Error {
@@ -29,13 +39,15 @@ pub struct Core<
     const MAX_WORKERS: usize = 8,
 > {
     key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
-    clients: Vec<ClientChannel<'data, ReqSrc, RespSink>, MAX_CLIENTS>,
-    workers: Vec<WorkerChannel<'data, ReqSink, RespSrc, MAX_REQUEST_TYPES>, MAX_WORKERS>,
+    clients: Vec<RefCell<ClientChannel<'data, ReqSrc, RespSink>>, MAX_CLIENTS>,
+    workers: Vec<RefCell<WorkerChannel<'data, ReqSink, RespSrc, MAX_REQUEST_TYPES>>, MAX_WORKERS>,
+    last_client_id: usize,
+    last_worker_id: usize,
 }
 
 struct ClientChannel<'data, ReqSrc: Stream<Item = Request<'data>>, RespSink: Sink<Response<'data>>>
 {
-    requests: ReqSrc,
+    requests: futures::stream::Peekable<ReqSrc>,
     responses: RespSink,
 }
 
@@ -48,7 +60,7 @@ struct WorkerChannel<
 > {
     pub req_types: Vec<RequestType, MAX_REQUEST_TYPES_PER_WORKER>,
     pub requests: ReqSink,
-    pub responses: RespSrc,
+    pub responses: futures::stream::Peekable<RespSrc>,
 }
 
 pub struct Builder<
@@ -64,8 +76,8 @@ pub struct Builder<
     const MAX_WORKERS: usize = 8,
 > {
     key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
-    clients: Vec<ClientChannel<'data, ReqSrc, RespSink>, MAX_CLIENTS>,
-    workers: Vec<WorkerChannel<'data, ReqSink, RespSrc, MAX_REQUEST_TYPES>, MAX_WORKERS>,
+    clients: Vec<RefCell<ClientChannel<'data, ReqSrc, RespSink>>, MAX_CLIENTS>,
+    workers: Vec<RefCell<WorkerChannel<'data, ReqSink, RespSrc, MAX_REQUEST_TYPES>>, MAX_WORKERS>,
 }
 
 impl<
@@ -153,10 +165,10 @@ impl<
     pub fn with_client(mut self, requests: ReqSrc, responses: RespSink) -> Self {
         if self
             .clients
-            .push(ClientChannel {
-                requests,
+            .push(RefCell::new(ClientChannel {
+                requests: requests.peekable(),
                 responses,
-            })
+            }))
             .is_err()
         {
             panic!("Failed to add client channel");
@@ -170,21 +182,21 @@ impl<
         requests: ReqSink,
         responses: RespSrc,
     ) -> Self {
-        for channel in &self.workers {
+        for channel in &mut self.workers {
             for req_type in req_types {
-                if channel.req_types.contains(req_type) {
+                if channel.get_mut().req_types.contains(req_type) {
                     panic!("Channel for given request type already exists");
                 }
             }
         }
         if self
             .workers
-            .push(WorkerChannel {
+            .push(RefCell::new(WorkerChannel {
                 req_types: Vec::from_slice(req_types)
                     .expect("Maximum number of request types for single worker exceeded"),
                 requests,
-                responses,
-            })
+                responses: responses.peekable(),
+            }))
             .is_err()
         {
             panic!("Failed to add worker channel");
@@ -210,6 +222,8 @@ impl<
             key_store: self.key_store,
             clients: self.clients,
             workers: self.workers,
+            last_client_id: 0,
+            last_worker_id: 0,
         }
     }
 }
@@ -240,43 +254,144 @@ impl<
     >
 {
     pub async fn execute(&mut self) -> Result<(), Error> {
-        self.process_worker_responses().await?;
-        self.process_client_requests().await?;
+        self.process_client_requests().await;
+        // self.process_worker_responses()?;
         Ok(())
     }
 
     /// Search all input channels for a new request and process it.
     /// Channels are processed in a round-robin fashion.
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(true)` if a [Request] was found and successfully processed.
-    /// * `Ok(false)` if no [Request] was found in any input [ClientChannel].
-    /// * `Err(core::Error)` if a processing error occurred.
-    async fn process_client_requests(&mut self) -> Result<(), Error> {
-        for (client_id, client) in &mut self.clients.iter_mut().enumerate() {
-            let request = client.requests.next().await;
-            if let Some(mut request) = request {
-                request.set_client_id(client_id as ClientId);
-                return self.process_request(request).await;
-            }
+    async fn process_client_requests(&mut self) {
+        let number_of_clients = self.clients.len();
+        let (left, right) = self
+            .clients
+            .split_at_mut((self.last_client_id + 1) % number_of_clients);
+        let clients_iterator = right.into_iter().chain(left.into_iter());
+
+        let mut client_refs =
+            Vec::<_, MAX_CLIENTS>::from_iter(clients_iterator.map(|client| (*client).borrow_mut()));
+
+        let mut client_futures =
+            Vec::<_, MAX_CLIENTS>::from_iter(client_refs.iter_mut().map(|client| {
+                let requests = Pin::new(&mut client.requests);
+                requests
+                    .peek()
+                    .then(|request| {
+                        let request_type = request.expect("requests stream died").get_type();
+                        let worker_channel = self
+                            .workers
+                            .iter()
+                            .find(|c| {
+                                c.try_borrow()
+                                    .expect("futures are expected to be polled sequentially")
+                                    .req_types
+                                    .contains(&request_type)
+                            })
+                            .expect("Failed to find worker channel for request type");
+                        poll_fn(move |cx| {
+                            worker_channel
+                                .try_borrow_mut()
+                                .expect("futures are expected to be polled sequentially")
+                                .requests
+                                .poll_ready_unpin(cx)
+                                .map(|_| (worker_channel))
+                        })
+                    })
+                    .left_future()
+            }));
+        for _ in client_futures.len()..client_futures.capacity() {
+            unsafe { client_futures.push_unchecked(pending().right_future()) };
         }
-        Ok(()) // Nothing to process
+
+        let (worker_channel, client_index) = select_array(
+            client_futures
+                .into_array::<MAX_CLIENTS>()
+                .map_err(|_| ())
+                .expect("vec was extended up to capacity"),
+        )
+        .await;
+
+        drop(client_refs);
+
+        assert!(client_index < number_of_clients);
+        self.last_client_id = (client_index + self.last_client_id + 1) % number_of_clients;
+        let request = self.clients[client_index]
+            .borrow_mut()
+            .requests
+            .next()
+            .await
+            .expect("request stream died");
+        worker_channel
+            .borrow_mut()
+            .requests
+            .send(request)
+            .await
+            .map_err(|_| ())
+            .expect("request sink died");
     }
 
     async fn process_worker_responses(&mut self) -> Result<(), Error> {
-        let workers_len = self.workers.len();
-        for worker_index in 0..workers_len {
-            let worker = self.workers.get_mut(worker_index);
-            if let Some(worker) = worker {
-                let response = worker.responses.next().await;
-                if let Some(response) = response {
-                    self.send_to_client(response).await?;
-                }
-            } else {
-                panic!("Invalid internal worker ID");
-            }
-        }
+        // let number_of_workers = self.workers.len();
+        // let (left, right) = self
+        //     .workers
+        //     .split_at_mut((self.last_worker_id + 1) % number_of_workers);
+        // let mut workers_iterator = right.into_iter().chain(left.into_iter());
+
+        // let workers: [_; MAX_WORKERS] = core::array::from_fn(|_| {
+        //     if let Some(&mut worker) = workers_iterator.next() {
+        //         let worker_responses = Pin::new(&mut worker.borrow_mut().responses);
+        //         worker_responses
+        //             .peek()
+        //             .then(|response| {
+        //                 // let request_type = request.expect("requests stream died").get_type();
+        //                 let client_channel =
+        //                     self.clients
+        //                         .get_mut(response.expect("response stream died").get_client_id()
+        //                             as usize)
+        //                         .expect("Invalid internal client ID");
+        //                 poll_fn(move |cx| {
+        //                     client_channel
+        //                         .try_borrow_mut()
+        //                         .expect("futures are expected to be polled sequentially")
+        //                         .responses
+        //                         .poll_ready_unpin(cx)
+        //                         .map(|_| (client_channel))
+        //                 })
+        //             })
+        //             .left_future()
+        //     } else {
+        //         pending().right_future()
+        //     }
+        // });
+
+        // let (worker_channel, client_index) = select_array(workers).await;
+        // assert!(client_index < self.clients.len());
+        // self.last_client_id = (client_index + self.last_client_id + 1) % number_of_clients;
+        // let request = self.clients[client_index]
+        //     .requests
+        //     .next()
+        //     .await
+        //     .expect("request stream died");
+        // worker_channel
+        //     .borrow_mut()
+        //     .requests
+        //     .send(request)
+        //     .await
+        //     .map_err(|_| ())
+        //     .expect("request sink died");
+
+        // let workers_len = self.workers.len();
+        // for worker_index in 0..workers_len {
+        //     let worker = self.workers.get_mut(worker_index);
+        //     if let Some(worker) = worker {
+        //         let response = worker.get_mut().responses.next().await;
+        //         if let Some(response) = response {
+        //             self.send_to_client(response).await?;
+        //         }
+        //     } else {
+        //         panic!("Invalid internal worker ID");
+        //     }
+        // }
         Ok(()) // Nothing to process
     }
 
@@ -320,9 +435,10 @@ impl<
                 let channel = self
                     .workers
                     .iter_mut()
-                    .find(|c| c.req_types.contains(&request.get_type()))
+                    .find(|c| c.borrow().req_types.contains(&request.get_type()))
                     .expect("Failed to find worker channel for request type");
                 channel
+                    .get_mut()
                     .requests
                     .send(request)
                     .await
@@ -334,8 +450,9 @@ impl<
 
     async fn send_to_client(&mut self, response: Response<'data>) -> Result<(), Error> {
         let client_id = response.get_client_id();
-        if let Some(client) = self.clients.get_mut(client_id as usize) {
+        if let Some(client) = self.clients.get(client_id as usize) {
             client
+                .borrow_mut()
                 .responses
                 .send(response)
                 .await

@@ -1,6 +1,7 @@
 mod tests {
     use embassy_sync::blocking_mutex::raw::{NoopRawMutex, RawMutex};
     use embassy_sync::mutex::Mutex;
+    use futures::future::join;
     use heimlig::client::api::Api;
     use heimlig::client::api::SymmetricEncryptionAlgorithm::ChaCha20Poly1305;
     use heimlig::common::jobs;
@@ -122,11 +123,9 @@ mod tests {
             .get_random(&mut random_output)
             .await
             .expect("failed to send request");
-        core.execute().await.expect("failed to forward request");
-        rng_worker
-            .execute()
-            .await
-            .expect("failed to process request");
+        let (core_res, worker_res) = join(core.execute(), rng_worker.execute()).await;
+        core_res.expect("failed to forward request");
+        worker_res.expect("failed to process request");
         core.execute().await.expect("failed to forward response");
         match api.recv_response().await {
             None => panic!("Failed to receive expected response"),
@@ -172,11 +171,9 @@ mod tests {
             .get_random(&mut random_output)
             .await
             .expect("failed to send request");
-        core.execute().await.expect("failed to forward request");
-        rng_worker
-            .execute()
-            .await
-            .expect("failed to process request");
+        let (core_res, worker_res) = join(core.execute(), rng_worker.execute()).await;
+        core_res.expect("failed to forward request");
+        worker_res.expect("failed to process request");
         core.execute().await.expect("failed to forward response");
         match api.recv_response().await {
             None => panic!("Failed to receive expected response"),
