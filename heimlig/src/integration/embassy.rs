@@ -1,5 +1,6 @@
 use crate::common::jobs::{Request, Response};
 use core::cell::RefCell;
+use core::panic;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use critical_section::Mutex;
