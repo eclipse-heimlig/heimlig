@@ -4,7 +4,7 @@ use crate::common::jobs::{ClientId, Request, RequestType, Response};
 use crate::hsm::keystore::KeyStore;
 use core::cell::RefCell;
 use core::future::{pending, poll_fn, ready};
-use core::ops::DerefMut;
+use core::ops::{Deref, DerefMut};
 use core::pin::{pin, Pin};
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering::SeqCst;
@@ -41,10 +41,7 @@ pub struct Core<
 > {
     key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
     clients: Vec<Mutex<M, RefCell<ClientChannel<'data, ReqSrc, RespSink>>>, MAX_CLIENTS>,
-    workers: Vec<
-        Mutex<M, RefCell<WorkerChannel<'data, ReqSink, RespSrc, MAX_REQUEST_TYPES>>>,
-        MAX_WORKERS,
-    >,
+    workers: Vec<WorkerChannel<'data, ReqSink, RespSrc, M, MAX_REQUEST_TYPES>, MAX_WORKERS>,
     last_client_id: AtomicUsize,
     last_worker_id: AtomicUsize,
 }
@@ -60,11 +57,12 @@ struct WorkerChannel<
     'data,
     ReqSink: Sink<Request<'data>>,
     RespSrc: Stream<Item = Response<'data>>,
+    M: RawMutex,
     const MAX_REQUEST_TYPES_PER_WORKER: usize,
 > {
     pub req_types: Vec<RequestType, MAX_REQUEST_TYPES_PER_WORKER>,
-    pub requests: ReqSink,
-    pub responses: futures::stream::Peekable<RespSrc>,
+    pub requests: Mutex<M, RefCell<ReqSink>>,
+    pub responses: Mutex<M, RefCell<futures::stream::Peekable<RespSrc>>>,
 }
 
 pub struct Builder<
@@ -81,10 +79,7 @@ pub struct Builder<
 > {
     key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
     clients: Vec<Mutex<M, RefCell<ClientChannel<'data, ReqSrc, RespSink>>>, MAX_CLIENTS>,
-    workers: Vec<
-        Mutex<M, RefCell<WorkerChannel<'data, ReqSink, RespSrc, MAX_REQUEST_TYPES>>>,
-        MAX_WORKERS,
-    >,
+    workers: Vec<WorkerChannel<'data, ReqSink, RespSrc, M, MAX_REQUEST_TYPES>, MAX_WORKERS>,
 }
 
 impl<
@@ -191,25 +186,19 @@ impl<
     ) -> Self {
         for channel in &mut self.workers {
             for req_type in req_types {
-                if channel
-                    .try_lock()
-                    .unwrap()
-                    .get_mut()
-                    .req_types
-                    .contains(req_type)
-                {
+                if channel.req_types.contains(req_type) {
                     panic!("Channel for given request type already exists");
                 }
             }
         }
         if self
             .workers
-            .push(Mutex::new(RefCell::new(WorkerChannel {
+            .push(WorkerChannel {
                 req_types: Vec::from_slice(req_types)
                     .expect("Maximum number of request types for single worker exceeded"),
-                requests,
-                responses: responses.peekable(),
-            })))
+                requests: Mutex::new(RefCell::new(requests)),
+                responses: Mutex::new(RefCell::new(responses.peekable())),
+            })
             .is_err()
         {
             panic!("Failed to add worker channel");
@@ -284,8 +273,12 @@ impl<
             .split_at((self.last_client_id.load(SeqCst) + 1) % number_of_clients);
         let clients_iterator = right.into_iter().chain(left.into_iter());
 
+        let client_mutexes = Vec::<_, MAX_CLIENTS>::from_iter(
+            clients_iterator.map(|client| client.try_lock().unwrap()),
+        );
+
         let mut client_refs = Vec::<_, MAX_CLIENTS>::from_iter(
-            clients_iterator.map(|client| (*client).try_lock().unwrap().borrow_mut()),
+            client_mutexes.iter().map(|client| client.borrow_mut()),
         );
 
         let mut client_futures =
@@ -298,26 +291,23 @@ impl<
                         let worker_channel = self
                             .workers
                             .iter()
-                            .find(|c| {
-                                c.try_lock()
-                                    .unwrap()
-                                    .try_borrow()
-                                    .expect("futures are expected to be polled sequentially")
-                                    .req_types
-                                    .contains(&request_type)
-                            })
+                            .find(|c| c.req_types.contains(&request_type))
                             .expect("Failed to find worker channel for request type");
                         worker_channel
                     })
-                    .then(|worker_channel| worker_channel.lock())
                     .then(|worker_channel| {
+                        worker_channel
+                            .requests
+                            .lock()
+                            .map(move |x| (worker_channel, x))
+                    })
+                    .then(|(worker_channel, requests)| {
                         poll_fn(move |cx| {
-                            worker_channel
+                            requests
                                 .try_borrow_mut()
                                 .expect("futures are expected to be polled sequentially")
-                                .requests
                                 .poll_ready_unpin(cx)
-                                .map(|_| (worker_channel))
+                                .map(|_| worker_channel)
                         })
                     })
                     .left_future()
@@ -342,14 +332,18 @@ impl<
             SeqCst,
         );
         let request = self.clients[client_index]
+            .lock()
+            .await
             .borrow_mut()
             .requests
             .next()
             .await
             .expect("request stream died");
         worker_channel
-            .borrow_mut()
             .requests
+            .lock()
+            .await
+            .borrow_mut()
             .send(request)
             .await
             .map_err(|_| ())
@@ -363,28 +357,32 @@ impl<
             .split_at((self.last_worker_id.load(SeqCst) + 1) % number_of_workers);
         let workers_iterator = right.into_iter().chain(left.into_iter());
 
-        let mut worker_refs =
-            Vec::<_, MAX_WORKERS>::from_iter(workers_iterator.map(|worker| (*worker).borrow_mut()));
+        let worker_mutexes = Vec::<_, MAX_WORKERS>::from_iter(
+            workers_iterator.map(|worker| worker.responses.try_lock().unwrap()),
+        );
+
+        let mut worker_refs = Vec::<_, MAX_WORKERS>::from_iter(
+            worker_mutexes.iter().map(|worker| worker.borrow_mut()),
+        );
 
         let mut worker_futures =
             Vec::<_, MAX_WORKERS>::from_iter(worker_refs.iter_mut().map(|worker| {
-                let responses = Pin::new(&mut worker.responses);
+                let responses = Pin::new(worker.deref_mut());
                 responses
                     .peek()
-                    .then(|response| {
+                    .map(|response| {
                         let client_channel = &self.clients
                             [response.expect("response stream died").get_client_id() as usize];
+                        client_channel
+                    })
+                    .then(|client_channel| client_channel.lock().map(move |x| (client_channel, x)))
+                    .then(|(client_channel, client_channel_guard)| {
                         poll_fn(move |cx| {
-                            match client_channel
-                                .try_borrow_mut()
-                                .expect("futures are expected to be polled sequentially")
+                            client_channel_guard
+                                .borrow_mut()
                                 .responses
                                 .poll_ready_unpin(cx)
-                            {
-                                Poll::Ready(_) => Poll::Ready(client_channel),
-                                Poll::Pending => Poll::Pending,
-                            }
-                            // .map(|_| (client_channel))
+                                .map(|_| client_channel)
                         })
                     })
                     .left_future()
@@ -409,47 +407,22 @@ impl<
             SeqCst,
         );
         let response = self.workers[worker_index]
-            .borrow_mut()
             .responses
+            .lock()
+            .await
+            .borrow_mut()
             .next()
             .await
             .expect("request stream died");
         client_channel
+            .lock()
+            .await
             .borrow_mut()
             .responses
             .send(response)
             .await
             .map_err(|_| ())
             .expect("request sink died");
-
-        // let (worker_channel, client_index) = select_array(workers).await;
-        // assert!(client_index < self.clients.len());
-        // self.last_client_id = (client_index + self.last_client_id + 1) % number_of_clients;
-        // let request = self.clients[client_index]
-        //     .requests
-        //     .next()
-        //     .await
-        //     .expect("request stream died");
-        // worker_channel
-        //     .borrow_mut()
-        //     .requests
-        //     .send(request)
-        //     .await
-        //     .map_err(|_| ())
-        //     .expect("request sink died");
-
-        // let workers_len = self.workers.len();
-        // for worker_index in 0..workers_len {
-        //     let worker = self.workers.get_mut(worker_index);
-        //     if let Some(worker) = worker {
-        //         let response = worker.get_mut().responses.next().await;
-        //         if let Some(response) = response {
-        //             self.send_to_client(response).await?;
-        //         }
-        //     } else {
-        //         panic!("Invalid internal worker ID");
-        //     }
-        // }
     }
 
     async fn process_request(&mut self, request: Request<'data>) -> Result<(), Error> {
@@ -492,11 +465,13 @@ impl<
                 let channel = self
                     .workers
                     .iter_mut()
-                    .find(|c| c.borrow().req_types.contains(&request.get_type()))
+                    .find(|c| c.req_types.contains(&request.get_type()))
                     .expect("Failed to find worker channel for request type");
                 channel
-                    .get_mut()
                     .requests
+                    .lock()
+                    .await
+                    .get_mut()
                     .send(request)
                     .await
                     .map_err(|_e| Error::Send)?;
@@ -509,6 +484,8 @@ impl<
         let client_id = response.get_client_id();
         if let Some(client) = self.clients.get(client_id as usize) {
             client
+                .lock()
+                .await
                 .borrow_mut()
                 .responses
                 .send(response)
