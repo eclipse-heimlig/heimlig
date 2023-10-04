@@ -10,14 +10,14 @@ use embassy_stm32::peripherals::RNG;
 use embassy_stm32::rng::{InterruptHandler, Rng};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_time::{Duration, Timer};
-use heapless::spsc::{Consumer, Producer, Queue};
 use heimlig::client::api::Api;
-use heimlig::common::jobs::{Request, RequestType, Response};
+use heimlig::common::jobs::{RequestType, Response};
 use heimlig::crypto::rng;
 use heimlig::hsm::core::{Builder, Core};
 use heimlig::hsm::workers::rng_worker::RngWorker;
 use heimlig::integration::embassy::{
-    RequestQueueSink, RequestQueueSource, ResponseQueueSink, ResponseQueueSource,
+    RequestQueue, RequestQueueSink, RequestQueueSource, ResponseQueue, ResponseQueueSink,
+    ResponseQueueSource,
 };
 use rand_core::RngCore;
 
@@ -31,10 +31,10 @@ bind_interrupts!(struct Irqs {
 static mut MEMORY: [u8; 256] = [0; 256];
 
 const QUEUE_SIZE: usize = 8;
-static mut CLIENT_TO_CORE: Queue<Request, QUEUE_SIZE> = Queue::new();
-static mut CORE_TO_CLIENT: Queue<Response, QUEUE_SIZE> = Queue::new();
-static mut CORE_TO_RNG_WORKER: Queue<Response, QUEUE_SIZE> = Queue::new();
-static mut RNG_WORKER_TO_CORE: Queue<Request, QUEUE_SIZE> = Queue::new();
+static mut CLIENT_TO_CORE: RequestQueue<QUEUE_SIZE> = RequestQueue::<QUEUE_SIZE>::new();
+static mut CORE_TO_CLIENT: ResponseQueue<QUEUE_SIZE> = ResponseQueue::<QUEUE_SIZE>::new();
+static mut CORE_TO_RNG_WORKER: RequestQueue<QUEUE_SIZE> = RequestQueue::<QUEUE_SIZE>::new();
+static mut RNG_WORKER_TO_CORE: ResponseQueue<QUEUE_SIZE> = ResponseQueue::<QUEUE_SIZE>::new();
 
 struct EntropySource {
     rng: Rng<'static, RNG>,
@@ -51,45 +51,32 @@ impl rng::EntropySource for EntropySource {
 
 #[embassy_executor::task]
 async fn hsm_task(
-    client_req_rx: Consumer<'static, Request<'_>, QUEUE_SIZE>,
-    client_resp_tx: Producer<'static, Response<'_>, QUEUE_SIZE>,
-    rng_req_tx: Producer<'static, Request<'_>, QUEUE_SIZE>,
-    rng_req_rx: Consumer<'static, Request<'_>, QUEUE_SIZE>,
-    rng_resp_tx: Producer<'static, Response<'_>, QUEUE_SIZE>,
-    rng_resp_rx: Consumer<'static, Response<'_>, QUEUE_SIZE>,
+    core_req_rx: RequestQueueSource<'static, 'static, QUEUE_SIZE>,
+    core_resp_tx: ResponseQueueSink<'static, 'static, QUEUE_SIZE>,
+    core_req_tx: RequestQueueSink<'static, 'static, QUEUE_SIZE>,
+    rng_req_rx: RequestQueueSource<'static, 'static, QUEUE_SIZE>,
+    core_resp_rx: ResponseQueueSource<'static, 'static, QUEUE_SIZE>,
+    rng_resp_tx: ResponseQueueSink<'static, 'static, QUEUE_SIZE>,
     rng: Rng<'static, RNG>,
 ) {
     info!("HSM task started");
-
-    // Channels
-    let client_requests: RequestQueueSource<NoopRawMutex, QUEUE_SIZE> =
-        RequestQueueSource::new(client_req_rx);
-    let client_responses: ResponseQueueSink<NoopRawMutex, QUEUE_SIZE> =
-        ResponseQueueSink::new(client_resp_tx);
-    let rng_requests_rx: RequestQueueSource<NoopRawMutex, QUEUE_SIZE> =
-        RequestQueueSource::new(rng_req_rx);
-    let rng_requests_tx: RequestQueueSink<NoopRawMutex, QUEUE_SIZE> =
-        RequestQueueSink::new(rng_req_tx);
-    let rng_responses_rx: ResponseQueueSource<NoopRawMutex, QUEUE_SIZE> =
-        ResponseQueueSource::new(rng_resp_rx);
-    let rng_responses_tx: ResponseQueueSink<NoopRawMutex, QUEUE_SIZE> =
-        ResponseQueueSink::new(rng_resp_tx);
-
     let rng = rng::Rng::new(EntropySource { rng }, None);
     let mut rng_worker = RngWorker {
         rng,
-        requests: rng_requests_rx,
-        responses: rng_responses_tx,
+        requests: rng_req_rx,
+        responses: rng_resp_tx,
     };
     let mut core: Core<
         NoopRawMutex,
-        RequestQueueSource<'_, '_, NoopRawMutex, QUEUE_SIZE>,
-        ResponseQueueSink<'_, '_, NoopRawMutex, QUEUE_SIZE>,
-        RequestQueueSink<'_, '_, NoopRawMutex, QUEUE_SIZE>,
-        ResponseQueueSource<'_, '_, NoopRawMutex, QUEUE_SIZE>,
+        RequestQueueSource<'_, '_, QUEUE_SIZE>,
+        ResponseQueueSink<'_, '_, QUEUE_SIZE>,
+        RequestQueueSink<'_, '_, QUEUE_SIZE>,
+        ResponseQueueSource<'_, '_, QUEUE_SIZE>,
     > = Builder::new()
-        .with_client(client_requests, client_responses)
-        .with_worker(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx)
+        .with_client(core_req_rx, core_resp_tx)
+        .expect("failed to add client")
+        .with_worker(&[RequestType::GetRandom], core_req_tx, core_resp_rx)
+        .expect("failed to add worker")
         .build();
 
     loop {
@@ -104,8 +91,8 @@ async fn hsm_task(
 
 #[embassy_executor::task]
 async fn client_task(
-    resp_rx: Consumer<'static, Response<'_>, QUEUE_SIZE>,
-    req_tx: Producer<'static, Request<'_>, QUEUE_SIZE>,
+    req_tx: RequestQueueSink<'static, 'static, QUEUE_SIZE>,
+    resp_rx: ResponseQueueSource<'static, 'static, QUEUE_SIZE>,
     mut led: Output<'static, embassy_stm32::peripherals::PJ2>,
 ) {
     info!("Client task started");
@@ -115,13 +102,8 @@ async fn client_task(
     // Safety: we are the only users of MEMORY
     pool.grow(unsafe { &mut MEMORY });
 
-    // Channel
-    let requests: RequestQueueSink<NoopRawMutex, QUEUE_SIZE> = RequestQueueSink::new(req_tx);
-    let responses: ResponseQueueSource<NoopRawMutex, QUEUE_SIZE> =
-        ResponseQueueSource::new(resp_rx);
-
     // Api
-    let mut api = Api::new(requests, responses);
+    let mut api = Api::new(req_tx, resp_rx);
 
     loop {
         // Send requests
@@ -150,7 +132,8 @@ async fn client_task(
             .expect("failed to call randomness API");
         info!(
             "--> request:  random data (id={}) (size={})",
-            request_id, request_size
+            request_id.as_u32(),
+            request_size
         );
 
         // Receive response
@@ -164,7 +147,7 @@ async fn client_task(
                     } => {
                         info!(
                             "<-- response: random data (id={}) (size={}): {}",
-                            request_id,
+                            request_id.as_u32(),
                             data.len(),
                             data
                         );
@@ -190,24 +173,24 @@ async fn main(spawner: Spawner) {
 
     // Queues
     // Unsafe: Access to mutable static only happens here. Static lifetime is required by embassy tasks.
-    let (client_req_tx, client_req_rx) = unsafe { CLIENT_TO_CORE.split() };
-    let (client_resp_tx, client_resp_rx) = unsafe { CORE_TO_CLIENT.split() };
-    let (rng_resp_tx, rng_resp_rx) = unsafe { CORE_TO_RNG_WORKER.split() };
-    let (rng_req_tx, rng_req_rx) = unsafe { RNG_WORKER_TO_CORE.split() };
+    let (client_req_tx, core_req_rx) = unsafe { CLIENT_TO_CORE.split() };
+    let (core_resp_tx, client_resp_rx) = unsafe { CORE_TO_CLIENT.split() };
+    let (core_req_tx, rng_req_rx) = unsafe { CORE_TO_RNG_WORKER.split() };
+    let (rng_resp_tx, core_resp_rx) = unsafe { RNG_WORKER_TO_CORE.split() };
 
     // Start tasks
     spawner
         .spawn(hsm_task(
-            client_req_rx,
-            client_resp_tx,
-            rng_req_tx,
+            core_req_rx,
+            core_resp_tx,
+            core_req_tx,
             rng_req_rx,
+            core_resp_rx,
             rng_resp_tx,
-            rng_resp_rx,
             rng,
         ))
         .expect("Failed to spawn HSM task");
     spawner
-        .spawn(client_task(client_resp_rx, client_req_tx, led))
+        .spawn(client_task(client_req_tx, client_resp_rx, led))
         .expect("Failed to spawn client task");
 }

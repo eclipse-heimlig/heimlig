@@ -3,23 +3,71 @@ use crate::hsm::keystore::KeyId;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum Error {
-    /// The amount of requested data was too large.
-    RequestTooLarge,
     /// A cryptographic error occurred.
     Crypto(crate::crypto::Error),
+    /// The amount of requested data was too large.
+    RequestTooLarge,
     /// No key store present.
     NoKeyStore,
     /// A key store error occurred.
     KeyStore(keystore::Error),
-    /// Failed to send through channel
+    /// Failed to send through channel.
     Send,
+    /// No worker found for received request type.
+    NoWorkerForRequest,
+    /// A worker encountered a request type that it cannot handle.  
+    UnexpectedRequestType,
 }
 
 /// Used to distinguish multiple clients
-pub type ClientId = u32;
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ClientId(pub u32);
+
+impl From<u32> for ClientId {
+    fn from(value: u32) -> Self {
+        ClientId(value)
+    }
+}
+
+impl From<usize> for ClientId {
+    fn from(value: usize) -> Self {
+        ClientId(value as u32)
+    }
+}
+
+impl ClientId {
+    pub fn idx(&self) -> usize {
+        self.0 as usize
+    }
+}
 
 /// Used to match requests and responses
-pub type RequestId = u32;
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RequestId(pub u32);
+
+impl From<u32> for RequestId {
+    fn from(value: u32) -> Self {
+        RequestId(value)
+    }
+}
+
+impl From<RequestId> for u32 {
+    fn from(value: RequestId) -> Self {
+        value.as_u32()
+    }
+}
+
+impl RequestId {
+    pub fn increment(&mut self) {
+        self.0 = self.0.wrapping_add(1);
+    }
+}
+
+impl RequestId {
+    pub fn as_u32(&self) -> u32 {
+        self.0
+    }
+}
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum RequestType {
@@ -83,6 +131,36 @@ pub enum Request<'data> {
     },
 }
 
+/// A response from the HSM containing the results of a cryptographic task.
+#[derive(Eq, PartialEq, Debug)]
+pub enum Response<'data> {
+    ImportKey {
+        client_id: ClientId,
+        request_id: RequestId,
+    },
+    Error {
+        client_id: ClientId,
+        request_id: RequestId,
+        error: Error,
+    },
+    GetRandom {
+        client_id: ClientId,
+        request_id: RequestId,
+        data: &'data mut [u8],
+    },
+    EncryptChaChaPoly {
+        client_id: ClientId,
+        request_id: RequestId,
+        ciphertext: &'data mut [u8],
+        tag: &'data mut [u8],
+    },
+    DecryptChaChaPoly {
+        client_id: ClientId,
+        request_id: RequestId,
+        plaintext: &'data mut [u8],
+    },
+}
+
 impl<'data> Request<'data> {
     pub fn get_type(&self) -> RequestType {
         match self {
@@ -121,36 +199,6 @@ impl<'data> Request<'data> {
             } => *client_id = new_client_id,
         }
     }
-}
-
-/// A response from the HSM containing the results of a cryptographic task.
-#[derive(Eq, PartialEq, Debug)]
-pub enum Response<'data> {
-    ImportKey {
-        client_id: ClientId,
-        request_id: RequestId,
-    },
-    Error {
-        client_id: ClientId,
-        request_id: RequestId,
-        error: Error,
-    },
-    GetRandom {
-        client_id: ClientId,
-        request_id: RequestId,
-        data: &'data mut [u8],
-    },
-    EncryptChaChaPoly {
-        client_id: ClientId,
-        request_id: RequestId,
-        ciphertext: &'data mut [u8],
-        tag: &'data mut [u8],
-    },
-    DecryptChaChaPoly {
-        client_id: ClientId,
-        request_id: RequestId,
-        plaintext: &'data mut [u8],
-    },
 }
 
 impl<'data> Response<'data> {

@@ -389,6 +389,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "either"
+version = "1.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a26ae43d7bcc3b814de94796a5e736d4029efb0ee900c12e2d54c993ad1a1e07"
+
+[[package]]
 name = "elliptic-curve"
 version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -421,6 +427,12 @@ dependencies = [
  "log",
  "static_cell",
 ]
+
+[[package]]
+name = "embassy-futures"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47e5367165d347c039360f784812f493b001583ab6a3dd8622f4ce9c30374ec3"
 
 [[package]]
 name = "embassy-macros"
@@ -678,9 +690,12 @@ dependencies = [
  "cbc",
  "ccm",
  "chacha20poly1305",
+ "critical-section",
  "ecdsa",
  "ed25519-dalek",
+ "either",
  "elliptic-curve",
+ "embassy-futures",
  "embassy-sync",
  "futures",
  "heapless",

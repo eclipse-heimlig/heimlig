@@ -6,25 +6,25 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_time::Duration;
 use embassy_time::Timer;
-use heapless::spsc::{Consumer, Producer, Queue};
 use heimlig::client::api::Api;
-use heimlig::common::jobs::{Request, RequestType, Response};
+use heimlig::common::jobs::{RequestType, Response};
 use heimlig::crypto::rng;
 use heimlig::crypto::rng::Rng;
 use heimlig::hsm::core::{Builder, Core};
 use heimlig::hsm::workers::rng_worker::RngWorker;
 use heimlig::integration::embassy::{
-    RequestQueueSink, RequestQueueSource, ResponseQueueSink, ResponseQueueSource,
+    RequestQueue, RequestQueueSink, RequestQueueSource, ResponseQueue, ResponseQueueSink,
+    ResponseQueueSource,
 };
 use log::{error, info};
 use rand::RngCore;
 
 // Request and response queues between tasks
 const QUEUE_SIZE: usize = 8;
-static mut CLIENT_TO_CORE: Queue<Request, QUEUE_SIZE> = Queue::new();
-static mut CORE_TO_CLIENT: Queue<Response, QUEUE_SIZE> = Queue::new();
-static mut CORE_TO_RNG_WORKER: Queue<Response, QUEUE_SIZE> = Queue::new();
-static mut RNG_WORKER_TO_CORE: Queue<Request, QUEUE_SIZE> = Queue::new();
+static mut CLIENT_TO_CORE: RequestQueue<QUEUE_SIZE> = RequestQueue::<QUEUE_SIZE>::new();
+static mut CORE_TO_CLIENT: ResponseQueue<QUEUE_SIZE> = ResponseQueue::<QUEUE_SIZE>::new();
+static mut CORE_TO_RNG_WORKER: RequestQueue<QUEUE_SIZE> = RequestQueue::<QUEUE_SIZE>::new();
+static mut RNG_WORKER_TO_CORE: ResponseQueue<QUEUE_SIZE> = ResponseQueue::<QUEUE_SIZE>::new();
 
 // Globals initialized in one task but used in another
 static CORE: Mutex<
@@ -33,10 +33,10 @@ static CORE: Mutex<
         Option<
             Core<
                 CriticalSectionRawMutex,
-                RequestQueueSource<'static, 'static, CriticalSectionRawMutex, QUEUE_SIZE>,
-                ResponseQueueSink<'static, 'static, CriticalSectionRawMutex, QUEUE_SIZE>,
-                RequestQueueSink<'static, 'static, CriticalSectionRawMutex, QUEUE_SIZE>,
-                ResponseQueueSource<'static, 'static, CriticalSectionRawMutex, QUEUE_SIZE>,
+                RequestQueueSource<QUEUE_SIZE>,
+                ResponseQueueSink<QUEUE_SIZE>,
+                RequestQueueSink<QUEUE_SIZE>,
+                ResponseQueueSource<QUEUE_SIZE>,
             >,
         >,
     >,
@@ -45,11 +45,7 @@ static RNG_WORKER: Mutex<
     CriticalSectionRawMutex,
     RefCell<
         Option<
-            RngWorker<
-                EntropySource,
-                RequestQueueSource<CriticalSectionRawMutex, QUEUE_SIZE>,
-                ResponseQueueSink<CriticalSectionRawMutex, QUEUE_SIZE>,
-            >,
+            RngWorker<EntropySource, RequestQueueSource<QUEUE_SIZE>, ResponseQueueSink<QUEUE_SIZE>>,
         >,
     >,
 > = Mutex::new(RefCell::new(None));
@@ -95,17 +91,11 @@ async fn worker_task() {
 
 #[embassy_executor::task]
 async fn client_task(
-    resp_rx: Consumer<'static, Response<'_>, QUEUE_SIZE>,
-    req_tx: Producer<'static, Request<'_>, QUEUE_SIZE>,
+    response_rx: ResponseQueueSource<'static, 'static, QUEUE_SIZE>,
+    requests_tx: RequestQueueSink<'static, 'static, QUEUE_SIZE>,
 ) {
-    // Channel
-    let requests: RequestQueueSink<CriticalSectionRawMutex, QUEUE_SIZE> =
-        RequestQueueSink::new(req_tx);
-    let responses: ResponseQueueSource<CriticalSectionRawMutex, QUEUE_SIZE> =
-        ResponseQueueSource::new(resp_rx);
-
     // Api
-    let mut api = Api::new(requests, responses);
+    let mut api = Api::new(requests_tx, response_rx);
 
     loop {
         // Send request
@@ -116,7 +106,7 @@ async fn client_task(
             .get_random(random_output.as_mut_slice())
             .await
             .expect("failed to call randomness API");
-        info!(target: "CLIENT", "--> request:  random data (id={request_id}) (size={request_size})");
+        info!(target: "CLIENT", "--> request:  random data (id={}) (size={})", request_id.as_u32(), request_size);
 
         // Receive response
         loop {
@@ -130,7 +120,8 @@ async fn client_task(
                             data,
                         } => {
                             info!(target: "CLIENT",
-                                "<-- response: random data (id={request_id}) (size={}): {}",
+                                "<-- response: random data (id={}) (size={}): {}",
+                                request_id.as_u32(),
                                 data.len(),
                                 hex::encode(&data)
                             );
@@ -154,24 +145,16 @@ async fn main(spawner: Spawner) {
 
     // Queues
     // Unsafe: Access to mutable static only happens here. Static lifetime is required by embassy tasks.
-    let (client_req_tx, client_req_rx) = unsafe { CLIENT_TO_CORE.split() };
-    let (client_resp_tx, client_resp_rx) = unsafe { CORE_TO_CLIENT.split() };
-    let (rng_resp_tx, rng_resp_rx) = unsafe { CORE_TO_RNG_WORKER.split() };
-    let (rng_req_tx, rng_req_rx) = unsafe { RNG_WORKER_TO_CORE.split() };
-
-    // Channels
-    let client_requests = RequestQueueSource::new(client_req_rx);
-    let client_responses = ResponseQueueSink::new(client_resp_tx);
-    let rng_requests_rx = RequestQueueSource::new(rng_req_rx);
-    let rng_requests_tx = RequestQueueSink::new(rng_req_tx);
-    let rng_responses_rx = ResponseQueueSource::new(rng_resp_rx);
-    let rng_responses_tx = ResponseQueueSink::new(rng_resp_tx);
+    let (client_req_tx, core_req_rx) = unsafe { CLIENT_TO_CORE.split() };
+    let (core_resp_tx, client_resp_rx) = unsafe { CORE_TO_CLIENT.split() };
+    let (core_req_tx, rng_req_rx) = unsafe { CORE_TO_RNG_WORKER.split() };
+    let (rng_resp_tx, core_resp_rx) = unsafe { RNG_WORKER_TO_CORE.split() };
 
     let rng = Rng::new(EntropySource {}, None);
     let rng_worker = RngWorker {
         rng,
-        requests: rng_requests_rx,
-        responses: rng_responses_tx,
+        requests: rng_req_rx,
+        responses: rng_resp_tx,
     };
     RNG_WORKER
         .try_lock()
@@ -179,13 +162,15 @@ async fn main(spawner: Spawner) {
         .replace(Some(rng_worker));
     let core: Core<
         CriticalSectionRawMutex,
-        RequestQueueSource<'_, '_, CriticalSectionRawMutex, QUEUE_SIZE>,
-        ResponseQueueSink<'_, '_, CriticalSectionRawMutex, QUEUE_SIZE>,
-        RequestQueueSink<'_, '_, CriticalSectionRawMutex, QUEUE_SIZE>,
-        ResponseQueueSource<'_, '_, CriticalSectionRawMutex, QUEUE_SIZE>,
+        RequestQueueSource<'_, '_, QUEUE_SIZE>,
+        ResponseQueueSink<'_, '_, QUEUE_SIZE>,
+        RequestQueueSink<'_, '_, QUEUE_SIZE>,
+        ResponseQueueSource<'_, '_, QUEUE_SIZE>,
     > = Builder::new()
-        .with_client(client_requests, client_responses)
-        .with_worker(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx)
+        .with_client(core_req_rx, core_resp_tx)
+        .expect("failed to add client")
+        .with_worker(&[RequestType::GetRandom], core_req_tx, core_resp_rx)
+        .expect("failed to add worker")
         .build();
     CORE.try_lock()
         .expect("Failed to lock CORE")

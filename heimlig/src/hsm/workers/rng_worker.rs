@@ -23,6 +23,8 @@ impl<
         RespSink: Sink<Response<'data>> + Unpin,
     > RngWorker<'data, E, ReqSrc, RespSink>
 {
+    /// Drive the worker to process the next request.
+    /// This method is supposed to be called by a system task that owns this worker.
     pub async fn execute(&mut self) -> Result<(), Error> {
         match self.requests.next().await {
             None => Ok(()), // Nothing to process
@@ -37,7 +39,7 @@ impl<
                     .await
                     .map_err(|_e| Error::Send)
             }
-            _ => panic!("Encountered unexpected request"),
+            _ => Err(Error::UnexpectedRequestType),
         }
     }
 

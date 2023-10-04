@@ -1,4 +1,4 @@
-use crate::common::jobs::{Request, RequestId, Response};
+use crate::common::jobs::{ClientId, Request, RequestId, Response};
 use crate::hsm::keystore::KeyId;
 use futures::{Sink, SinkExt, Stream, StreamExt};
 
@@ -6,7 +6,7 @@ use futures::{Sink, SinkExt, Stream, StreamExt};
 pub struct Api<'data, Req: Sink<Request<'data>>, Resp: Stream<Item = Response<'data>>> {
     requests: Req,
     responses: Resp,
-    request_counter: RequestId,
+    request_id_counter: RequestId,
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -21,14 +21,14 @@ pub enum SymmetricEncryptionAlgorithm {
 
 impl<
         'data,
-        Req: Sink<Request<'data>> + core::marker::Unpin,
-        Resp: Stream<Item = Response<'data>> + core::marker::Unpin,
-    > Api<'data, Req, Resp>
+        ReqSink: Sink<Request<'data>> + core::marker::Unpin,
+        RespSrc: Stream<Item = Response<'data>> + core::marker::Unpin,
+    > Api<'data, ReqSink, RespSrc>
 {
     /// Create a new instance of the HSM API.
-    pub fn new(requests: Req, responses: Resp) -> Self {
+    pub fn new(requests: ReqSink, responses: RespSrc) -> Self {
         Api {
-            request_counter: 0,
+            request_id_counter: RequestId::default(),
             requests,
             responses,
         }
@@ -44,7 +44,7 @@ impl<
         let request_id = self.next_request_id();
         self.requests
             .send(Request::GetRandom {
-                client_id: 0,
+                client_id: ClientId::default(),
                 request_id,
                 output,
             })
@@ -61,7 +61,7 @@ impl<
         let request_id = self.next_request_id();
         self.requests
             .send(Request::ImportKey {
-                client_id: 0,
+                client_id: ClientId::default(),
                 request_id,
                 key_id,
                 data,
@@ -85,7 +85,7 @@ impl<
             SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => self
                 .requests
                 .send(Request::EncryptChaChaPoly {
-                    client_id: 0,
+                    client_id: ClientId::default(),
                     request_id,
                     key_id,
                     nonce,
@@ -113,7 +113,7 @@ impl<
             SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => self
                 .requests
                 .send(Request::EncryptChaChaPolyExternalKey {
-                    client_id: 0,
+                    client_id: ClientId::default(),
                     request_id,
                     key,
                     nonce,
@@ -141,7 +141,7 @@ impl<
             SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => self
                 .requests
                 .send(Request::DecryptChaChaPoly {
-                    client_id: 0,
+                    client_id: ClientId::default(),
                     request_id,
                     key_id,
                     nonce,
@@ -169,7 +169,7 @@ impl<
             SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => self
                 .requests
                 .send(Request::DecryptChaChaPolyExternalKey {
-                    client_id: 0,
+                    client_id: ClientId::default(),
                     request_id,
                     key,
                     nonce,
@@ -183,9 +183,10 @@ impl<
         Ok(request_id)
     }
 
+    /// Increments the requiest ID counter and returns the old value.
     fn next_request_id(&mut self) -> RequestId {
-        let id = self.request_counter;
-        self.request_counter += 1;
+        let id = self.request_id_counter;
+        self.request_id_counter.increment();
         id
     }
 }

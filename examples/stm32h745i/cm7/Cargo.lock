@@ -490,6 +490,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "either"
+version = "1.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a26ae43d7bcc3b814de94796a5e736d4029efb0ee900c12e2d54c993ad1a1e07"
+
+[[package]]
 name = "elliptic-curve"
 version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -514,7 +520,7 @@ version = "0.1.0"
 source = "git+https://github.com/embassy-rs/embassy.git#2543bcafafbe56f925c39c37b72f634674ccba65"
 dependencies = [
  "defmt",
- "embassy-futures",
+ "embassy-futures 0.1.0 (git+https://github.com/embassy-rs/embassy.git)",
  "embassy-sync 0.3.0 (git+https://github.com/embassy-rs/embassy.git)",
  "embassy-time 0.1.3 (git+https://github.com/embassy-rs/embassy.git)",
  "embedded-hal 0.2.7",
@@ -540,6 +546,12 @@ dependencies = [
  "futures-util",
  "static_cell",
 ]
+
+[[package]]
+name = "embassy-futures"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47e5367165d347c039360f784812f493b001583ab6a3dd8622f4ce9c30374ec3"
 
 [[package]]
 name = "embassy-futures"
@@ -592,7 +604,7 @@ dependencies = [
  "defmt",
  "document-features",
  "embassy-embedded-hal",
- "embassy-futures",
+ "embassy-futures 0.1.0 (git+https://github.com/embassy-rs/embassy.git)",
  "embassy-hal-internal",
  "embassy-net-driver",
  "embassy-sync 0.3.0 (git+https://github.com/embassy-rs/embassy.git)",
@@ -908,9 +920,12 @@ dependencies = [
  "cbc",
  "ccm",
  "chacha20poly1305",
+ "critical-section",
  "ecdsa",
  "ed25519-dalek",
+ "either",
  "elliptic-curve",
+ "embassy-futures 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "embassy-sync 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures",
  "heapless",

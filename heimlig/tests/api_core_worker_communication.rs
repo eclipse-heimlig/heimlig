@@ -1,11 +1,11 @@
 mod tests {
-    use embassy_sync::blocking_mutex::raw::{NoopRawMutex, RawMutex};
+    use embassy_sync::blocking_mutex::raw::NoopRawMutex;
     use embassy_sync::mutex::Mutex;
     use futures::future::join;
     use heimlig::client::api::Api;
     use heimlig::client::api::SymmetricEncryptionAlgorithm::ChaCha20Poly1305;
     use heimlig::common::jobs;
-    use heimlig::common::jobs::{Request, RequestType, Response};
+    use heimlig::common::jobs::{Error, Request, RequestType, Response};
     use heimlig::common::limits::MAX_RANDOM_SIZE;
     use heimlig::config;
     use heimlig::config::keystore::{KEY1, KEY2, KEY3};
@@ -44,6 +44,15 @@ mod tests {
         Rng::new(TestEntropySource::default(), None)
     }
 
+    fn init_key_store(
+    ) -> MemoryKeyStore<{ config::keystore::TOTAL_SIZE }, { config::keystore::NUM_KEYS }> {
+        let key_infos = [KEY1, KEY2, KEY3];
+        MemoryKeyStore::<{ config::keystore::TOTAL_SIZE }, { config::keystore::NUM_KEYS }>::try_new(
+            &key_infos,
+        )
+        .expect("failed to create key store")
+    }
+
     fn split_queues<'ch, 'data>(
         requests: &'ch mut AsyncQueue<Request<'data>, QUEUE_SIZE>,
         responses: &'ch mut AsyncQueue<Response<'data>, QUEUE_SIZE>,
@@ -55,7 +64,6 @@ mod tests {
     ) {
         let (requests_tx, requests_rx) = requests.split();
         let (response_tx, response_rx) = responses.split();
-
         (requests_rx, requests_tx, response_rx, response_tx)
     }
 
@@ -72,27 +80,6 @@ mod tests {
         let aad: [u8; AAD_SIZE] = *b"When in doubt, go to the library.";
         let tag: [u8; TAG_SIZE] = [0u8; TAG_SIZE];
         (key, nonce, plaintext, aad, tag)
-    }
-
-    fn init_core_builder<'keystore, 'ch, 'data, M: RawMutex + Unpin>() -> Builder<
-        'data,
-        'keystore,
-        M,
-        RequestQueueSource<'ch, 'data, QUEUE_SIZE>,
-        ResponseQueueSink<'ch, 'data, QUEUE_SIZE>,
-        RequestQueueSink<'ch, 'data, QUEUE_SIZE>,
-        ResponseQueueSource<'ch, 'data, QUEUE_SIZE>,
-    > {
-        Builder::default()
-    }
-
-    fn init_key_store(
-    ) -> MemoryKeyStore<{ config::keystore::TOTAL_SIZE }, { config::keystore::NUM_KEYS }> {
-        let key_infos = [KEY1, KEY2, KEY3];
-        MemoryKeyStore::<{ config::keystore::TOTAL_SIZE }, { config::keystore::NUM_KEYS }>::try_new(
-            &key_infos,
-        )
-        .expect("failed to create key store")
     }
 
     #[async_std::test]
@@ -113,10 +100,18 @@ mod tests {
             requests: rng_requests_rx,
             responses: rng_responses_tx,
         };
-        let mut core = init_core_builder::<NoopRawMutex>()
-            .with_client(req_client_rx, resp_client_tx)
-            .with_worker(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx)
-            .build();
+        let mut core = Builder::<
+            NoopRawMutex,
+            RequestQueueSource<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSink<'_, '_, QUEUE_SIZE>,
+            RequestQueueSink<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSource<'_, '_, QUEUE_SIZE>,
+        >::default()
+        .with_client(req_client_rx, resp_client_tx)
+        .expect("failed to add client")
+        .with_worker(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx)
+        .expect("failed to add worker")
+        .build();
         let mut api = Api::new(req_client_tx, resp_client_rx);
 
         let org_request_id = api
@@ -161,10 +156,18 @@ mod tests {
             requests: rng_requests_rx,
             responses: rng_responses_tx,
         };
-        let mut core = init_core_builder::<NoopRawMutex>()
-            .with_client(req_client_rx, resp_client_tx)
-            .with_worker(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx)
-            .build();
+        let mut core = Builder::<
+            NoopRawMutex,
+            RequestQueueSource<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSink<'_, '_, QUEUE_SIZE>,
+            RequestQueueSink<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSource<'_, '_, QUEUE_SIZE>,
+        >::default()
+        .with_client(req_client_rx, resp_client_tx)
+        .expect("failed to add client")
+        .with_worker(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx)
+        .expect("failed to add worker")
+        .build();
         let mut api = Api::new(req_client_tx, resp_client_rx);
 
         let org_request_id = api
@@ -214,20 +217,28 @@ mod tests {
             requests: chachapoly_requests_rx,
             responses: chachapoly_responses_tx,
         };
-        let mut core = init_core_builder::<NoopRawMutex>()
-            .with_keystore(&key_store)
-            .with_client(req_client_rx, resp_client_tx)
-            .with_worker(
-                &[
-                    RequestType::EncryptChaChaPoly,
-                    RequestType::EncryptChaChaPolyExternalKey,
-                    RequestType::DecryptChaChaPoly,
-                    RequestType::DecryptChaChaPolyExternalKey,
-                ],
-                chachapoly_requests_tx,
-                chachapoly_responses_rx,
-            )
-            .build();
+        let mut core = Builder::<
+            NoopRawMutex,
+            RequestQueueSource<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSink<'_, '_, QUEUE_SIZE>,
+            RequestQueueSink<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSource<'_, '_, QUEUE_SIZE>,
+        >::default()
+        .with_keystore(&key_store)
+        .with_client(req_client_rx, resp_client_tx)
+        .expect("failed to add client")
+        .with_worker(
+            &[
+                RequestType::EncryptChaChaPoly,
+                RequestType::EncryptChaChaPolyExternalKey,
+                RequestType::DecryptChaChaPoly,
+                RequestType::DecryptChaChaPolyExternalKey,
+            ],
+            chachapoly_requests_tx,
+            chachapoly_responses_rx,
+        )
+        .expect("failed to add worker")
+        .build();
         let mut api = Api::new(req_client_tx, resp_client_rx);
 
         // Import key
@@ -336,20 +347,28 @@ mod tests {
             requests: chachapoly_requests_rx,
             responses: chachapoly_responses_tx,
         };
-        let mut core = init_core_builder::<NoopRawMutex>()
-            .with_keystore(&key_store)
-            .with_client(req_client_rx, resp_client_tx)
-            .with_worker(
-                &[
-                    RequestType::EncryptChaChaPoly,
-                    RequestType::EncryptChaChaPolyExternalKey,
-                    RequestType::DecryptChaChaPoly,
-                    RequestType::DecryptChaChaPolyExternalKey,
-                ],
-                chachapoly_requests_tx,
-                chachapoly_responses_rx,
-            )
-            .build();
+        let mut core = Builder::<
+            NoopRawMutex,
+            RequestQueueSource<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSink<'_, '_, QUEUE_SIZE>,
+            RequestQueueSink<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSource<'_, '_, QUEUE_SIZE>,
+        >::default()
+        .with_keystore(&key_store)
+        .with_client(req_client_rx, resp_client_tx)
+        .expect("failed to add client")
+        .with_worker(
+            &[
+                RequestType::EncryptChaChaPoly,
+                RequestType::EncryptChaChaPolyExternalKey,
+                RequestType::DecryptChaChaPoly,
+                RequestType::DecryptChaChaPolyExternalKey,
+            ],
+            chachapoly_requests_tx,
+            chachapoly_responses_rx,
+        )
+        .expect("failed to add worker")
+        .build();
         let mut api = Api::new(req_client_tx, resp_client_rx);
 
         // Encrypt data
@@ -436,11 +455,20 @@ mod tests {
             requests: rng_requests_rx,
             responses: rng_responses_tx,
         };
-        let mut core = init_core_builder::<NoopRawMutex>()
-            .with_client(req_client1_rx, resp_client1_tx)
-            .with_client(req_client2_rx, resp_client2_tx)
-            .with_worker(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx)
-            .build();
+        let mut core = Builder::<
+            NoopRawMutex,
+            RequestQueueSource<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSink<'_, '_, QUEUE_SIZE>,
+            RequestQueueSink<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSource<'_, '_, QUEUE_SIZE>,
+        >::default()
+        .with_client(req_client1_rx, resp_client1_tx)
+        .expect("failed to add client 1")
+        .with_client(req_client2_rx, resp_client2_tx)
+        .expect("failed to add client 2")
+        .with_worker(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx)
+        .expect("failed to add worker")
+        .build();
         let mut api1 = Api::new(req_client1_tx, resp_client1_rx);
         let mut api2 = Api::new(req_client2_tx, resp_client2_rx);
 
@@ -491,5 +519,51 @@ mod tests {
             },
         };
         assert_ne!(client1_id, client2_id);
+    }
+
+    #[async_std::test]
+    async fn no_worker_for_request() {
+        const REQUEST_SIZE: usize = 16;
+        let mut random_output = [0u8; REQUEST_SIZE];
+        let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut client_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let (req_client_rx, req_client_tx, resp_client_rx, resp_client_tx) =
+            split_queues(&mut client_requests, &mut client_responses);
+        let mut core = Builder::<
+            NoopRawMutex,
+            RequestQueueSource<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSink<'_, '_, QUEUE_SIZE>,
+            RequestQueueSink<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSource<'_, '_, QUEUE_SIZE>,
+        >::default()
+        .with_client(req_client_rx, resp_client_tx)
+        .expect("failed to add client")
+        .build();
+        let mut api = Api::new(req_client_tx, resp_client_rx);
+
+        let org_request_id = api
+            .get_random(&mut random_output)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        match api.recv_response().await {
+            None => panic!("Failed to receive expected response"),
+            Some(response) => match response {
+                Response::Error {
+                    client_id: _client_id,
+                    request_id,
+                    error,
+                } => {
+                    assert_eq!(request_id, org_request_id);
+                    match error {
+                        Error::NoWorkerForRequest => {}
+                        _ => {
+                            panic!("Unexpected error type {:?}", error)
+                        }
+                    }
+                }
+                _ => panic!("Unexpected response type {:?}", response),
+            },
+        }
     }
 }
