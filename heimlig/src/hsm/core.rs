@@ -1,197 +1,481 @@
-use crate::common::jobs::{Request, RequestType, Response};
-use crate::common::queues::{RequestSink, ResponseSink};
-use crate::common::{jobs, queues};
+use crate::common::jobs;
+use crate::common::jobs::{ClientId, Request, RequestId, RequestType, Response};
 use crate::hsm::keystore::KeyStore;
+use core::future::poll_fn;
 use core::ops::DerefMut;
+use core::pin::Pin;
+use embassy_futures::select::select_slice;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
+use futures::{FutureExt, Sink, SinkExt, Stream, StreamExt};
 use heapless::Vec;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum Error {
-    /// Queue specific error
-    Queue(queues::Error),
-    /// Job specific error
-    Job(jobs::Error),
+    /// Error sending message through queue
+    Send,
+    /// Futures Stream was terminated
+    StreamTerminated,
+    /// Maximum number of clients that can be added to a core was exceeded
+    TooManyClients,
+    /// Maximum number of workers that can be added to a core was exceeded
+    TooManyWorkers,
+    /// Tried to add worker for invalid request type
+    InvalidRequestType,
+    /// A channel for the given request type already exists
+    ChannelForRequestExists,
+    /// Maximum number of request types for a single worker exceeded
+    TooManyRequestTypes,
+    /// An internal error occurred
+    Internal(InternalError),
 }
+
+/// Internal errors that a client should not be able to trigger.
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum InternalError {
+    // The internal client ID was invalid for the internal list of client channels.
+    InvalidClientId(ClientId),
+    // The internal worker ID was invalid for the internal list of worker channels.
+    InvalidWorkerId(WorkerId),
+    /// An empty client request queue was encountered even though a previous check made sure that it was non-empty.
+    EmptyClientRequestQueue(ClientId),
+    /// An empty worker response queue was encountered even though a previous check made sure that it was non-empty.
+    EmptyWorkerResponseQueue(WorkerId),
+    /// A worker or the core encountered a request type it cannot handle
+    InvalidRequestType(RequestType),
+    // The client ID of the response that was determined to be processed next did not match the one in the response queue.
+    ClientIdMismatch(ClientId, ClientId),
+}
+
+/// Used to index list of workers
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct WorkerId(pub u32);
+
+impl From<u32> for WorkerId {
+    fn from(value: u32) -> Self {
+        WorkerId(value)
+    }
+}
+
+impl From<usize> for WorkerId {
+    fn from(value: usize) -> Self {
+        WorkerId(value as u32)
+    }
+}
+
+impl WorkerId {
+    pub fn idx(&self) -> usize {
+        self.0 as usize
+    }
+}
+
+enum Job {
+    /// A client request should be forwarded to a worker
+    ForwardRequest(ClientId, WorkerId),
+    /// A worker response should be forwarded to a client
+    ForwardResponse(ClientId, WorkerId),
+    /// The incoming request can be handled on the core without contacting a dedicated worker
+    ProcessOnCore(ClientId),
+    /// The incoming request has no worker to handle it
+    RespondNoWorkerForRequest(ClientId),
+}
+
+// TODO: Could be made configurable once `generic_const_exprs` feature is stable
+// https://doc.rust-lang.org/beta/unstable-book/language-features/generic-const-exprs.html
+
+/// Maximum number of allowed clients
+pub const MAX_CLIENTS: usize = 8;
+/// Maximum number of allowed workers
+pub const MAX_WORKERS: usize = 16;
+// TODO: Could be made configurable once `core::mem::variant_count` is stable
+// https://github.com/rust-lang/rust/issues/73662
+/// Maximum number of different request types handles by a worker
+const MAX_REQUEST_TYPES: usize = 8;
 
 /// HSM core that waits for [Request]s from clients and send [Response]s once they are ready.   
 pub struct Core<
     'data,
     'keystore,
-    M: RawMutex,
-    ReqSrc: Iterator<Item = (usize, Request<'data>)>,
-    RespSink: ResponseSink<'data>,
-    ReqSink: RequestSink<'data>,
-    RespSrc: Iterator<Item = (usize, Response<'data>)>,
-    const MAX_REQUEST_TYPES: usize = 8,
-    const MAX_WORKERS: usize = 8,
+    M: RawMutex, // TODO: Get rid of embassy specific mutex outside of integration code
+    ReqSrc: Stream<Item = Request<'data>>,
+    RespSink: Sink<Response<'data>>,
+    ReqSink: Sink<Request<'data>>,
+    RespSrc: Stream<Item = Response<'data>>,
 > {
     key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
-    client: ClientChannel<'data, ReqSrc, RespSink>, // TODO: Support multiple clients
-    workers: Vec<WorkerChannel<'data, ReqSink, RespSrc, MAX_REQUEST_TYPES>, MAX_WORKERS>,
+    clients: Vec<ClientChannel<'data, ReqSrc, RespSink, M>, MAX_CLIENTS>,
+    workers: Vec<WorkerChannel<'data, ReqSink, RespSrc, M>, MAX_WORKERS>,
+    last_client_id: usize,
+    last_worker_id: usize,
 }
 
 struct ClientChannel<
     'data,
-    ReqSrc: Iterator<Item = (usize, Request<'data>)>,
-    RespSink: ResponseSink<'data>,
+    ReqSrc: Stream<Item = Request<'data>>,
+    RespSink: Sink<Response<'data>>,
+    M: RawMutex, // TODO: Get rid of embassy specific mutex outside of integration code
 > {
-    requests: ReqSrc,
-    responses: RespSink,
+    id: ClientId, // Used to index list of clients in Core
+    requests: Mutex<M, futures::stream::Peekable<ReqSrc>>,
+    responses: Mutex<M, RespSink>,
 }
 
 /// Associate request types with request sink and response source of the responsible worker
 struct WorkerChannel<
     'data,
-    ReqSink: RequestSink<'data>,
-    RespSrc: Iterator<Item = (usize, Response<'data>)>,
-    const MAX_REQUEST_TYPES_PER_WORKER: usize,
+    ReqSink: Sink<Request<'data>>,
+    RespSrc: Stream<Item = Response<'data>>,
+    M: RawMutex, // TODO: Get rid of embassy specific mutex outside of integration code
 > {
-    pub req_types: Vec<RequestType, MAX_REQUEST_TYPES_PER_WORKER>,
-    pub requests: ReqSink,
-    pub responses: RespSrc,
+    pub id: WorkerId, // Used to index list of workers in Core
+    pub req_types: Vec<RequestType, MAX_REQUEST_TYPES>,
+    pub requests: Mutex<M, ReqSink>,
+    pub responses: Mutex<M, futures::stream::Peekable<RespSrc>>,
+}
+
+pub struct Builder<
+    'data,
+    'keystore,
+    M: RawMutex, // TODO: Get rid of embassy specific mutex outside of integration code
+    ReqSrc: Stream<Item = Request<'data>>,
+    RespSink: Sink<Response<'data>>,
+    ReqSink: Sink<Request<'data>>,
+    RespSrc: Stream<Item = Response<'data>>,
+> {
+    key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
+    clients: Vec<ClientChannel<'data, ReqSrc, RespSink, M>, MAX_CLIENTS>,
+    workers: Vec<WorkerChannel<'data, ReqSink, RespSrc, M>, MAX_WORKERS>,
 }
 
 impl<
         'data,
         'keystore,
         M: RawMutex,
-        ReqSrc: Iterator<Item = (usize, Request<'data>)>,
-        RespSink: ResponseSink<'data>,
-        ReqSink: RequestSink<'data>,
-        RespSrc: Iterator<Item = (usize, Response<'data>)>,
-        const MAX_REQUESTS_PER_WORKER: usize,
-        const MAX_WORKERS: usize,
-    >
-    Core<
+        ReqSrc: Stream<Item = Request<'data>> + Unpin,
+        RespSink: Sink<Response<'data>> + Unpin,
+        ReqSink: Sink<Request<'data>> + Unpin,
+        RespSrc: Stream<Item = Response<'data>> + Unpin,
+    > Default for Builder<'data, 'keystore, M, ReqSrc, RespSink, ReqSink, RespSrc>
+{
+    fn default() -> Self {
+        Builder::new()
+    }
+}
+
+impl<
         'data,
         'keystore,
-        M,
-        ReqSrc,
-        RespSink,
-        ReqSink,
-        RespSrc,
-        MAX_REQUESTS_PER_WORKER,
-        MAX_WORKERS,
-    >
+        M: RawMutex,
+        ReqSrc: Stream<Item = Request<'data>> + Unpin,
+        RespSink: Sink<Response<'data>> + Unpin,
+        ReqSink: Sink<Request<'data>> + Unpin,
+        RespSrc: Stream<Item = Response<'data>> + Unpin,
+    > Builder<'data, 'keystore, M, ReqSrc, RespSink, ReqSink, RespSrc>
 {
-    /// Create a new HSM core.
-    /// The core accepts requests and forwards the responses once they are ready.
-    ///
-    /// # Arguments
-    ///
-    /// * `key_store`: The [KeyStore] to hold cryptographic key material.
-    /// * `requests`: Source from where the core received requests.
-    /// * `responses`: Sink to where the core sends responses.
-    pub fn new(
-        key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
-        requests: ReqSrc,
-        responses: RespSink,
-    ) -> Self {
-        Self {
-            key_store,
-            client: ClientChannel {
-                requests,
-                responses,
-            },
+    pub fn new() -> Self {
+        Builder {
+            key_store: None,
+            clients: Default::default(),
             workers: Default::default(),
         }
     }
 
-    pub fn add_worker_channel(
-        &mut self,
+    pub fn with_keystore(
+        mut self,
+        key_store: &'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>,
+    ) -> Self {
+        self.key_store = Some(key_store);
+        self
+    }
+
+    pub fn with_client(mut self, requests: ReqSrc, responses: RespSink) -> Result<Self, Error> {
+        self.clients
+            .push(ClientChannel {
+                id: ClientId::from(self.clients.len() as u32),
+                requests: Mutex::new(requests.peekable()),
+                responses: Mutex::new(responses),
+            })
+            .map_err(|_| Error::TooManyClients)?;
+        Ok(self)
+    }
+
+    pub fn with_worker(
+        mut self,
         req_types: &[RequestType],
         requests: ReqSink,
         responses: RespSrc,
-    ) {
-        for channel in &self.workers {
+    ) -> Result<Self, Error> {
+        if req_types.contains(&RequestType::ImportKey) {
+            return Err(Error::InvalidRequestType);
+        }
+        for channel in &mut self.workers {
             for req_type in req_types {
                 if channel.req_types.contains(req_type) {
-                    panic!("Channel for given request type already exists");
+                    return Err(Error::ChannelForRequestExists);
                 }
             }
         }
-        if self
-            .workers
+        self.workers
             .push(WorkerChannel {
-                req_types: Vec::from_slice(req_types)
-                    .expect("Maximum number of request types for single worker exceeded"),
-                requests,
-                responses,
+                id: self.workers.len().into(),
+                req_types: Vec::from_slice(req_types).map_err(|_| Error::TooManyRequestTypes)?,
+                requests: Mutex::new(requests),
+                responses: Mutex::new(responses.peekable()),
             })
-            .is_err()
-        {
-            panic!("Failed to add worker channel");
+            .map_err(|_| Error::TooManyWorkers)?;
+        Ok(self)
+    }
+
+    pub fn build(self) -> Core<'data, 'keystore, M, ReqSrc, RespSink, ReqSink, RespSrc> {
+        Core {
+            key_store: self.key_store,
+            clients: self.clients,
+            workers: self.workers,
+            last_client_id: 0,
+            last_worker_id: 0,
+        }
+    }
+}
+
+impl<
+        'data,
+        'keystore,
+        M: RawMutex,
+        ReqSrc: Stream<Item = Request<'data>> + Unpin,
+        RespSink: Sink<Response<'data>> + Unpin,
+        ReqSink: Sink<Request<'data>> + Unpin,
+        RespSrc: Stream<Item = Response<'data>> + Unpin,
+    > Core<'data, 'keystore, M, ReqSrc, RespSink, ReqSink, RespSrc>
+{
+    /// Drive the core to process the next client request or forward the next worker response.
+    /// This method is supposed to be called by a system task that owns the core.
+    pub async fn execute(&mut self) -> Result<(), Error> {
+        match self.next_job().await? {
+            Job::ForwardRequest(client_id, worker_id) => {
+                self.forward_request(client_id, worker_id).await
+            }
+            Job::ForwardResponse(client_id, worker_id) => {
+                self.forward_response(client_id, worker_id).await
+            }
+            Job::ProcessOnCore(client_id) => self.process_on_core(client_id).await,
+            Job::RespondNoWorkerForRequest(client_id) => {
+                self.respond_no_worker_for_request(client_id).await
+            }
+        }
+    }
+
+    /// Asynchronously consider all incoming queues (client requests and worker responses) to determine if any progress can be made.
+    /// If so, the found job will be returned to be performed by the caller.
+    async fn next_job(&self) -> Result<Job, Error> {
+        let mut workers: Vec<_, MAX_WORKERS> = self.workers.iter().collect();
+        let mut clients: Vec<_, MAX_CLIENTS> = self.clients.iter().collect();
+        workers.rotate_left(self.last_worker_id);
+        clients.rotate_left(self.last_client_id);
+
+        // Futures to handle worker responses
+        let process_response = workers.iter().map(|worker| async {
+            // Check for incoming response from worker channels
+            let mut responses = worker.responses.lock().await;
+            let response = Pin::new(responses.deref_mut())
+                .peek()
+                .await
+                .ok_or(Error::StreamTerminated)?;
+
+            // Find client for received response
+            let client_id = response.get_client_id();
+            let client = self
+                .clients
+                .get(client_id.idx())
+                .ok_or(Error::Internal(InternalError::InvalidClientId(client_id)))?;
+            let mut responses = client.responses.lock().await;
+
+            // Check if client queue has room to accept the response
+            poll_fn(move |cx| responses.deref_mut().poll_ready_unpin(cx))
+                .await
+                .map_err(|_| Error::StreamTerminated)?;
+            Ok(Job::ForwardResponse(client_id, worker.id))
+        });
+
+        // Futures to handle client requests
+        let process_requests = clients.iter().map(|client| async {
+            // Check for incoming requests from client channels
+            let mut requests = client.requests.lock().await;
+            let requests = Pin::new(requests.deref_mut())
+                .peek()
+                .await
+                .ok_or(Error::StreamTerminated)?;
+            let request_type = requests.get_type();
+            if request_type == RequestType::ImportKey {
+                return Ok(Job::ProcessOnCore(client.id));
+            }
+
+            // Find worker for received request
+            let worker = match self
+                .workers
+                .iter()
+                .find(|w| w.req_types.contains(&request_type))
+            {
+                None => return Ok(Job::RespondNoWorkerForRequest(client.id)),
+                Some(worker) => worker,
+            };
+            let mut requests = worker.requests.lock().await;
+
+            // Check if worker queue has room to accept the request
+            poll_fn(move |cx| requests.deref_mut().poll_ready_unpin(cx))
+                .await
+                .map_err(|_| Error::StreamTerminated)?;
+            Ok(Job::ForwardRequest(client.id, worker.id))
+        });
+
+        // Collect and execute all futures
+        let mut jobs: Vec<_, { MAX_WORKERS + MAX_CLIENTS }> = process_response
+            .map(|f| f.left_future())
+            .chain(process_requests.map(|f| f.right_future()))
+            .collect();
+        select_slice(&mut jobs).await.0
+    }
+
+    async fn forward_response(
+        &mut self,
+        client_id: ClientId,
+        worker_id: WorkerId,
+    ) -> Result<(), Error> {
+        return match self.workers.get(worker_id.idx()) {
+            None => Err(Error::Internal(InternalError::InvalidWorkerId(worker_id))),
+            Some(worker) => {
+                let response = worker
+                    .responses
+                    .lock()
+                    .await
+                    .deref_mut()
+                    .next()
+                    .await
+                    .ok_or(Error::Internal(InternalError::EmptyWorkerResponseQueue(
+                        worker_id,
+                    )))?;
+                // Mismatch of computed and response client IDs
+                if client_id != response.get_client_id() {
+                    return Err(Error::Internal(InternalError::ClientIdMismatch(
+                        client_id,
+                        response.get_client_id(),
+                    )));
+                }
+                self.send_to_client(response).await
+            }
         };
     }
 
-    pub fn execute(&mut self) -> Result<(), Error> {
-        self.process_worker_responses()?;
-        self.process_client_requests()?;
-        Ok(())
-    }
+    async fn forward_request(
+        &mut self,
+        client_id: ClientId,
+        worker_id: WorkerId,
+    ) -> Result<(), Error> {
+        return match self.clients.get(client_id.idx()) {
+            None => Err(Error::Internal(InternalError::InvalidClientId(client_id))),
+            Some(client) => {
+                let mut request = client
+                    .requests
+                    .lock()
+                    .await
+                    .deref_mut()
+                    .next()
+                    .await
+                    .ok_or(Error::Internal(InternalError::EmptyClientRequestQueue(
+                        client_id,
+                    )))?;
 
-    fn process_worker_responses(&mut self) -> Result<(), Error> {
-        for channel in &mut self.workers {
-            if self.client.responses.ready() {
-                if let Some((_id, response)) = channel.responses.next() {
-                    self.client.responses.send(response).map_err(Error::Queue)?
+                // Fill client ID field that will be used to send back the response later
+                request.set_client_id(client_id);
+
+                match self.workers.get(worker_id.idx()) {
+                    None => Err(Error::Internal(InternalError::InvalidWorkerId(worker_id))),
+                    Some(worker) => worker
+                        .requests
+                        .lock()
+                        .await
+                        .deref_mut()
+                        .send(request)
+                        .await
+                        .map_err(|_e| Error::Send),
                 }
             }
-        }
-        Ok(())
+        };
     }
 
-    /// Search all input channels for a new request and process it.
-    /// Channels are processed in a round-robin fashion.
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(true)` if a [Request] was found and successfully processed.
-    /// * `Ok(false)` if no [Request] was found in any input [ClientChannel].
-    /// * `Err(core::Error)` if a processing error occurred.
-    fn process_client_requests(&mut self) -> Result<(), Error> {
-        if !self.client.responses.ready() {
-            return Err(Error::Queue(queues::Error::NotReady));
-        }
-        let request = self.client.requests.next();
-        if let Some((request_id, request)) = request {
-            return self.process(request_id, request);
-        }
-        Ok(()) // Nothing to process
-    }
-
-    // TODO: Move request ID into Request struct
-    fn process(&mut self, _request_id: usize, request: Request<'data>) -> Result<(), Error> {
-        match request {
-            Request::ImportKey { key_id, data } => {
-                let response = {
-                    if let Some(key_store) = self.key_store {
-                        match key_store
-                            .try_lock()
-                            .expect("Failed to lock key store")
-                            .deref_mut()
-                            .import(key_id, data)
-                        {
-                            Ok(()) => Response::ImportKey,
-                            Err(e) => Response::Error(jobs::Error::KeyStore(e)),
-                        }
-                    } else {
-                        Response::Error(jobs::Error::NoKeyStore)
+    async fn process_on_core(&mut self, client_id: ClientId) -> Result<(), Error> {
+        return match self.clients.get(client_id.idx()) {
+            None => Err(Error::Internal(InternalError::InvalidClientId(client_id))),
+            Some(client) => {
+                let request = client
+                    .requests
+                    .lock()
+                    .await
+                    .deref_mut()
+                    .next()
+                    .await
+                    .ok_or(Error::Internal(InternalError::EmptyClientRequestQueue(
+                        client_id,
+                    )))?;
+                match request {
+                    Request::ImportKey {
+                        client_id,
+                        request_id,
+                        key_id,
+                        data,
+                    } => {
+                        let response = {
+                            match self.key_store {
+                                None => Response::Error {
+                                    client_id,
+                                    request_id,
+                                    error: jobs::Error::NoKeyStore,
+                                },
+                                Some(key_store) => {
+                                    match key_store.lock().await.deref_mut().import(key_id, data) {
+                                        Ok(()) => Response::ImportKey {
+                                            client_id,
+                                            request_id,
+                                        },
+                                        Err(e) => Response::Error {
+                                            client_id,
+                                            request_id,
+                                            error: jobs::Error::KeyStore(e),
+                                        },
+                                    }
+                                }
+                            }
+                        };
+                        self.send_to_client(response).await
                     }
-                };
-                self.client.responses.send(response).map_err(Error::Queue)?;
+                    _ => Err(Error::Internal(InternalError::InvalidRequestType(
+                        request.get_type(),
+                    ))),
+                }
             }
-            _ => {
-                let channel = self
-                    .workers
-                    .iter_mut()
-                    .find(|c| c.req_types.contains(&request.get_type()))
-                    .expect("Failed to find worker channel for request type");
-                channel.requests.send(request).map_err(Error::Queue)?;
-            }
-        }
-        Ok(())
+        };
+    }
+
+    async fn respond_no_worker_for_request(&mut self, client_id: ClientId) -> Result<(), Error> {
+        let response = Response::Error {
+            client_id,
+            request_id: RequestId::default(),
+            error: jobs::Error::NoWorkerForRequest,
+        };
+        self.send_to_client(response).await
+    }
+
+    async fn send_to_client(&mut self, response: Response<'data>) -> Result<(), Error> {
+        let client_id = response.get_client_id();
+        return match self.clients.get(client_id.idx()) {
+            None => Err(Error::Internal(InternalError::InvalidClientId(client_id))),
+            Some(client) => Ok(client
+                .responses
+                .lock()
+                .await
+                .deref_mut()
+                .send(response)
+                .await
+                .map_err(|_e| Error::Send)?),
+        };
     }
 }
