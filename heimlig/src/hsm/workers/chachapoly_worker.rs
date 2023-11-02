@@ -44,9 +44,12 @@ impl<
                         plaintext,
                         aad,
                         tag,
-                    } => self.encrypt_internal_key(
-                        client_id, request_id, key_id, nonce, plaintext, aad, tag,
-                    ),
+                    } => {
+                        self.encrypt_internal_key(
+                            client_id, request_id, key_id, nonce, plaintext, aad, tag,
+                        )
+                        .await
+                    }
                     Request::EncryptChaChaPolyExternalKey {
                         client_id,
                         request_id,
@@ -66,9 +69,12 @@ impl<
                         ciphertext,
                         aad,
                         tag,
-                    } => self.decrypt_with_internal_key(
-                        client_id, request_id, key_id, nonce, ciphertext, aad, tag,
-                    ),
+                    } => {
+                        self.decrypt_with_internal_key(
+                            client_id, request_id, key_id, nonce, ciphertext, aad, tag,
+                        )
+                        .await
+                    }
                     Request::DecryptChaChaPolyExternalKey {
                         client_id,
                         request_id,
@@ -91,7 +97,7 @@ impl<
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn encrypt_internal_key(
+    async fn encrypt_internal_key(
         &mut self,
         client_id: ClientId,
         request_id: RequestId,
@@ -110,8 +116,8 @@ impl<
             Some(key_store) => {
                 let mut key_buffer = Zeroizing::new([0u8; MAX_KEY_SIZE]);
                 let export = key_store
-                    .try_lock()
-                    .expect("Failed to lock key store")
+                    .lock()
+                    .await
                     .deref_mut()
                     .export(key_id, key_buffer.as_mut_slice());
                 match export {
@@ -127,7 +133,7 @@ impl<
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn decrypt_with_internal_key(
+    async fn decrypt_with_internal_key(
         &mut self,
         client_id: ClientId,
         request_id: RequestId,
@@ -146,8 +152,8 @@ impl<
             Some(key_store) => {
                 let mut key_buffer = Zeroizing::new([0u8; MAX_KEY_SIZE]);
                 let export = key_store
-                    .try_lock()
-                    .expect("Failed to lock key store")
+                    .lock()
+                    .await
                     .deref_mut()
                     .export(key_id, key_buffer.as_mut_slice());
                 match export {
