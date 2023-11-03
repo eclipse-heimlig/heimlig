@@ -1,8 +1,32 @@
+use const_default::ConstDefault;
+use heapless::Vec;
+
 /// Identifier to reference HSM keys
 pub type KeyId = u32;
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum KeyType {
+    Symmetric,
+    Asymmetric,
+}
+
+#[derive(Copy, ConstDefault, Clone, Debug, Default)]
+pub struct KeyPermissions {
+    /// Whether or not the key can be set with outside data.
+    pub import: bool,
+    /// Whether or not private key material can be exported. Both symmetric keys and the private key
+    /// of an asymmetric key pair are considered private. Public keys are always exportable.
+    pub export: bool,
+    /// Whether or not the key can be overwritten (either through import or generation).
+    pub overwrite: bool,
+    /// Whether or not the key can be deleted
+    pub delete: bool,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Error {
+    /// The operation is not permitted
+    NotAllowed,
     /// The requested ID is not defined.
     InvalidKeyId,
     /// The requested key was not found.
@@ -36,28 +60,39 @@ pub trait KeyStore {
     /// Delete the key belonging to `id`.
     ///
     /// return: An error, if the key could not be found.
-    fn delete(&mut self, id: KeyId) -> Result<(), Error> {
-        self.import(id, &[])
-    }
+    fn delete(&mut self, id: KeyId) -> Result<(), Error>;
+
+    /// Read key from storage and write it to `dest`.
+    /// Unlike `export()`, this function exports keys even if their permissions do not allow so.
+    /// It is supposed to be used by workers who need to use to do their work and is not reachable
+    /// from outside Heimlig. Workers operate inside Heimlig and are trusted.  
+    ///
+    /// returns: The number of bytes written to `dest` or and error.
+    fn export_unchecked<'data>(
+        &self,
+        id: KeyId,
+        dest: &'data mut [u8],
+    ) -> Result<&'data [u8], Error>;
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct KeyInfo {
     pub id: KeyId,
+    pub ty: KeyType,
+    pub permissions: KeyPermissions,
     pub max_size: usize,
 }
 
-#[derive(Debug)]
-struct KeyInfoInternal {
-    id: KeyId,
+#[derive(Copy, Clone, Debug)]
+struct KeyLayout {
+    info: KeyInfo,
     offset: usize,
-    max_size: usize,
     actual_size: usize,
 }
 
 pub struct MemoryKeyStore<const STORAGE_SIZE: usize, const MAX_KEYS: usize> {
     storage: [u8; STORAGE_SIZE],
-    infos: heapless::Vec<KeyInfoInternal, MAX_KEYS>,
+    layout: Vec<KeyLayout, MAX_KEYS>,
 }
 
 impl<const STORAGE_SIZE: usize, const MAX_KEYS: usize> MemoryKeyStore<STORAGE_SIZE, MAX_KEYS> {
@@ -69,30 +104,23 @@ impl<const STORAGE_SIZE: usize, const MAX_KEYS: usize> MemoryKeyStore<STORAGE_SI
         }
 
         // Check for duplicate IDs
-        let mut sorted_ids_and_sizes: heapless::Vec<&KeyInfo, MAX_KEYS> =
-            key_infos.iter().collect();
-        sorted_ids_and_sizes.sort_unstable_by_key(|key_info| key_info.id);
-        let sorted_ids1 = sorted_ids_and_sizes.iter().map(|key_info| key_info.id);
-        let sorted_ids2 = sorted_ids_and_sizes.iter().map(|key_info| key_info.id);
-        for (id1, id2) in sorted_ids1.zip(sorted_ids2.skip(1)) {
-            if id1 == id2 {
-                return Err(Error::DuplicateIds);
-            }
+        let key_ids: Vec<_, MAX_KEYS> = key_infos.iter().map(|key_info| key_info.id).collect();
+        if (1..key_ids.len()).any(|i| key_ids[i..].contains(&key_ids[i - 1])) {
+            return Err(Error::DuplicateIds);
         }
 
         // Create new key store
         let mut key_store = MemoryKeyStore {
             storage: [0u8; STORAGE_SIZE],
-            infos: Default::default(),
+            layout: Default::default(),
         };
         let mut offset = 0;
-        for key_info in sorted_ids_and_sizes.iter() {
+        for key_info in key_infos.iter() {
             key_store
-                .infos
-                .push(KeyInfoInternal {
-                    id: key_info.id,
+                .layout
+                .push(KeyLayout {
+                    info: *key_info,
                     offset,
-                    max_size: key_info.max_size,
                     actual_size: 0,
                 })
                 .expect("invalid keystore config");
@@ -106,50 +134,117 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
     for MemoryKeyStore<STORAGE_SIZE, NUM_KEYS>
 {
     fn is_stored(&self, id: KeyId) -> bool {
-        match self.infos.iter().find(|key_info| key_info.id == id) {
+        match self
+            .layout
+            .iter()
+            .find(|key_layout| key_layout.info.id == id)
+        {
             None => false,
-            Some(key_info) => key_info.actual_size > 0,
+            Some(key_layout) => key_layout.actual_size > 0,
         }
     }
 
     fn size(&self, id: KeyId) -> Result<usize, Error> {
-        match self.infos.iter().find(|key_info| key_info.id == id) {
+        match self
+            .layout
+            .iter()
+            .find(|key_layout| key_layout.info.id == id)
+        {
             None => Err(Error::InvalidKeyId),
-            Some(key_info) => {
-                if key_info.actual_size == 0 {
+            Some(key_layout) => {
+                if key_layout.actual_size == 0 {
                     return Err(Error::KeyNotFound);
                 }
-                Ok(key_info.actual_size)
+                Ok(key_layout.actual_size)
             }
         }
     }
 
     fn import(&mut self, id: KeyId, src: &[u8]) -> Result<(), Error> {
-        match self.infos.iter_mut().find(|key_info| key_info.id == id) {
+        match self
+            .layout
+            .iter_mut()
+            .find(|key_layout| key_layout.info.id == id)
+        {
             None => Err(Error::InvalidKeyId),
-            Some(key_info) => {
-                if src.len() > key_info.max_size {
+            Some(key_layout) => {
+                if src.len() > key_layout.info.max_size {
                     return Err(Error::BufferTooLarge);
                 }
-                let dest = &mut self.storage[key_info.offset..(key_info.offset + src.len())];
+                if !key_layout.info.permissions.import {
+                    return Err(Error::NotAllowed);
+                }
+                let offset = key_layout.offset;
+                let size = src.len();
+                let dest = &mut self.storage[offset..(offset + size)];
                 dest.copy_from_slice(src);
-                key_info.actual_size = src.len();
+                key_layout.actual_size = src.len();
                 Ok(())
             }
         }
     }
 
     fn export<'data>(&self, id: KeyId, dest: &'data mut [u8]) -> Result<&'data [u8], Error> {
-        match self.infos.iter().find(|key_info| key_info.id == id) {
+        match self
+            .layout
+            .iter()
+            .find(|key_layout| key_layout.info.id == id)
+        {
             None => Err(Error::InvalidKeyId),
-            Some(key_info) => {
-                if key_info.actual_size == 0 {
+            Some(key_layout) => {
+                if !key_layout.info.permissions.export {
+                    return Err(Error::NotAllowed);
+                }
+                self.export_unchecked(id, dest)
+            }
+        }
+    }
+
+    fn delete(&mut self, id: KeyId) -> Result<(), Error> {
+        match self
+            .layout
+            .iter_mut()
+            .find(|key_layout| key_layout.info.id == id)
+        {
+            None => Err(Error::InvalidKeyId),
+            Some(key_layout) => {
+                if !key_layout.info.permissions.delete {
+                    return Err(Error::NotAllowed);
+                }
+                if key_layout.actual_size == 0 {
                     return Err(Error::KeyNotFound);
                 }
-                if dest.len() < key_info.actual_size {
+                let offset = key_layout.offset;
+                let size = key_layout.actual_size;
+                let key = &mut self.storage[offset..(offset + size)];
+                key.fill(0);
+                key_layout.actual_size = 0;
+                Ok(())
+            }
+        }
+    }
+
+    fn export_unchecked<'data>(
+        &self,
+        id: KeyId,
+        dest: &'data mut [u8],
+    ) -> Result<&'data [u8], Error> {
+        match self
+            .layout
+            .iter()
+            .find(|key_layout| key_layout.info.id == id)
+        {
+            None => Err(Error::InvalidKeyId),
+            Some(key_layout) => {
+                if key_layout.actual_size == 0 {
+                    return Err(Error::KeyNotFound);
+                }
+                if dest.len() < key_layout.actual_size {
                     return Err(Error::BufferTooSmall);
                 }
-                let src = &self.storage[key_info.offset..(key_info.offset + key_info.actual_size)];
+                let offset = key_layout.offset;
+                let size = key_layout.actual_size;
+                let src = &self.storage[offset..(offset + size)];
                 let dest = &mut dest[..src.len()];
                 dest.copy_from_slice(src);
                 Ok(dest)
@@ -161,28 +256,44 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
 #[cfg(test)]
 pub(crate) mod test {
     use crate::config;
-    use crate::hsm::keystore::{Error, KeyId, KeyInfo, KeyStore, MemoryKeyStore};
+    use crate::hsm::keystore::{
+        Error, KeyId, KeyInfo, KeyPermissions, KeyStore, KeyType, MemoryKeyStore,
+    };
 
     #[test]
     fn store_get_delete() {
         const UNKNOWN_KEY_ID: KeyId = 1;
         const KEY1_ID: KeyId = 5;
+        const KEY2_ID: KeyId = 3;
         const KEY1_SIZE: usize = 16;
+        const KEY2_SIZE: usize = 64;
         let key1_info = KeyInfo {
             id: KEY1_ID,
+            ty: KeyType::Symmetric,
+            permissions: KeyPermissions {
+                import: true,
+                export: true,
+                overwrite: false,
+                delete: true,
+            },
             max_size: KEY1_SIZE,
         };
-        const KEY2_ID: KeyId = 3;
-        const KEY2_SIZE: usize = 64;
         let key2_info = KeyInfo {
             id: KEY2_ID,
+            ty: KeyType::Symmetric,
+            permissions: KeyPermissions {
+                import: true,
+                export: true,
+                overwrite: false,
+                delete: true,
+            },
             max_size: KEY2_SIZE,
         };
-        let ids_and_sizes: [KeyInfo; 2] = [key1_info, key2_info];
-        let mut dest_buffer = [0u8; KEY2_SIZE];
+        let key_infos: [KeyInfo; 2] = [key1_info, key2_info];
         let mut src_buffer = [0u8; KEY2_SIZE];
+        let mut dest_buffer = [0u8; KEY2_SIZE];
         let mut key_store =
-            MemoryKeyStore::<{ config::keystore::TOTAL_SIZE }, 2>::try_new(&ids_and_sizes)
+            MemoryKeyStore::<{ config::keystore::TOTAL_SIZE }, 2>::try_new(&key_infos)
                 .expect("failed to create key store");
         for id in 0..10 {
             assert!(!key_store.is_stored(id));
@@ -225,5 +336,37 @@ pub(crate) mod test {
         assert!(!key_store.is_stored(KEY1_ID));
         assert!(key_store.import(KEY2_ID, &[]).is_ok());
         assert!(!key_store.is_stored(KEY2_ID));
+    }
+
+    #[test]
+    fn permissions() {
+        const KEY1_ID: KeyId = 0;
+        const KEY1_SIZE: usize = 16;
+        let key1_info = KeyInfo {
+            id: KEY1_ID,
+            ty: KeyType::Symmetric,
+            permissions: KeyPermissions {
+                import: true,
+                export: false,
+                overwrite: false,
+                delete: false,
+            },
+            max_size: KEY1_SIZE,
+        };
+        let key_infos: [KeyInfo; 1] = [key1_info];
+        let src_buffer = [0u8; KEY1_SIZE];
+        let mut dest_buffer = [0u8; KEY1_SIZE];
+        let mut key_store =
+            MemoryKeyStore::<{ config::keystore::TOTAL_SIZE }, 2>::try_new(&key_infos)
+                .expect("failed to create key store");
+        assert!(key_store.import(KEY1_ID, &src_buffer).is_ok());
+        match key_store.export(KEY1_ID, &mut dest_buffer) {
+            Ok(_) => panic!("Operation should have failed"),
+            Err(e) => assert_eq!(e, Error::NotAllowed),
+        }
+        match key_store.delete(KEY1_ID) {
+            Ok(_) => panic!("Operation should have failed"),
+            Err(e) => assert_eq!(e, Error::NotAllowed),
+        }
     }
 }

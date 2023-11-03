@@ -9,12 +9,12 @@ pub struct Api<'data, Req: Sink<Request<'data>>, Resp: Stream<Item = Response<'d
     request_id_counter: RequestId,
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Error {
     Send,
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum SymmetricEncryptionAlgorithm {
     ChaCha20Poly1305,
 }

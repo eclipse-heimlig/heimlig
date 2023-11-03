@@ -10,7 +10,7 @@ use embassy_sync::mutex::Mutex;
 use futures::{FutureExt, Sink, SinkExt, Stream, StreamExt};
 use heapless::Vec;
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Error {
     /// Error sending message through queue
     Send,
@@ -31,7 +31,7 @@ pub enum Error {
 }
 
 /// Internal errors that a client should not be able to trigger.
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum InternalError {
     // The internal client ID was invalid for the internal list of client channels.
     InvalidClientId(ClientId),

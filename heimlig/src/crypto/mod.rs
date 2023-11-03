@@ -9,7 +9,7 @@ pub mod rng;
 pub mod x25519;
 
 /// Common errors.
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Error {
     /// Invalid size of the symmetric key.
     InvalidSymmetricKeySize,

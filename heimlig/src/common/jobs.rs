@@ -1,7 +1,7 @@
 use crate::hsm::keystore;
 use crate::hsm::keystore::KeyId;
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Error {
     /// A cryptographic error occurred.
     Crypto(crate::crypto::Error),
@@ -69,7 +69,7 @@ impl RequestId {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum RequestType {
     ImportKey,
     GetRandom,
