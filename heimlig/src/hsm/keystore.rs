@@ -6,21 +6,69 @@ pub type KeyId = u32;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum KeyType {
-    Symmetric,
-    Asymmetric,
+    Symmetric128Bits,
+    Symmetric192Bits,
+    Symmetric256Bits,
+    EccKeypairNistP256,
+    EccKeypairNistP384,
 }
 
 #[derive(Copy, ConstDefault, Clone, Debug, Default)]
 pub struct KeyPermissions {
     /// Whether or not the key can be set with outside data.
     pub import: bool,
-    /// Whether or not private key material can be exported. Both symmetric keys and the private key
-    /// of an asymmetric key pair are considered private. Public keys are always exportable.
+    /// Whether or not private key material can be exported. Both symmetric keys and private
+    /// asymmetric keys are considered private. Public keys are always exportable.
     pub export: bool,
     /// Whether or not the key can be overwritten (either through import or generation).
     pub overwrite: bool,
     /// Whether or not the key can be deleted
     pub delete: bool,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct KeyInfo {
+    pub id: KeyId,
+    pub ty: KeyType,
+    pub permissions: KeyPermissions,
+}
+
+impl KeyType {
+    pub const fn is_symmetric(&self) -> bool {
+        matches!(
+            self,
+            KeyType::Symmetric128Bits | KeyType::Symmetric192Bits | KeyType::Symmetric256Bits
+        )
+    }
+
+    pub const fn is_asymmetric(&self) -> bool {
+        !self.is_symmetric()
+    }
+
+    pub const fn curve_size(&self) -> usize {
+        match self {
+            KeyType::EccKeypairNistP256 => 32,
+            KeyType::EccKeypairNistP384 => 48,
+            _ => 0,
+        }
+    }
+
+    pub const fn public_key_size(&self) -> usize {
+        2 * self.curve_size()
+    }
+
+    pub const fn private_key_size(&self) -> usize {
+        self.curve_size()
+    }
+
+    pub const fn key_size(&self) -> usize {
+        match self {
+            KeyType::Symmetric128Bits => 16,
+            KeyType::Symmetric192Bits => 24,
+            KeyType::Symmetric256Bits => 32,
+            _ => self.public_key_size() + self.private_key_size(),
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -42,6 +90,8 @@ pub enum Error {
 }
 
 pub trait KeyStore {
+    fn get_key_info(&self, id: KeyId) -> Result<KeyInfo, Error>;
+
     /// Write symmetric key to storage.
     fn import_symmetric_key(&mut self, id: KeyId, data: &[u8]) -> Result<(), Error>;
 
@@ -118,14 +168,6 @@ pub trait KeyStore {
     fn size(&self, id: KeyId) -> Result<usize, Error>;
 }
 
-#[derive(Copy, Clone, Debug)]
-pub struct KeyInfo {
-    pub id: KeyId,
-    pub ty: KeyType,
-    pub permissions: KeyPermissions,
-    pub max_size: usize,
-}
-
 /// Internal layout data structure of the key store. Keys are saved at an offset in the internal key
 /// buffer. The public and private keys of an asymmetric keys are concatenated.
 #[derive(Copy, Clone, Debug)]
@@ -146,7 +188,10 @@ pub struct MemoryKeyStore<const STORAGE_SIZE: usize, const MAX_KEYS: usize> {
 impl<const STORAGE_SIZE: usize, const MAX_KEYS: usize> MemoryKeyStore<STORAGE_SIZE, MAX_KEYS> {
     pub fn try_new(key_infos: &[KeyInfo]) -> Result<Self, Error> {
         // Check input sizes
-        let total_size: usize = key_infos.iter().map(|key_info| key_info.max_size).sum();
+        let total_size: usize = key_infos
+            .iter()
+            .map(|key_info| key_info.ty.key_size())
+            .sum();
         if key_infos.len() > MAX_KEYS || total_size > STORAGE_SIZE {
             return Err(Error::KeyStoreTooSmall);
         }
@@ -171,16 +216,29 @@ impl<const STORAGE_SIZE: usize, const MAX_KEYS: usize> MemoryKeyStore<STORAGE_SI
                     offset,
                     actual_size: 0,
                 })
-                .expect("invalid keystore config");
-            offset += key_info.max_size;
+                .expect("too many key definitions");
+            offset += key_info.ty.key_size();
         }
         Ok(key_store)
+    }
+
+    fn get_key_layout(&self, id: KeyId) -> Option<&KeyLayout> {
+        self.layout
+            .iter()
+            .find(|key_layout| key_layout.info.id == id)
     }
 }
 
 impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
     for MemoryKeyStore<STORAGE_SIZE, NUM_KEYS>
 {
+    fn get_key_info(&self, id: KeyId) -> Result<KeyInfo, Error> {
+        match self.get_key_layout(id) {
+            None => Err(Error::InvalidKeyId),
+            Some(key_layout) => Ok(key_layout.info),
+        }
+    }
+
     fn import_symmetric_key(&mut self, id: KeyId, data: &[u8]) -> Result<(), Error> {
         match self
             .layout
@@ -189,13 +247,13 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         {
             None => Err(Error::InvalidKeyId),
             Some(key_layout) => {
-                if key_layout.info.ty != KeyType::Symmetric {
+                if !key_layout.info.ty.is_symmetric() {
                     return Err(Error::InvalidKeyType);
                 }
                 if !key_layout.info.permissions.import {
                     return Err(Error::NotAllowed);
                 }
-                if data.len() > key_layout.info.max_size {
+                if data.len() > key_layout.info.ty.key_size() {
                     return Err(Error::InvalidBufferSize);
                 }
                 let offset = key_layout.offset;
@@ -221,14 +279,14 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         {
             None => Err(Error::InvalidKeyId),
             Some(key_layout) => {
-                if key_layout.info.ty != KeyType::Asymmetric {
+                if !key_layout.info.ty.is_asymmetric() {
                     return Err(Error::InvalidKeyType);
                 }
                 if !key_layout.info.permissions.import {
                     return Err(Error::NotAllowed);
                 }
                 if (public_key.len() != 2 * private_key.len())
-                    || (public_key.len() + private_key.len() > key_layout.info.max_size)
+                    || (public_key.len() + private_key.len() > key_layout.info.ty.key_size())
                 {
                     return Err(Error::InvalidBufferSize);
                 }
@@ -257,11 +315,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         id: KeyId,
         dest: &'data mut [u8],
     ) -> Result<&'data [u8], Error> {
-        match self
-            .layout
-            .iter()
-            .find(|key_layout| key_layout.info.id == id)
-        {
+        match self.get_key_layout(id) {
             None => Err(Error::InvalidKeyId),
             Some(key_layout) => {
                 if !key_layout.info.permissions.export {
@@ -277,14 +331,10 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         id: KeyId,
         dest: &'data mut [u8],
     ) -> Result<&'data [u8], Error> {
-        match self
-            .layout
-            .iter()
-            .find(|key_layout| key_layout.info.id == id)
-        {
+        match self.get_key_layout(id) {
             None => Err(Error::InvalidKeyId),
             Some(key_layout) => {
-                if key_layout.info.ty != KeyType::Asymmetric {
+                if !key_layout.info.ty.is_asymmetric() {
                     return Err(Error::InvalidKeyType);
                 }
                 if key_layout.actual_size == 0 {
@@ -311,11 +361,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         id: KeyId,
         dest: &'data mut [u8],
     ) -> Result<&'data [u8], Error> {
-        match self
-            .layout
-            .iter()
-            .find(|key_layout| key_layout.info.id == id)
-        {
+        match self.get_key_layout(id) {
             None => Err(Error::InvalidKeyId),
             Some(key_layout) => {
                 if !key_layout.info.permissions.export {
@@ -331,14 +377,10 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         id: KeyId,
         dest: &'data mut [u8],
     ) -> Result<&'data [u8], Error> {
-        match self
-            .layout
-            .iter()
-            .find(|key_layout| key_layout.info.id == id)
-        {
+        match self.get_key_layout(id) {
             None => Err(Error::InvalidKeyId),
             Some(key_layout) => {
-                if key_layout.info.ty != KeyType::Symmetric {
+                if !key_layout.info.ty.is_symmetric() {
                     return Err(Error::InvalidKeyType);
                 }
                 if key_layout.actual_size == 0 {
@@ -362,14 +404,10 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         id: KeyId,
         dest: &'data mut [u8],
     ) -> Result<&'data [u8], Error> {
-        match self
-            .layout
-            .iter()
-            .find(|key_layout| key_layout.info.id == id)
-        {
+        match self.get_key_layout(id) {
             None => Err(Error::InvalidKeyId),
             Some(key_layout) => {
-                if key_layout.info.ty != KeyType::Asymmetric {
+                if !key_layout.info.ty.is_asymmetric() {
                     return Err(Error::InvalidKeyType);
                 }
                 if key_layout.actual_size == 0 {
@@ -416,22 +454,14 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
     }
 
     fn is_stored(&self, id: KeyId) -> bool {
-        match self
-            .layout
-            .iter()
-            .find(|key_layout| key_layout.info.id == id)
-        {
+        match self.get_key_layout(id) {
             None => false,
             Some(key_layout) => key_layout.actual_size > 0,
         }
     }
 
     fn size(&self, id: KeyId) -> Result<usize, Error> {
-        match self
-            .layout
-            .iter()
-            .find(|key_layout| key_layout.info.id == id)
-        {
+        match self.get_key_layout(id) {
             None => Err(Error::InvalidKeyId),
             Some(key_layout) => {
                 if key_layout.actual_size == 0 {
@@ -452,39 +482,30 @@ pub(crate) mod test {
 
     #[test]
     fn store_get_delete() {
-        const CURVE_SIZE: usize = 32;
-        const PUBLIC_KEY_SIZE: usize = 2 * CURVE_SIZE;
-        const PRIVATE_KEY_SIZE: usize = CURVE_SIZE;
         const UNKNOWN_KEY_ID: KeyId = 1;
-        const KEY1_ID: KeyId = 5;
-        const KEY2_ID: KeyId = 3;
-        const KEY1_SIZE: usize = 16;
-        const KEY2_SIZE: usize = PUBLIC_KEY_SIZE + PRIVATE_KEY_SIZE;
-        let key1_info = KeyInfo {
-            id: KEY1_ID,
-            ty: KeyType::Symmetric,
+        const KEY1_INFO: KeyInfo = KeyInfo {
+            id: 5,
+            ty: KeyType::Symmetric128Bits,
             permissions: KeyPermissions {
                 import: true,
                 export: true,
                 overwrite: false,
                 delete: true,
             },
-            max_size: KEY1_SIZE,
         };
-        let key2_info = KeyInfo {
-            id: KEY2_ID,
-            ty: KeyType::Asymmetric,
+        const KEY2_INFO: KeyInfo = KeyInfo {
+            id: 3,
+            ty: KeyType::EccKeypairNistP256,
             permissions: KeyPermissions {
                 import: true,
                 export: true,
                 overwrite: false,
                 delete: true,
             },
-            max_size: KEY2_SIZE,
         };
-        let key_infos: [KeyInfo; 2] = [key1_info, key2_info];
-        let mut src_buffer = [0u8; KEY2_SIZE];
-        let mut dest_buffer = [0u8; KEY2_SIZE];
+        let key_infos: [KeyInfo; 2] = [KEY1_INFO, KEY2_INFO];
+        let mut src_buffer = [0u8; KEY2_INFO.ty.key_size()];
+        let mut dest_buffer = [0u8; KEY2_INFO.ty.key_size()];
         let mut key_store =
             MemoryKeyStore::<{ config::keystore::TOTAL_SIZE }, 2>::try_new(&key_infos)
                 .expect("failed to create key store");
@@ -498,82 +519,95 @@ pub(crate) mod test {
         // Store first key
         src_buffer.fill(1);
         assert!(key_store
-            .import_symmetric_key(KEY1_ID, &src_buffer[0..KEY1_SIZE])
+            .import_symmetric_key(KEY1_INFO.id, &src_buffer[0..KEY1_INFO.ty.key_size()])
             .is_ok());
-        assert!(key_store.is_stored(KEY1_ID));
+        assert!(key_store.is_stored(KEY1_INFO.id));
         assert_eq!(
             key_store
-                .export_symmetric_key(KEY1_ID, &mut dest_buffer)
+                .export_symmetric_key(KEY1_INFO.id, &mut dest_buffer)
                 .expect("failed to retrieve key from store")
                 .len(),
-            KEY1_SIZE
+            KEY1_INFO.ty.key_size()
         );
-        assert!(dest_buffer[0..KEY1_SIZE].iter().all(|byte| *byte == 1));
-        assert!(dest_buffer[KEY1_SIZE..].iter().all(|byte| *byte == 0));
+        assert!(dest_buffer[0..KEY1_INFO.ty.key_size()]
+            .iter()
+            .all(|byte| *byte == 1));
+        assert!(dest_buffer[KEY1_INFO.ty.key_size()..]
+            .iter()
+            .all(|byte| *byte == 0));
 
         // Store second key
         src_buffer.fill(2);
         assert!(key_store
             .import_key_pair(
-                KEY2_ID,
-                &src_buffer[0..PUBLIC_KEY_SIZE],
-                &src_buffer[PUBLIC_KEY_SIZE..]
+                KEY2_INFO.id,
+                &src_buffer[0..KEY2_INFO.ty.public_key_size()],
+                &src_buffer[KEY2_INFO.ty.public_key_size()..]
             )
             .is_ok());
-        assert!(key_store.is_stored(KEY2_ID));
-        assert!(key_store.is_stored(KEY1_ID));
+        assert!(key_store.is_stored(KEY2_INFO.id));
+        assert!(key_store.is_stored(KEY1_INFO.id));
         assert_eq!(
             key_store
-                .export_public_key(KEY2_ID, &mut dest_buffer[..PUBLIC_KEY_SIZE])
+                .export_public_key(
+                    KEY2_INFO.id,
+                    &mut dest_buffer[..KEY2_INFO.ty.public_key_size()]
+                )
                 .expect("failed to retrieve key from store")
                 .len(),
-            2 * (KEY2_SIZE / 3)
+            KEY2_INFO.ty.public_key_size()
         );
         assert_eq!(
             key_store
-                .export_private_key(KEY2_ID, &mut dest_buffer[PUBLIC_KEY_SIZE..])
+                .export_private_key(
+                    KEY2_INFO.id,
+                    &mut dest_buffer[KEY2_INFO.ty.public_key_size()..]
+                )
                 .expect("failed to retrieve key from store")
                 .len(),
-            KEY2_SIZE / 3
+            KEY2_INFO.ty.private_key_size()
         );
-        assert!(dest_buffer[0..KEY2_SIZE].iter().all(|byte| *byte == 2));
-        assert!(dest_buffer[KEY2_SIZE..].iter().all(|byte| *byte == 0));
+        assert!(dest_buffer[0..KEY2_INFO.ty.key_size()]
+            .iter()
+            .all(|byte| *byte == 2));
+        assert!(dest_buffer[KEY2_INFO.ty.key_size()..]
+            .iter()
+            .all(|byte| *byte == 0));
 
         // Delete keys
         assert_eq!(key_store.delete(UNKNOWN_KEY_ID), Err(Error::InvalidKeyId));
-        assert!(key_store.delete(KEY1_ID).is_ok());
-        assert!(!key_store.is_stored(KEY1_ID));
-        assert!(key_store.delete(KEY2_ID).is_ok());
-        assert!(!key_store.is_stored(KEY2_ID));
+        assert!(key_store.delete(KEY1_INFO.id).is_ok());
+        assert!(!key_store.is_stored(KEY1_INFO.id));
+        assert!(key_store.delete(KEY2_INFO.id).is_ok());
+        assert!(!key_store.is_stored(KEY2_INFO.id));
     }
 
     #[test]
     fn permissions() {
-        const KEY1_ID: KeyId = 0;
-        const KEY1_SIZE: usize = 16;
-        let key1_info = KeyInfo {
-            id: KEY1_ID,
-            ty: KeyType::Symmetric,
+        const KEY1_INFO: KeyInfo = KeyInfo {
+            id: 0,
+            ty: KeyType::Symmetric128Bits,
             permissions: KeyPermissions {
                 import: true,
                 export: false,
                 overwrite: false,
                 delete: false,
             },
-            max_size: KEY1_SIZE,
         };
-        let key_infos: [KeyInfo; 1] = [key1_info];
-        let src_buffer = [0u8; KEY1_SIZE];
-        let mut dest_buffer = [0u8; KEY1_SIZE];
+        let key_infos: [KeyInfo; 1] = [KEY1_INFO];
+        let src_buffer = [0u8; KEY1_INFO.ty.key_size()];
+        let mut dest_buffer = [0u8; KEY1_INFO.ty.key_size()];
         let mut key_store =
             MemoryKeyStore::<{ config::keystore::TOTAL_SIZE }, 2>::try_new(&key_infos)
                 .expect("failed to create key store");
-        assert!(key_store.import_symmetric_key(KEY1_ID, &src_buffer).is_ok());
-        match key_store.export_symmetric_key(KEY1_ID, &mut dest_buffer) {
+        assert!(key_store
+            .import_symmetric_key(KEY1_INFO.id, &src_buffer)
+            .is_ok());
+        match key_store.export_symmetric_key(KEY1_INFO.id, &mut dest_buffer) {
             Ok(_) => panic!("Operation should have failed"),
             Err(e) => assert_eq!(e, Error::NotAllowed),
         }
-        match key_store.delete(KEY1_ID) {
+        match key_store.delete(KEY1_INFO.id) {
             Ok(_) => panic!("Operation should have failed"),
             Err(e) => assert_eq!(e, Error::NotAllowed),
         }
