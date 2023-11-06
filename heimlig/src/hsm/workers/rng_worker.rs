@@ -1,49 +1,71 @@
-use crate::common::jobs::Response::GetRandom;
 use crate::common::jobs::{ClientId, Error, Request, RequestId, Response};
 use crate::common::limits::MAX_RANDOM_SIZE;
 use crate::crypto::rng::{EntropySource, Rng};
+use crate::hsm::keystore;
+use crate::hsm::keystore::{KeyId, KeyStore};
+use core::ops::Deref;
+use embassy_sync::blocking_mutex::raw::RawMutex;
+use embassy_sync::mutex::Mutex;
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use rand_core::RngCore;
 
 pub struct RngWorker<
     'data,
+    'rng,
+    'keystore,
+    M: RawMutex,
     E: EntropySource,
     ReqSrc: Stream<Item = Request<'data>>,
     RespSink: Sink<Response<'data>>,
 > {
-    pub rng: Rng<E>,
+    pub rng: &'rng Mutex<M, Rng<E>>,
+    // TODO: Move sym. key generation to own worker and get rid of key store here?
+    pub key_store: &'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>,
     pub requests: ReqSrc,
     pub responses: RespSink,
 }
 
 impl<
         'data,
+        'rng,
+        'keystore,
+        M: RawMutex,
         E: EntropySource,
         ReqSrc: Stream<Item = Request<'data>> + Unpin,
         RespSink: Sink<Response<'data>> + Unpin,
-    > RngWorker<'data, E, ReqSrc, RespSink>
+    > RngWorker<'data, 'rng, 'keystore, M, E, ReqSrc, RespSink>
 {
     /// Drive the worker to process the next request.
     /// This method is supposed to be called by a system task that owns this worker.
     pub async fn execute(&mut self) -> Result<(), Error> {
         match self.requests.next().await {
             None => Ok(()), // Nothing to process
-            Some(Request::GetRandom {
-                client_id,
-                request_id,
-                output,
-            }) => {
-                let response = self.get_random(client_id, request_id, output);
+            Some(request) => {
+                let response = match request {
+                    Request::GetRandom {
+                        client_id,
+                        request_id,
+                        output,
+                    } => self.get_random(client_id, request_id, output).await,
+                    Request::GenerateSymmetricKey {
+                        client_id,
+                        request_id,
+                        key_id,
+                    } => {
+                        self.generate_symmetric_key(client_id, request_id, key_id)
+                            .await
+                    }
+                    _ => Err(Error::UnexpectedRequestType)?,
+                };
                 self.responses
                     .send(response)
                     .await
                     .map_err(|_e| Error::Send)
             }
-            _ => Err(Error::UnexpectedRequestType),
         }
     }
 
-    fn get_random(
+    async fn get_random(
         &mut self,
         client_id: ClientId,
         request_id: RequestId,
@@ -56,11 +78,71 @@ impl<
                 error: Error::RequestTooLarge,
             };
         }
-        self.rng.fill_bytes(output);
-        GetRandom {
+        self.rng.lock().await.fill_bytes(output);
+        Response::GetRandom {
             client_id,
             request_id,
             data: output,
+        }
+    }
+
+    async fn generate_symmetric_key(
+        &mut self,
+        client_id: ClientId,
+        request_id: RequestId,
+        key_id: KeyId,
+    ) -> Response<'data> {
+        // Own variable needed to break mutex lock immediately
+        let key_info = self.key_store.lock().await.deref().get_key_info(key_id);
+        match key_info {
+            Err(e) => Response::Error {
+                client_id,
+                request_id,
+                error: Error::KeyStore(e),
+            },
+            Ok(key_info) => {
+                let key_exists = self.key_store.lock().await.deref().is_stored(key_id);
+                if key_exists && !key_info.permissions.overwrite {
+                    return Response::Error {
+                        client_id,
+                        request_id,
+                        error: Error::KeyStore(keystore::Error::NotAllowed),
+                    };
+                }
+                if !key_info.ty.is_symmetric() {
+                    return Response::Error {
+                        client_id,
+                        request_id,
+                        error: Error::KeyStore(keystore::Error::InvalidKeyType),
+                    };
+                }
+                let mut key = [0u8; keystore::KeyType::MAX_SYMMETRIC_KEY_SIZE];
+                let key = &mut key[0..key_info.ty.key_size()];
+                if key.len() >= MAX_RANDOM_SIZE {
+                    return Response::Error {
+                        client_id,
+                        request_id,
+                        error: Error::RequestTooLarge,
+                    };
+                }
+                self.rng.lock().await.fill_bytes(key);
+                match self
+                    .key_store
+                    .lock()
+                    .await
+                    .import_symmetric_key(key_id, &key)
+                {
+                    Ok(_) => Response::GenerateSymmetricKey {
+                        client_id,
+                        request_id,
+                    },
+                    Err(e) => Response::Error {
+                        client_id,
+                        request_id,
+                        error: Error::KeyStore(e),
+                    },
+                }
+            }
         }
     }
 }

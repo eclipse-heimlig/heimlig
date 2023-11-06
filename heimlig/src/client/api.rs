@@ -28,15 +28,58 @@ impl<
     /// Create a new instance of the HSM API.
     pub fn new(requests: ReqSink, responses: RespSrc) -> Self {
         Api {
-            request_id_counter: RequestId::default(),
             requests,
             responses,
+            request_id_counter: RequestId::default(),
         }
     }
 
     /// Attempt to poll a response and return it.
     pub async fn recv_response<'api>(&'api mut self) -> Option<Response<'data>> {
         self.responses.next().await
+    }
+
+    /// Request random bytes and write to provided buffer.
+    pub async fn get_random(&mut self, output: &'data mut [u8]) -> Result<RequestId, Error> {
+        let request_id = self.next_request_id();
+        let request = Request::GetRandom {
+            client_id: ClientId::default(),
+            request_id,
+            output,
+        };
+        self.requests
+            .send(request)
+            .await
+            .map_err(|_e| Error::Send)?;
+        Ok(request_id)
+    }
+
+    pub async fn generate_symmetric_key(&mut self, key_id: KeyId) -> Result<RequestId, Error> {
+        let request_id = self.next_request_id();
+        let request = Request::GenerateSymmetricKey {
+            client_id: Default::default(),
+            request_id,
+            key_id,
+        };
+        self.requests
+            .send(request)
+            .await
+            .map_err(|_e| Error::Send)?;
+        Ok(request_id)
+    }
+
+    pub async fn generate_key_pair(&mut self, key_id: KeyId) -> Result<RequestId, Error> {
+        let request_id = self.next_request_id();
+        let request = Request::GenerateKeyPair {
+            client_id: Default::default(),
+            request_id,
+            key_id,
+        };
+        self.requests
+            .send(request)
+            .await
+            .map_err(|_e| Error::Send)?;
+        Ok(request_id)
     }
 
     pub async fn import_symmetric_key(
@@ -71,20 +114,6 @@ impl<
                 key_id,
                 public_key,
                 private_key,
-            })
-            .await
-            .map_err(|_e| Error::Send)?;
-        Ok(request_id)
-    }
-
-    /// Request random bytes and write to provided buffer.
-    pub async fn get_random(&mut self, output: &'data mut [u8]) -> Result<RequestId, Error> {
-        let request_id = self.next_request_id();
-        self.requests
-            .send(Request::GetRandom {
-                client_id: ClientId::default(),
-                request_id,
-                output,
             })
             .await
             .map_err(|_e| Error::Send)?;

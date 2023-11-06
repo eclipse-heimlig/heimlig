@@ -1,1 +1,1 @@
-pub mod keystore;
+pub mod keys;

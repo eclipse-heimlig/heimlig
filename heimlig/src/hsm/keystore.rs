@@ -13,7 +13,7 @@ pub enum KeyType {
     EccKeypairNistP384,
 }
 
-#[derive(Copy, ConstDefault, Clone, Debug, Default)]
+#[derive(ConstDefault, Copy, Clone, Debug, Default)]
 pub struct KeyPermissions {
     /// Whether or not the key can be set with outside data.
     pub import: bool,
@@ -34,6 +34,10 @@ pub struct KeyInfo {
 }
 
 impl KeyType {
+    pub const MAX_SYMMETRIC_KEY_SIZE: usize = KeyType::Symmetric256Bits.key_size();
+    pub const MAX_PUBLIC_KEY_SIZE: usize = KeyType::EccKeypairNistP384.public_key_size();
+    pub const MAX_PRIVATE_KEY_SIZE: usize = KeyType::EccKeypairNistP384.private_key_size();
+
     pub const fn is_symmetric(&self) -> bool {
         matches!(
             self,
@@ -527,9 +531,8 @@ pub(crate) mod test {
         let key_infos: [KeyInfo; 2] = [KEY1_INFO, KEY2_INFO];
         let mut src_buffer = [0u8; KEY2_INFO.ty.key_size()];
         let mut dest_buffer = [0u8; KEY2_INFO.ty.key_size()];
-        let mut key_store =
-            MemoryKeyStore::<{ config::keystore::TOTAL_SIZE }, 2>::try_new(&key_infos)
-                .expect("failed to create key store");
+        let mut key_store = MemoryKeyStore::<{ config::keys::TOTAL_SIZE }, 2>::try_new(&key_infos)
+            .expect("failed to create key store");
         for id in 0..10 {
             assert!(!key_store.is_stored(id));
             assert!(key_store.size(id).is_err());
@@ -605,7 +608,7 @@ pub(crate) mod test {
 
     #[test]
     fn permissions() {
-        const KEY1_INFO: KeyInfo = KeyInfo {
+        const NO_EXPORT_NO_OVERWRITE_NO_DELETE: KeyInfo = KeyInfo {
             id: 0,
             ty: KeyType::Symmetric128Bits,
             permissions: KeyPermissions {
@@ -615,20 +618,20 @@ pub(crate) mod test {
                 delete: false,
             },
         };
-        let key_infos: [KeyInfo; 1] = [KEY1_INFO];
-        let src_buffer = [0u8; KEY1_INFO.ty.key_size()];
-        let mut dest_buffer = [0u8; KEY1_INFO.ty.key_size()];
-        let mut key_store =
-            MemoryKeyStore::<{ config::keystore::TOTAL_SIZE }, 2>::try_new(&key_infos)
-                .expect("failed to create key store");
+        let key_infos: [KeyInfo; 1] = [NO_EXPORT_NO_OVERWRITE_NO_DELETE];
+        let src_buffer = [0u8; NO_EXPORT_NO_OVERWRITE_NO_DELETE.ty.key_size()];
+        let mut dest_buffer = [0u8; NO_EXPORT_NO_OVERWRITE_NO_DELETE.ty.key_size()];
+        let mut key_store = MemoryKeyStore::<{ config::keys::TOTAL_SIZE }, 2>::try_new(&key_infos)
+            .expect("failed to create key store");
         assert!(key_store
-            .import_symmetric_key(KEY1_INFO.id, &src_buffer)
+            .import_symmetric_key(NO_EXPORT_NO_OVERWRITE_NO_DELETE.id, &src_buffer)
             .is_ok());
-        match key_store.export_symmetric_key(KEY1_INFO.id, &mut dest_buffer) {
+        match key_store.export_symmetric_key(NO_EXPORT_NO_OVERWRITE_NO_DELETE.id, &mut dest_buffer)
+        {
             Ok(_) => panic!("Operation should have failed"),
             Err(e) => assert_eq!(e, Error::NotAllowed),
         }
-        match key_store.delete(KEY1_INFO.id) {
+        match key_store.delete(NO_EXPORT_NO_OVERWRITE_NO_DELETE.id) {
             Ok(_) => panic!("Operation should have failed"),
             Err(e) => assert_eq!(e, Error::NotAllowed),
         }
