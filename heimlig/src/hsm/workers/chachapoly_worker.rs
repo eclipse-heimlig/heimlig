@@ -119,7 +119,7 @@ impl<
                     .lock()
                     .await
                     .deref_mut()
-                    .export_unchecked(key_id, key_buffer.as_mut_slice());
+                    .export_symmetric_key_unchecked(key_id, key_buffer.as_mut_slice());
                 match export {
                     Ok(key) => self.encrypt(client_id, request_id, key, nonce, aad, plaintext, tag),
                     Err(e) => Response::Error {
@@ -155,7 +155,7 @@ impl<
                     .lock()
                     .await
                     .deref_mut()
-                    .export_unchecked(key_id, key_buffer.as_mut_slice());
+                    .export_symmetric_key_unchecked(key_id, key_buffer.as_mut_slice());
                 match export {
                     Ok(key) => {
                         self.decrypt(client_id, request_id, key, nonce, aad, ciphertext, tag)

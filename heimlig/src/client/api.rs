@@ -39,6 +39,44 @@ impl<
         self.responses.next().await
     }
 
+    pub async fn import_symmetric_key(
+        &mut self,
+        key_id: KeyId,
+        data: &'data [u8],
+    ) -> Result<RequestId, Error> {
+        let request_id = self.next_request_id();
+        self.requests
+            .send(Request::ImportSymmetricKey {
+                client_id: ClientId::default(),
+                request_id,
+                key_id,
+                data,
+            })
+            .await
+            .map_err(|_e| Error::Send)?;
+        Ok(request_id)
+    }
+
+    pub async fn import_key_pair(
+        &mut self,
+        key_id: KeyId,
+        public_key: &'data [u8],
+        private_key: &'data [u8],
+    ) -> Result<RequestId, Error> {
+        let request_id = self.next_request_id();
+        self.requests
+            .send(Request::ImportKeyPair {
+                client_id: ClientId::default(),
+                request_id,
+                key_id,
+                public_key,
+                private_key,
+            })
+            .await
+            .map_err(|_e| Error::Send)?;
+        Ok(request_id)
+    }
+
     /// Request random bytes and write to provided buffer.
     pub async fn get_random(&mut self, output: &'data mut [u8]) -> Result<RequestId, Error> {
         let request_id = self.next_request_id();
@@ -47,24 +85,6 @@ impl<
                 client_id: ClientId::default(),
                 request_id,
                 output,
-            })
-            .await
-            .map_err(|_e| Error::Send)?;
-        Ok(request_id)
-    }
-
-    pub async fn import_key(
-        &mut self,
-        key_id: KeyId,
-        data: &'data [u8],
-    ) -> Result<RequestId, Error> {
-        let request_id = self.next_request_id();
-        self.requests
-            .send(Request::ImportKey {
-                client_id: ClientId::default(),
-                request_id,
-                key_id,
-                data,
             })
             .await
             .map_err(|_e| Error::Send)?;
