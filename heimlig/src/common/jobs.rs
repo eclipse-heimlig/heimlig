@@ -140,14 +140,18 @@ pub enum Request<'data> {
 }
 
 impl RequestType {
-    /// A core-only request does not require a worker. Key management (import/export) is an example
-    /// of this type of request.
-    pub fn is_for_core_only(&self) -> bool {
-        match self {
-            RequestType::ImportSymmetricKey => true,
-            RequestType::ImportKeyPair => true,
-            _ => false,
-        }
+    /// A request that does not require processing by a worker.
+    /// Key management (import/export) operations are an example of this type of request.
+    pub fn is_handled_by_core(&self) -> bool {
+        matches!(
+            self,
+            RequestType::ImportSymmetricKey | RequestType::ImportKeyPair
+        )
+    }
+
+    /// A request that requires processing by a worker.
+    pub fn is_handled_by_worker(&self) -> bool {
+        !self.is_handled_by_core()
     }
 }
 

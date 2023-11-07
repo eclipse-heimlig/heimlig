@@ -182,7 +182,7 @@ struct KeyLayout {
 
 pub struct MemoryKeyStore<const STORAGE_SIZE: usize, const MAX_KEYS: usize> {
     storage: [u8; STORAGE_SIZE],
-    layout: Vec<KeyLayout, MAX_KEYS>,
+    layout: Vec<KeyLayout, MAX_KEYS>, // Sorted by key ID
 }
 
 impl<const STORAGE_SIZE: usize, const MAX_KEYS: usize> MemoryKeyStore<STORAGE_SIZE, MAX_KEYS> {
@@ -196,9 +196,12 @@ impl<const STORAGE_SIZE: usize, const MAX_KEYS: usize> MemoryKeyStore<STORAGE_SI
             return Err(Error::KeyStoreTooSmall);
         }
 
+        // Sort by key ID
+        let mut key_infos: Vec<_, MAX_KEYS> = key_infos.iter().collect();
+        key_infos.sort_unstable_by_key(|key_info| key_info.id);
+
         // Check for duplicate IDs
-        let key_ids: Vec<_, MAX_KEYS> = key_infos.iter().map(|key_info| key_info.id).collect();
-        if (1..key_ids.len()).any(|i| key_ids[i..].contains(&key_ids[i - 1])) {
+        if key_infos.windows(2).any(|w| w[0].id == w[1].id) {
             return Err(Error::DuplicateIds);
         }
 
@@ -208,7 +211,7 @@ impl<const STORAGE_SIZE: usize, const MAX_KEYS: usize> MemoryKeyStore<STORAGE_SI
             layout: Default::default(),
         };
         let mut offset = 0;
-        for key_info in key_infos.iter() {
+        for key_info in key_infos.into_iter() {
             key_store
                 .layout
                 .push(KeyLayout {
@@ -223,9 +226,12 @@ impl<const STORAGE_SIZE: usize, const MAX_KEYS: usize> MemoryKeyStore<STORAGE_SI
     }
 
     fn get_key_layout(&self, id: KeyId) -> Option<&KeyLayout> {
-        self.layout
-            .iter()
-            .find(|key_layout| key_layout.info.id == id)
+        let index = self
+            .layout
+            .as_slice()
+            .binary_search_by_key(&id, |key_layout| key_layout.info.id)
+            .ok()?;
+        self.layout.get(index)
     }
 }
 

@@ -205,7 +205,7 @@ impl<
         requests: ReqSink,
         responses: RespSrc,
     ) -> Result<Self, Error> {
-        if req_types.iter().any(|r| r.is_for_core_only()) {
+        if req_types.iter().any(|r| r.is_handled_by_core()) {
             return Err(Error::InvalidRequestType);
         }
         for channel in &mut self.workers {
@@ -305,7 +305,7 @@ impl<
                 .await
                 .ok_or(Error::StreamTerminated)?;
             let request_type = requests.get_type();
-            if request_type.is_for_core_only() {
+            if request_type.is_handled_by_core() {
                 return Ok(Job::ProcessOnCore(client.id));
             }
 
