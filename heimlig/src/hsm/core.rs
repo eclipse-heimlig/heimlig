@@ -10,7 +10,7 @@ use embassy_sync::mutex::Mutex;
 use futures::{FutureExt, Sink, SinkExt, Stream, StreamExt};
 use heapless::Vec;
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Error {
     /// Error sending message through queue
     Send,
@@ -31,7 +31,7 @@ pub enum Error {
 }
 
 /// Internal errors that a client should not be able to trigger.
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum InternalError {
     // The internal client ID was invalid for the internal list of client channels.
     InvalidClientId(ClientId),
@@ -205,7 +205,7 @@ impl<
         requests: ReqSink,
         responses: RespSrc,
     ) -> Result<Self, Error> {
-        if req_types.contains(&RequestType::ImportKey) {
+        if req_types.iter().any(|r| r.is_handled_by_core()) {
             return Err(Error::InvalidRequestType);
         }
         for channel in &mut self.workers {
@@ -305,7 +305,7 @@ impl<
                 .await
                 .ok_or(Error::StreamTerminated)?;
             let request_type = requests.get_type();
-            if request_type == RequestType::ImportKey {
+            if request_type.is_handled_by_core() {
                 return Ok(Job::ProcessOnCore(client.id));
             }
 
@@ -417,7 +417,7 @@ impl<
                         client_id,
                     )))?;
                 match request {
-                    Request::ImportKey {
+                    Request::ImportSymmetricKey {
                         client_id,
                         request_id,
                         key_id,
@@ -431,8 +431,13 @@ impl<
                                     error: jobs::Error::NoKeyStore,
                                 },
                                 Some(key_store) => {
-                                    match key_store.lock().await.deref_mut().import(key_id, data) {
-                                        Ok(()) => Response::ImportKey {
+                                    match key_store
+                                        .lock()
+                                        .await
+                                        .deref_mut()
+                                        .import_symmetric_key(key_id, data)
+                                    {
+                                        Ok(()) => Response::ImportSymmetricKey {
                                             client_id,
                                             request_id,
                                         },
@@ -447,6 +452,42 @@ impl<
                         };
                         self.send_to_client(response).await
                     }
+                    Request::ImportKeyPair {
+                        client_id,
+                        request_id,
+                        key_id,
+                        public_key,
+                        private_key,
+                    } => {
+                        let response = {
+                            match self.key_store {
+                                None => Response::Error {
+                                    client_id,
+                                    request_id,
+                                    error: jobs::Error::NoKeyStore,
+                                },
+                                Some(key_store) => {
+                                    match key_store.lock().await.deref_mut().import_key_pair(
+                                        key_id,
+                                        public_key,
+                                        private_key,
+                                    ) {
+                                        Ok(()) => Response::ImportKeyPair {
+                                            client_id,
+                                            request_id,
+                                        },
+                                        Err(e) => Response::Error {
+                                            client_id,
+                                            request_id,
+                                            error: jobs::Error::KeyStore(e),
+                                        },
+                                    }
+                                }
+                            }
+                        };
+                        self.send_to_client(response).await
+                    }
+
                     _ => Err(Error::Internal(InternalError::InvalidRequestType(
                         request.get_type(),
                     ))),

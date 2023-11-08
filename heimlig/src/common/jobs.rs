@@ -1,7 +1,7 @@
 use crate::hsm::keystore;
 use crate::hsm::keystore::KeyId;
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Error {
     /// A cryptographic error occurred.
     Crypto(crate::crypto::Error),
@@ -69,9 +69,10 @@ impl RequestId {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum RequestType {
-    ImportKey,
+    ImportSymmetricKey,
+    ImportKeyPair,
     GetRandom,
     EncryptChaChaPoly,
     EncryptChaChaPolyExternalKey,
@@ -82,11 +83,18 @@ pub enum RequestType {
 /// A request for the HSM to perform a cryptographic task.
 #[derive(Eq, PartialEq, Debug)]
 pub enum Request<'data> {
-    ImportKey {
+    ImportSymmetricKey {
         client_id: ClientId,
         request_id: RequestId,
         key_id: KeyId,
         data: &'data [u8],
+    },
+    ImportKeyPair {
+        client_id: ClientId,
+        request_id: RequestId,
+        key_id: KeyId,
+        public_key: &'data [u8],
+        private_key: &'data [u8],
     },
     GetRandom {
         client_id: ClientId,
@@ -131,10 +139,30 @@ pub enum Request<'data> {
     },
 }
 
+impl RequestType {
+    /// A request that does not require processing by a worker.
+    /// Key management (import/export) operations are an example of this type of request.
+    pub fn is_handled_by_core(&self) -> bool {
+        matches!(
+            self,
+            RequestType::ImportSymmetricKey | RequestType::ImportKeyPair
+        )
+    }
+
+    /// A request that requires processing by a worker.
+    pub fn is_handled_by_worker(&self) -> bool {
+        !self.is_handled_by_core()
+    }
+}
+
 /// A response from the HSM containing the results of a cryptographic task.
 #[derive(Eq, PartialEq, Debug)]
 pub enum Response<'data> {
-    ImportKey {
+    ImportSymmetricKey {
+        client_id: ClientId,
+        request_id: RequestId,
+    },
+    ImportKeyPair {
         client_id: ClientId,
         request_id: RequestId,
     },
@@ -164,7 +192,8 @@ pub enum Response<'data> {
 impl<'data> Request<'data> {
     pub fn get_type(&self) -> RequestType {
         match self {
-            Request::ImportKey { .. } => RequestType::ImportKey,
+            Request::ImportSymmetricKey { .. } => RequestType::ImportSymmetricKey,
+            Request::ImportKeyPair { .. } => RequestType::ImportKeyPair,
             Request::GetRandom { .. } => RequestType::GetRandom,
             Request::EncryptChaChaPoly { .. } => RequestType::EncryptChaChaPoly,
             Request::EncryptChaChaPolyExternalKey { .. } => {
@@ -179,24 +208,13 @@ impl<'data> Request<'data> {
 
     pub fn set_client_id(&mut self, new_client_id: ClientId) {
         match self {
-            Request::ImportKey {
-                ref mut client_id, ..
-            } => *client_id = new_client_id,
-            Request::GetRandom {
-                ref mut client_id, ..
-            } => *client_id = new_client_id,
-            Request::EncryptChaChaPoly {
-                ref mut client_id, ..
-            } => *client_id = new_client_id,
-            Request::EncryptChaChaPolyExternalKey {
-                ref mut client_id, ..
-            } => *client_id = new_client_id,
-            Request::DecryptChaChaPoly {
-                ref mut client_id, ..
-            } => *client_id = new_client_id,
-            Request::DecryptChaChaPolyExternalKey {
-                ref mut client_id, ..
-            } => *client_id = new_client_id,
+            Request::ImportSymmetricKey { client_id, .. } => *client_id = new_client_id,
+            Request::ImportKeyPair { client_id, .. } => *client_id = new_client_id,
+            Request::GetRandom { client_id, .. } => *client_id = new_client_id,
+            Request::EncryptChaChaPoly { client_id, .. } => *client_id = new_client_id,
+            Request::EncryptChaChaPolyExternalKey { client_id, .. } => *client_id = new_client_id,
+            Request::DecryptChaChaPoly { client_id, .. } => *client_id = new_client_id,
+            Request::DecryptChaChaPolyExternalKey { client_id, .. } => *client_id = new_client_id,
         }
     }
 }
@@ -204,7 +222,8 @@ impl<'data> Request<'data> {
 impl<'data> Response<'data> {
     pub fn get_client_id(&self) -> ClientId {
         *match self {
-            Response::ImportKey { client_id, .. } => client_id,
+            Response::ImportSymmetricKey { client_id, .. } => client_id,
+            Response::ImportKeyPair { client_id, .. } => client_id,
             Response::Error { client_id, .. } => client_id,
             Response::GetRandom { client_id, .. } => client_id,
             Response::EncryptChaChaPoly { client_id, .. } => client_id,

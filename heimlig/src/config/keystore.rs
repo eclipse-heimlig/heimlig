@@ -1,4 +1,4 @@
-use crate::hsm::keystore::KeyInfo;
+use crate::hsm::keystore::{KeyInfo, KeyPermissions, KeyType};
 
 /// Maximum number of items in the key store
 pub const NUM_KEYS: usize = 3;
@@ -9,13 +9,31 @@ pub const TOTAL_SIZE: usize = 16 + 32 + 128;
 
 pub const KEY1: KeyInfo = KeyInfo {
     id: 0,
-    max_size: 16,
+    ty: KeyType::Symmetric128Bits,
+    permissions: KeyPermissions {
+        import: true,
+        export: false,
+        overwrite: false,
+        delete: false,
+    },
 };
 pub const KEY2: KeyInfo = KeyInfo {
     id: 1,
-    max_size: 32,
+    ty: KeyType::Symmetric256Bits,
+    permissions: KeyPermissions {
+        import: true,
+        export: false,
+        overwrite: false,
+        delete: false,
+    },
 };
 pub const KEY3: KeyInfo = KeyInfo {
     id: 2,
-    max_size: 128,
+    ty: KeyType::EccKeypairNistP256,
+    permissions: KeyPermissions {
+        import: true,
+        export: false,
+        overwrite: false,
+        delete: false,
+    },
 };

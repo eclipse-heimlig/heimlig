@@ -243,7 +243,7 @@ mod tests {
 
         // Import key
         let org_request_id = api
-            .import_key(KEY3.id, &key)
+            .import_symmetric_key(KEY2.id, &key)
             .await
             .expect("failed to send request");
         core.execute()
@@ -254,7 +254,7 @@ mod tests {
             .await
             .expect("Failed to receive expected response");
         match response {
-            Response::ImportKey {
+            Response::ImportSymmetricKey {
                 client_id: _client_id,
                 request_id,
             } => {
@@ -267,7 +267,7 @@ mod tests {
         let org_request_id = api
             .encrypt(
                 ChaCha20Poly1305,
-                KEY3.id,
+                KEY2.id,
                 &nonce,
                 &mut plaintext,
                 &aad,
@@ -298,7 +298,7 @@ mod tests {
 
         // Decrypt data
         let org_request_id = api
-            .decrypt(ChaCha20Poly1305, KEY3.id, &nonce, ciphertext, &aad, tag)
+            .decrypt(ChaCha20Poly1305, KEY2.id, &nonce, ciphertext, &aad, tag)
             .await
             .expect("failed to send request");
         core.execute().await.expect("failed to forward request");
