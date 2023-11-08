@@ -231,17 +231,16 @@ impl<const STORAGE_SIZE: usize, const MAX_KEYS: usize> TryFrom<&[KeyInfo]>
         }
 
         // Create new sorted key layout
-        let mut ret = SortedKeyStoreLayout {
-            inner: Default::default(),
-        };
+        let mut ret = Self::default();
         let mut offset = 0;
-        for key_info in key_infos.into_iter() {
+        for key_info in key_infos {
+            let key_layout = KeyLayout {
+                info: *key_info,
+                offset,
+                actual_size: 0,
+            };
             ret.inner
-                .push(KeyLayout {
-                    info: *key_info,
-                    offset,
-                    actual_size: 0,
-                })
+                .push(key_layout)
                 .expect("too many key definitions");
             offset += key_info.ty.key_size();
         }
@@ -256,7 +255,7 @@ pub struct MemoryKeyStore<const STORAGE_SIZE: usize, const MAX_KEYS: usize> {
 
 impl<const STORAGE_SIZE: usize, const MAX_KEYS: usize> MemoryKeyStore<STORAGE_SIZE, MAX_KEYS> {
     pub fn try_new(key_infos: &[KeyInfo]) -> Result<Self, Error> {
-        Ok(MemoryKeyStore {
+        Ok(Self {
             storage: [0u8; STORAGE_SIZE],
             layout: SortedKeyStoreLayout::try_from(key_infos)?,
         })
