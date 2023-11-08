@@ -180,13 +180,38 @@ struct KeyLayout {
     actual_size: usize,
 }
 
-pub struct MemoryKeyStore<const STORAGE_SIZE: usize, const MAX_KEYS: usize> {
-    storage: [u8; STORAGE_SIZE],
-    layout: Vec<KeyLayout, MAX_KEYS>, // Sorted by key ID
+/// Keeps a sorted list of `KeyLayout`s
+#[derive(Default)]
+struct SortedKeyStoreLayout<const STORAGE_SIZE: usize, const MAX_KEYS: usize> {
+    inner: Vec<KeyLayout, MAX_KEYS>,
 }
 
-impl<const STORAGE_SIZE: usize, const MAX_KEYS: usize> MemoryKeyStore<STORAGE_SIZE, MAX_KEYS> {
-    pub fn try_new(key_infos: &[KeyInfo]) -> Result<Self, Error> {
+impl<const STORAGE_SIZE: usize, const MAX_KEYS: usize>
+    SortedKeyStoreLayout<STORAGE_SIZE, MAX_KEYS>
+{
+    pub fn get(&self, id: KeyId) -> Option<&KeyLayout> {
+        let index = self
+            .inner
+            .binary_search_by_key(&id, |key_layout| key_layout.info.id)
+            .ok()?;
+        self.inner.get(index)
+    }
+
+    pub fn get_mut(&mut self, id: KeyId) -> Option<&mut KeyLayout> {
+        let index = self
+            .inner
+            .binary_search_by_key(&id, |key_layout| key_layout.info.id)
+            .ok()?;
+        self.inner.get_mut(index)
+    }
+}
+
+impl<const STORAGE_SIZE: usize, const MAX_KEYS: usize> TryFrom<&[KeyInfo]>
+    for SortedKeyStoreLayout<STORAGE_SIZE, MAX_KEYS>
+{
+    type Error = Error;
+
+    fn try_from(key_infos: &[KeyInfo]) -> Result<Self, Self::Error> {
         // Check input sizes
         let total_size: usize = key_infos
             .iter()
@@ -205,15 +230,13 @@ impl<const STORAGE_SIZE: usize, const MAX_KEYS: usize> MemoryKeyStore<STORAGE_SI
             return Err(Error::DuplicateIds);
         }
 
-        // Create new key store
-        let mut key_store = MemoryKeyStore {
-            storage: [0u8; STORAGE_SIZE],
-            layout: Default::default(),
+        // Create new sorted key layout
+        let mut ret = SortedKeyStoreLayout {
+            inner: Default::default(),
         };
         let mut offset = 0;
         for key_info in key_infos.into_iter() {
-            key_store
-                .layout
+            ret.inner
                 .push(KeyLayout {
                     info: *key_info,
                     offset,
@@ -222,16 +245,21 @@ impl<const STORAGE_SIZE: usize, const MAX_KEYS: usize> MemoryKeyStore<STORAGE_SI
                 .expect("too many key definitions");
             offset += key_info.ty.key_size();
         }
-        Ok(key_store)
+        Ok(ret)
     }
+}
 
-    fn get_key_layout(&self, id: KeyId) -> Option<&KeyLayout> {
-        let index = self
-            .layout
-            .as_slice()
-            .binary_search_by_key(&id, |key_layout| key_layout.info.id)
-            .ok()?;
-        self.layout.get(index)
+pub struct MemoryKeyStore<const STORAGE_SIZE: usize, const MAX_KEYS: usize> {
+    storage: [u8; STORAGE_SIZE],
+    layout: SortedKeyStoreLayout<STORAGE_SIZE, MAX_KEYS>,
+}
+
+impl<const STORAGE_SIZE: usize, const MAX_KEYS: usize> MemoryKeyStore<STORAGE_SIZE, MAX_KEYS> {
+    pub fn try_new(key_infos: &[KeyInfo]) -> Result<Self, Error> {
+        Ok(MemoryKeyStore {
+            storage: [0u8; STORAGE_SIZE],
+            layout: SortedKeyStoreLayout::try_from(key_infos)?,
+        })
     }
 }
 
@@ -239,18 +267,14 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
     for MemoryKeyStore<STORAGE_SIZE, NUM_KEYS>
 {
     fn get_key_info(&self, id: KeyId) -> Result<KeyInfo, Error> {
-        match self.get_key_layout(id) {
+        match self.layout.get(id) {
             None => Err(Error::InvalidKeyId),
             Some(key_layout) => Ok(key_layout.info),
         }
     }
 
     fn import_symmetric_key(&mut self, id: KeyId, data: &[u8]) -> Result<(), Error> {
-        match self
-            .layout
-            .iter_mut()
-            .find(|key_layout| key_layout.info.id == id)
-        {
+        match self.layout.get_mut(id) {
             None => Err(Error::InvalidKeyId),
             Some(key_layout) => {
                 if !key_layout.info.ty.is_symmetric() {
@@ -278,11 +302,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         public_key: &[u8],
         private_key: &[u8],
     ) -> Result<(), Error> {
-        match self
-            .layout
-            .iter_mut()
-            .find(|key_layout| key_layout.info.id == id)
-        {
+        match self.layout.get_mut(id) {
             None => Err(Error::InvalidKeyId),
             Some(key_layout) => {
                 if !key_layout.info.ty.is_asymmetric() {
@@ -321,7 +341,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         id: KeyId,
         dest: &'data mut [u8],
     ) -> Result<&'data [u8], Error> {
-        match self.get_key_layout(id) {
+        match self.layout.get(id) {
             None => Err(Error::InvalidKeyId),
             Some(key_layout) => {
                 if !key_layout.info.permissions.export {
@@ -337,7 +357,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         id: KeyId,
         dest: &'data mut [u8],
     ) -> Result<&'data [u8], Error> {
-        match self.get_key_layout(id) {
+        match self.layout.get(id) {
             None => Err(Error::InvalidKeyId),
             Some(key_layout) => {
                 if !key_layout.info.ty.is_asymmetric() {
@@ -367,7 +387,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         id: KeyId,
         dest: &'data mut [u8],
     ) -> Result<&'data [u8], Error> {
-        match self.get_key_layout(id) {
+        match self.layout.get(id) {
             None => Err(Error::InvalidKeyId),
             Some(key_layout) => {
                 if !key_layout.info.permissions.export {
@@ -383,7 +403,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         id: KeyId,
         dest: &'data mut [u8],
     ) -> Result<&'data [u8], Error> {
-        match self.get_key_layout(id) {
+        match self.layout.get(id) {
             None => Err(Error::InvalidKeyId),
             Some(key_layout) => {
                 if !key_layout.info.ty.is_symmetric() {
@@ -410,7 +430,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         id: KeyId,
         dest: &'data mut [u8],
     ) -> Result<&'data [u8], Error> {
-        match self.get_key_layout(id) {
+        match self.layout.get(id) {
             None => Err(Error::InvalidKeyId),
             Some(key_layout) => {
                 if !key_layout.info.ty.is_asymmetric() {
@@ -436,11 +456,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
     }
 
     fn delete(&mut self, id: KeyId) -> Result<(), Error> {
-        match self
-            .layout
-            .iter_mut()
-            .find(|key_layout| key_layout.info.id == id)
-        {
+        match self.layout.get_mut(id) {
             None => Err(Error::InvalidKeyId),
             Some(key_layout) => {
                 if !key_layout.info.permissions.delete {
@@ -460,14 +476,14 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
     }
 
     fn is_stored(&self, id: KeyId) -> bool {
-        match self.get_key_layout(id) {
+        match self.layout.get(id) {
             None => false,
             Some(key_layout) => key_layout.actual_size > 0,
         }
     }
 
     fn size(&self, id: KeyId) -> Result<usize, Error> {
-        match self.get_key_layout(id) {
+        match self.layout.get(id) {
             None => Err(Error::InvalidKeyId),
             Some(key_layout) => {
                 if key_layout.actual_size == 0 {
