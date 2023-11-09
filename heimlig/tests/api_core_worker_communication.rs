@@ -9,13 +9,14 @@ mod tests {
     use heimlig::crypto::chacha20poly1305::{KEY_SIZE, NONCE_SIZE};
     use heimlig::crypto::rng::{EntropySource, Rng};
     use heimlig::hsm::core::Builder;
-    use heimlig::hsm::keystore::{KeyInfo, KeyPermissions, KeyStore, KeyType, MemoryKeyStore};
+    use heimlig::hsm::keystore::{KeyInfo, KeyPermissions, KeyStore, KeyType};
     use heimlig::hsm::workers::chachapoly_worker::ChaChaPolyWorker;
     use heimlig::hsm::workers::ecc_worker::EccWorker;
     use heimlig::hsm::workers::rng_worker::RngWorker;
     use heimlig::integration::embassy::{
         AsyncQueue, RequestQueueSink, RequestQueueSource, ResponseQueueSink, ResponseQueueSource,
     };
+    use heimlig::integration::memory_key_store::MemoryKeyStore;
     use std::ops::Deref;
 
     const QUEUE_SIZE: usize = 8;
