@@ -1,6 +1,6 @@
 use crate::common::jobs::{ClientId, Error, Request, RequestId, Response};
-use crate::config::keys::MAX_KEY_SIZE;
 use crate::crypto;
+use crate::crypto::chacha20poly1305::KEY_SIZE;
 use crate::hsm::keystore::{KeyId, KeyStore};
 use core::ops::DerefMut;
 use embassy_sync::blocking_mutex::raw::RawMutex;
@@ -106,7 +106,7 @@ impl<
         aad: &'data [u8],
         tag: &'data mut [u8],
     ) -> Response<'data> {
-        let mut key_buffer = Zeroizing::new([0u8; MAX_KEY_SIZE]);
+        let mut key_buffer = Zeroizing::new([0u8; KEY_SIZE]);
         let export = self
             .key_store
             .lock()
@@ -134,7 +134,7 @@ impl<
         aad: &'data [u8],
         tag: &'data [u8],
     ) -> Response<'data> {
-        let mut key_buffer = Zeroizing::new([0u8; MAX_KEY_SIZE]);
+        let mut key_buffer = Zeroizing::new([0u8; KEY_SIZE]);
         let export = self
             .key_store
             .lock()

@@ -130,7 +130,7 @@ impl<
                     .key_store
                     .lock()
                     .await
-                    .import_symmetric_key(key_id, &key)
+                    .import_symmetric_key(key_id, key)
                 {
                     Ok(_) => Response::GenerateSymmetricKey {
                         client_id,

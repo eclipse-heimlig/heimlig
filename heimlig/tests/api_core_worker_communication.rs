@@ -6,12 +6,10 @@ mod tests {
     use heimlig::client::api::SymmetricEncryptionAlgorithm::ChaCha20Poly1305;
     use heimlig::common::jobs::{Error, Request, RequestType, Response};
     use heimlig::common::limits::MAX_RANDOM_SIZE;
-    use heimlig::config;
-    use heimlig::config::keys::{ASYM_NIST_P256_KEY, SYM_128_KEY, SYM_256_KEY};
     use heimlig::crypto::chacha20poly1305::{KEY_SIZE, NONCE_SIZE};
     use heimlig::crypto::rng::{EntropySource, Rng};
     use heimlig::hsm::core::Builder;
-    use heimlig::hsm::keystore::{KeyInfo, KeyStore, KeyType, MemoryKeyStore};
+    use heimlig::hsm::keystore::{KeyInfo, KeyPermissions, KeyStore, KeyType, MemoryKeyStore};
     use heimlig::hsm::workers::chachapoly_worker::ChaChaPolyWorker;
     use heimlig::hsm::workers::ecc_worker::EccWorker;
     use heimlig::hsm::workers::rng_worker::RngWorker;
@@ -24,6 +22,40 @@ mod tests {
     const PLAINTEXT_SIZE: usize = 36;
     const AAD_SIZE: usize = 33;
     const TAG_SIZE: usize = 16;
+
+    pub const NUM_KEYS: usize = 3;
+    pub const TOTAL_KEY_SIZE: usize =
+        SYM_128_KEY.ty.key_size() + SYM_256_KEY.ty.key_size() + ASYM_NIST_P256_KEY.ty.key_size();
+    const SYM_128_KEY: KeyInfo = KeyInfo {
+        id: 0,
+        ty: KeyType::Symmetric128Bits,
+        permissions: KeyPermissions {
+            import: true,
+            export: false,
+            overwrite: false,
+            delete: false,
+        },
+    };
+    const SYM_256_KEY: KeyInfo = KeyInfo {
+        id: 1,
+        ty: KeyType::Symmetric256Bits,
+        permissions: KeyPermissions {
+            import: true,
+            export: true,
+            overwrite: false,
+            delete: false,
+        },
+    };
+    const ASYM_NIST_P256_KEY: KeyInfo = KeyInfo {
+        id: 2,
+        ty: KeyType::EccKeypairNistP256,
+        permissions: KeyPermissions {
+            import: true,
+            export: true,
+            overwrite: false,
+            delete: false,
+        },
+    };
 
     #[derive(Default)]
     pub struct TestEntropySource {
@@ -41,13 +73,9 @@ mod tests {
         }
     }
 
-    fn init_key_store(
-        key_infos: &[KeyInfo],
-    ) -> MemoryKeyStore<{ config::keys::TOTAL_SIZE }, { config::keys::NUM_KEYS }> {
-        MemoryKeyStore::<{ config::keys::TOTAL_SIZE }, { config::keys::NUM_KEYS }>::try_new(
-            key_infos,
-        )
-        .expect("failed to create key store")
+    fn init_key_store(key_infos: &[KeyInfo]) -> MemoryKeyStore<{ TOTAL_KEY_SIZE }, { NUM_KEYS }> {
+        MemoryKeyStore::<{ TOTAL_KEY_SIZE }, { NUM_KEYS }>::try_new(key_infos)
+            .expect("failed to create key store")
     }
 
     fn split_queues<'ch, 'data>(
