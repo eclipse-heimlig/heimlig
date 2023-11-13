@@ -1,9 +1,13 @@
 use sha2::{Digest, Sha256, Sha384, Sha512};
 use sha3::{Sha3_256, Sha3_384, Sha3_512};
 
+/// Digest size of SHA-256
 pub const SHA256_SIZE: usize = 32;
+/// Digest size of SHA-384
 pub const SHA384_SIZE: usize = 48;
+/// Digest size of SHA-512
 pub const SHA512_SIZE: usize = 64;
+/// Digest size of BLAKE3
 pub const BLAKE3_SIZE: usize = 32;
 
 pub fn sha256<T: AsRef<[u8]>>(input: T) -> [u8; SHA256_SIZE] {

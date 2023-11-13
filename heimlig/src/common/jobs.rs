@@ -29,9 +29,9 @@ impl From<u32> for ClientId {
     }
 }
 
-impl From<usize> for ClientId {
-    fn from(value: usize) -> Self {
-        ClientId(value as u32)
+impl From<ClientId> for u32 {
+    fn from(value: ClientId) -> Self {
+        value.0
     }
 }
 
@@ -83,7 +83,7 @@ pub enum RequestType {
 }
 
 /// A request for the HSM to perform a cryptographic task.
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Debug)]
 pub enum Request<'data> {
     GetRandom {
         client_id: ClientId,
@@ -168,7 +168,7 @@ impl RequestType {
 }
 
 /// A response from the HSM containing the results of a cryptographic task.
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Debug)]
 pub enum Response<'data> {
     Error {
         client_id: ClientId,

@@ -11,6 +11,10 @@ pub mod x25519;
 /// Common errors.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Error {
+    /// Error during encryption.
+    Encrypt,
+    /// Error during decryption.
+    Decrypt,
     /// Invalid size of the symmetric key.
     InvalidSymmetricKeySize,
     /// Invalid size of the nonce or the initialization vector.
@@ -21,10 +25,6 @@ pub enum Error {
     InvalidBufferSize,
     /// Provided plaintext or ciphertext is not padded.
     InvalidPadding,
-    /// Error during encryption.
-    Encrypt,
-    /// Error during decryption.
-    Decrypt,
     /// Invalid private key format.
     InvalidPrivateKey,
     /// Invalid public key format.

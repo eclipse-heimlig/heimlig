@@ -9,7 +9,7 @@ mod tests {
     use heimlig::crypto::chacha20poly1305::{KEY_SIZE, NONCE_SIZE};
     use heimlig::crypto::rng::{EntropySource, Rng};
     use heimlig::hsm::core::Builder;
-    use heimlig::hsm::keystore::{KeyInfo, KeyPermissions, KeyStore, KeyType};
+    use heimlig::hsm::keystore::{KeyId, KeyInfo, KeyPermissions, KeyStore, KeyType};
     use heimlig::hsm::workers::chachapoly_worker::ChaChaPolyWorker;
     use heimlig::hsm::workers::ecc_worker::EccWorker;
     use heimlig::hsm::workers::rng_worker::RngWorker;
@@ -28,7 +28,7 @@ mod tests {
     pub const TOTAL_KEY_SIZE: usize =
         SYM_128_KEY.ty.key_size() + SYM_256_KEY.ty.key_size() + ASYM_NIST_P256_KEY.ty.key_size();
     const SYM_128_KEY: KeyInfo = KeyInfo {
-        id: 0,
+        id: KeyId(0),
         ty: KeyType::Symmetric128Bits,
         permissions: KeyPermissions {
             import: true,
@@ -38,7 +38,7 @@ mod tests {
         },
     };
     const SYM_256_KEY: KeyInfo = KeyInfo {
-        id: 1,
+        id: KeyId(1),
         ty: KeyType::Symmetric256Bits,
         permissions: KeyPermissions {
             import: true,
@@ -48,7 +48,7 @@ mod tests {
         },
     };
     const ASYM_NIST_P256_KEY: KeyInfo = KeyInfo {
-        id: 2,
+        id: KeyId(2),
         ty: KeyType::EccKeypairNistP256,
         permissions: KeyPermissions {
             import: true,

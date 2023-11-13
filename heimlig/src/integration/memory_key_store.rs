@@ -334,7 +334,7 @@ pub(crate) mod test {
 
     const TOTAL_KEY_SIZE: usize = KEY1_INFO.ty.key_size() + KEY2_INFO.ty.key_size();
     const KEY1_INFO: KeyInfo = KeyInfo {
-        id: 5,
+        id: KeyId(5),
         ty: KeyType::Symmetric128Bits,
         permissions: KeyPermissions {
             import: true,
@@ -344,7 +344,7 @@ pub(crate) mod test {
         },
     };
     const KEY2_INFO: KeyInfo = KeyInfo {
-        id: 3,
+        id: KeyId(3),
         ty: KeyType::EccKeypairNistP256,
         permissions: KeyPermissions {
             import: true,
@@ -356,18 +356,23 @@ pub(crate) mod test {
 
     #[test]
     fn store_get_delete() {
-        const UNKNOWN_KEY_ID: KeyId = 1;
+        const UNKNOWN_KEY_ID: KeyId = KeyId(1);
 
         let key_infos: [KeyInfo; 2] = [KEY1_INFO, KEY2_INFO];
         let mut src_buffer = [0u8; KEY2_INFO.ty.key_size()];
         let mut dest_buffer = [0u8; KEY2_INFO.ty.key_size()];
         let mut key_store = MemoryKeyStore::<{ TOTAL_KEY_SIZE }, 2>::try_new(&key_infos)
             .expect("failed to create key store");
-        for id in 0..10 {
-            assert!(!key_store.is_stored(id));
-            assert!(key_store.size(id).is_err());
-            assert!(key_store.export_public_key(id, &mut dest_buffer).is_err());
-            assert!(key_store.export_private_key(id, &mut dest_buffer).is_err());
+        for key_id in 0..10 {
+            let key_id: KeyId = key_id.into();
+            assert!(!key_store.is_stored(key_id));
+            assert!(key_store.size(key_id).is_err());
+            assert!(key_store
+                .export_public_key(key_id, &mut dest_buffer)
+                .is_err());
+            assert!(key_store
+                .export_private_key(key_id, &mut dest_buffer)
+                .is_err());
         }
 
         // Store first key
@@ -439,7 +444,7 @@ pub(crate) mod test {
     #[test]
     fn permissions() {
         const NO_EXPORT_NO_OVERWRITE_NO_DELETE: KeyInfo = KeyInfo {
-            id: 0,
+            id: KeyId(0),
             ty: KeyType::Symmetric128Bits,
             permissions: KeyPermissions {
                 import: true,

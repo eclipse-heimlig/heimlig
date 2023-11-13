@@ -16,7 +16,7 @@ pub const KEY256_SIZE: usize = <Aes256 as KeySizeUser>::KeySize::USIZE;
 /// Size of the block size in bytes for AES-based algorithms.
 pub const BLOCK_SIZE: usize = <Aes128 as BlockSizeUser>::BlockSize::USIZE;
 /// Size of the initialization vector in bytes for AES-based algorithms.
-pub const IV_SIZE: usize = BLOCK_SIZE;
+pub const IV_SIZE: usize = <Aes128 as BlockSizeUser>::BlockSize::USIZE;
 /// Size of the supported nonce in bytes for AES-GCM algorithms.
 pub const GCM_NONCE_SIZE: usize = gcm::SupportedNonceSize::USIZE;
 /// Size of the supported authentication tag in bytes for AES-GCM algorithms.
