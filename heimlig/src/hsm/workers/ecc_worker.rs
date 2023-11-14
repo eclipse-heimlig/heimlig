@@ -1,5 +1,4 @@
 use crate::common::jobs::{ClientId, Error, Request, RequestId, Response};
-use crate::crypto;
 use crate::crypto::ecc::generate_key_pair;
 use crate::crypto::rng::{EntropySource, Rng};
 use crate::hsm::keystore;
@@ -8,7 +7,7 @@ use core::ops::{Deref, DerefMut};
 use elliptic_curve::sec1::{self, FromEncodedPoint, ModulusSize, ToEncodedPoint};
 use elliptic_curve::{AffinePoint, CurveArithmetic, FieldBytesSize};
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use embassy_sync::mutex::Mutex;
+use embassy_sync::mutex::{Mutex, MutexGuard};
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use p256::NistP256;
 use p384::NistP384;
@@ -66,8 +65,8 @@ impl<
         request_id: RequestId,
         key_id: KeyId,
     ) -> Response<'data> {
-        // Own variable needed to break mutex lock immediately
-        let key_info = self.key_store.lock().await.deref().get_key_info(key_id);
+        let locked_key_store = self.key_store.lock().await;
+        let key_info = locked_key_store.deref().get_key_info(key_id);
         match key_info {
             Err(e) => Response::Error {
                 client_id,
@@ -75,7 +74,7 @@ impl<
                 error: Error::KeyStore(e),
             },
             Ok(key_info) => {
-                let key_exists = self.key_store.lock().await.deref().is_stored(key_id);
+                let key_exists = locked_key_store.deref().is_stored(key_id);
                 if key_exists && !key_info.permissions.overwrite {
                     return Response::Error {
                         client_id,
@@ -92,12 +91,22 @@ impl<
                 }
                 match key_info.ty {
                     KeyType::EccKeypairNistP256 => {
-                        self.generate_key_pair_internal::<NistP256>(client_id, request_id, key_info)
-                            .await
+                        self.generate_key_pair_internal::<NistP256>(
+                            locked_key_store,
+                            client_id,
+                            request_id,
+                            key_info,
+                        )
+                        .await
                     }
                     KeyType::EccKeypairNistP384 => {
-                        self.generate_key_pair_internal::<NistP384>(client_id, request_id, key_info)
-                            .await
+                        self.generate_key_pair_internal::<NistP384>(
+                            locked_key_store,
+                            client_id,
+                            request_id,
+                            key_info,
+                        )
+                        .await
                     }
                     _ => Response::Error {
                         client_id,
@@ -111,6 +120,7 @@ impl<
 
     async fn generate_key_pair_internal<C>(
         &mut self,
+        mut locked_key_store: MutexGuard<'_, M, &mut (dyn KeyStore + Send)>,
         client_id: ClientId,
         request_id: RequestId,
         key_info: KeyInfo,
@@ -137,11 +147,7 @@ impl<
                 public_key_bytes[x.len()..x.len() + y.len()].copy_from_slice(y.as_slice());
             }
             _ => {
-                return Response::Error {
-                    client_id,
-                    request_id,
-                    error: Error::Crypto(crypto::Error::InvalidPublicKey),
-                };
+                panic!("Encountered non-uncompressed public key point");
             }
         };
 
@@ -153,7 +159,7 @@ impl<
         );
 
         // Import key pair into key store
-        match self.key_store.lock().await.import_key_pair(
+        match locked_key_store.import_key_pair(
             key_info.id,
             public_key_bytes,
             private_key_bytes.as_slice(),

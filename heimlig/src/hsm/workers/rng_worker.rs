@@ -101,7 +101,8 @@ impl<
                 error: Error::KeyStore(e),
             },
             Ok(key_info) => {
-                let key_exists = self.key_store.lock().await.deref().is_stored(key_id);
+                let mut locked_key_store = self.key_store.lock().await;
+                let key_exists = locked_key_store.deref().is_stored(key_id);
                 if key_exists && !key_info.permissions.overwrite {
                     return Response::Error {
                         client_id,
@@ -118,20 +119,8 @@ impl<
                 }
                 let mut key = [0u8; keystore::KeyType::MAX_SYMMETRIC_KEY_SIZE];
                 let key = &mut key[0..key_info.ty.key_size()];
-                if key.len() >= MAX_RANDOM_SIZE {
-                    return Response::Error {
-                        client_id,
-                        request_id,
-                        error: Error::RequestTooLarge,
-                    };
-                }
                 self.rng.lock().await.fill_bytes(key);
-                match self
-                    .key_store
-                    .lock()
-                    .await
-                    .import_symmetric_key(key_id, key)
-                {
+                match locked_key_store.import_symmetric_key(key_id, key) {
                     Ok(_) => Response::GenerateSymmetricKey {
                         client_id,
                         request_id,

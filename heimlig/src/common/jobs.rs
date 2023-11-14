@@ -241,6 +241,24 @@ impl<'data> Request<'data> {
             Request::DecryptChaChaPolyExternalKey { client_id, .. } => *client_id = new_client_id,
         }
     }
+
+    pub fn set_request_id(&mut self, new_request_id: RequestId) {
+        match self {
+            Request::GetRandom { request_id, .. } => *request_id = new_request_id,
+            Request::GenerateSymmetricKey { request_id, .. } => *request_id = new_request_id,
+            Request::GenerateKeyPair { request_id, .. } => *request_id = new_request_id,
+            Request::ImportSymmetricKey { request_id, .. } => *request_id = new_request_id,
+            Request::ImportKeyPair { request_id, .. } => *request_id = new_request_id,
+            Request::EncryptChaChaPoly { request_id, .. } => *request_id = new_request_id,
+            Request::EncryptChaChaPolyExternalKey { request_id, .. } => {
+                *request_id = new_request_id
+            }
+            Request::DecryptChaChaPoly { request_id, .. } => *request_id = new_request_id,
+            Request::DecryptChaChaPolyExternalKey { request_id, .. } => {
+                *request_id = new_request_id
+            }
+        }
+    }
 }
 
 impl<'data> Response<'data> {
