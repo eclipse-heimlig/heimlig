@@ -4,7 +4,7 @@ use crate::crypto::rng::{EntropySource, Rng};
 use crate::hsm::keystore;
 use crate::hsm::keystore::{KeyId, KeyInfo, KeyStore, KeyType};
 use core::ops::{Deref, DerefMut};
-use elliptic_curve::sec1::{self, FromEncodedPoint, ModulusSize, ToEncodedPoint};
+use elliptic_curve::sec1::{FromEncodedPoint, ModulusSize, ToEncodedPoint};
 use elliptic_curve::{AffinePoint, CurveArithmetic, FieldBytesSize};
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::{Mutex, MutexGuard};
@@ -137,26 +137,19 @@ impl<
         let mut public_key_bytes = [0u8; KeyType::MAX_PUBLIC_KEY_SIZE];
         let public_key_bytes = &mut public_key_bytes[..key_info.ty.public_key_size()];
         let public_key_encoded = &public_key.to_encoded_point(false);
-        let public_key_coordinates = public_key_encoded.coordinates();
-        match public_key_coordinates {
-            sec1::Coordinates::Uncompressed { x, y } => {
-                // TODO: Check if SEC1 encoded keys might be shorter than asserted here
-                assert_eq!(x.len(), y.len());
-                assert!(public_key_bytes.len() >= x.len() + y.len());
-                public_key_bytes[..x.len()].copy_from_slice(x.as_slice());
-                public_key_bytes[x.len()..x.len() + y.len()].copy_from_slice(y.as_slice());
-            }
-            _ => {
-                panic!("Encountered non-uncompressed public key point");
-            }
-        };
+        assert!(
+            !public_key_encoded.is_compressed()
+                && !public_key_encoded.is_compact()
+                && !public_key_encoded.is_identity(),
+            "expected uncompressed public key point"
+        );
+        let sec1_bytes = public_key_encoded.as_bytes();
+        assert_eq!(sec1_bytes.len(), 1 + key_info.ty.public_key_size()); // Includes 0x04 prefix
+        public_key_bytes.copy_from_slice(&sec1_bytes[1..]); // Skip prefix
 
         // Write private key
         let private_key_bytes = private_key.to_bytes();
-        assert_eq!(
-            private_key_bytes.len(),
-            KeyType::EccKeypairNistP256.private_key_size()
-        );
+        assert_eq!(private_key_bytes.len(), key_info.ty.private_key_size());
 
         // Import key pair into key store
         match locked_key_store.import_key_pair(
@@ -164,7 +157,7 @@ impl<
             public_key_bytes,
             private_key_bytes.as_slice(),
         ) {
-            Ok(_) => Response::GenerateKeyPair {
+            Ok(()) => Response::GenerateKeyPair {
                 client_id,
                 request_id,
             },

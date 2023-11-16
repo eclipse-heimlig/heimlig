@@ -35,7 +35,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
                 if !key_layout.info.permissions.import {
                     return Err(Error::NotAllowed);
                 }
-                if data.len() > key_layout.info.ty.key_size() {
+                if data.len() != key_layout.info.ty.key_size() {
                     return Err(Error::InvalidBufferSize);
                 }
                 let offset = key_layout.offset;
@@ -64,7 +64,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
                     return Err(Error::NotAllowed);
                 }
                 if (public_key.len() != 2 * private_key.len())
-                    || (public_key.len() + private_key.len() > key_layout.info.ty.key_size())
+                    || (public_key.len() + private_key.len() != key_layout.info.ty.key_size())
                 {
                     return Err(Error::InvalidBufferSize);
                 }

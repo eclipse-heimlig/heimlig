@@ -74,7 +74,7 @@ impl<
     ) -> Result<RequestId, Error> {
         let request = Request::ImportSymmetricKey {
             client_id: ClientId::default(),
-            request_id: Default::default(),
+            request_id: RequestId::default(),
             key_id,
             data,
         };
