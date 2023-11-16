@@ -9,16 +9,19 @@ use embassy_stm32::gpio::{Level, Output, Speed};
 use embassy_stm32::peripherals::RNG;
 use embassy_stm32::rng::{InterruptHandler, Rng};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Timer};
 use heimlig::client::api::Api;
 use heimlig::common::jobs::{RequestType, Response};
 use heimlig::crypto::rng;
-use heimlig::hsm::core::{Builder, Core};
+use heimlig::hsm::core::Builder;
+use heimlig::hsm::keystore::{KeyInfo, KeyStore};
 use heimlig::hsm::workers::rng_worker::RngWorker;
 use heimlig::integration::embassy::{
     RequestQueue, RequestQueueSink, RequestQueueSource, ResponseQueue, ResponseQueueSink,
     ResponseQueueSource,
 };
+use heimlig::integration::memory_key_store::MemoryKeyStore;
 use rand_core::RngCore;
 
 use {defmt_rtt as _, panic_probe as _};
@@ -54,30 +57,39 @@ async fn hsm_task(
     core_req_rx: RequestQueueSource<'static, 'static, QUEUE_SIZE>,
     core_resp_tx: ResponseQueueSink<'static, 'static, QUEUE_SIZE>,
     core_req_tx: RequestQueueSink<'static, 'static, QUEUE_SIZE>,
-    rng_req_rx: RequestQueueSource<'static, 'static, QUEUE_SIZE>,
     core_resp_rx: ResponseQueueSource<'static, 'static, QUEUE_SIZE>,
+    rng_req_rx: RequestQueueSource<'static, 'static, QUEUE_SIZE>,
     rng_resp_tx: ResponseQueueSink<'static, 'static, QUEUE_SIZE>,
     rng: Rng<'static, RNG>,
 ) {
     info!("HSM task started");
+    const NUM_KEYS: usize = 0;
+    const TOTAL_KEY_SIZE: usize = 0;
+    const KEY_INFOS: &[KeyInfo] = &[];
+    let mut key_store = MemoryKeyStore::<{ TOTAL_KEY_SIZE }, { NUM_KEYS }>::try_new(KEY_INFOS)
+        .expect("failed to create key store");
+    let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
     let rng = rng::Rng::new(EntropySource { rng }, None);
+    let rng: Mutex<NoopRawMutex, _> = Mutex::new(rng);
     let mut rng_worker = RngWorker {
-        rng,
+        key_store: &key_store,
+        rng: &rng,
         requests: rng_req_rx,
         responses: rng_resp_tx,
     };
-    let mut core: Core<
+    let mut core = Builder::<
         NoopRawMutex,
+        EntropySource,
         RequestQueueSource<'_, '_, QUEUE_SIZE>,
         ResponseQueueSink<'_, '_, QUEUE_SIZE>,
         RequestQueueSink<'_, '_, QUEUE_SIZE>,
         ResponseQueueSource<'_, '_, QUEUE_SIZE>,
-    > = Builder::new()
-        .with_client(core_req_rx, core_resp_tx)
-        .expect("failed to add client")
-        .with_worker(&[RequestType::GetRandom], core_req_tx, core_resp_rx)
-        .expect("failed to add worker")
-        .build();
+    >::new()
+    .with_client(core_req_rx, core_resp_tx)
+    .expect("failed to add client")
+    .with_worker(&[RequestType::GetRandom], core_req_tx, core_resp_rx)
+    .expect("failed to add worker")
+    .build();
 
     loop {
         core.execute().await.expect("failed to forward request");
@@ -184,8 +196,8 @@ async fn main(spawner: Spawner) {
             core_req_rx,
             core_resp_tx,
             core_req_tx,
-            rng_req_rx,
             core_resp_rx,
+            rng_req_rx,
             rng_resp_tx,
             rng,
         ))

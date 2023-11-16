@@ -1,6 +1,6 @@
 pub mod aes;
 pub mod chacha20poly1305;
-mod ecc;
+pub mod ecc;
 pub mod ecdh;
 pub mod ecdsa;
 pub mod ed25519;

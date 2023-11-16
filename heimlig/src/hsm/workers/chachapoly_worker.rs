@@ -1,7 +1,6 @@
-use crate::common::jobs::Error::NoKeyStore;
 use crate::common::jobs::{ClientId, Error, Request, RequestId, Response};
-use crate::config::keystore::MAX_KEY_SIZE;
 use crate::crypto;
+use crate::crypto::chacha20poly1305::KEY_SIZE;
 use crate::hsm::keystore::{KeyId, KeyStore};
 use core::ops::DerefMut;
 use embassy_sync::blocking_mutex::raw::RawMutex;
@@ -16,7 +15,7 @@ pub struct ChaChaPolyWorker<
     ReqSrc: Stream<Item = Request<'data>>,
     RespSink: Sink<Response<'data>>,
 > {
-    pub key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
+    pub key_store: &'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>,
     pub requests: ReqSrc,
     pub responses: RespSink,
 }
@@ -107,28 +106,20 @@ impl<
         aad: &'data [u8],
         tag: &'data mut [u8],
     ) -> Response<'data> {
-        match self.key_store {
-            None => Response::Error {
+        let mut key_buffer = Zeroizing::new([0u8; KEY_SIZE]);
+        let export = self
+            .key_store
+            .lock()
+            .await
+            .deref_mut()
+            .export_symmetric_key_unchecked(key_id, key_buffer.as_mut_slice());
+        match export {
+            Ok(key) => self.encrypt(client_id, request_id, key, nonce, aad, plaintext, tag),
+            Err(e) => Response::Error {
                 client_id,
                 request_id,
-                error: NoKeyStore,
+                error: Error::KeyStore(e),
             },
-            Some(key_store) => {
-                let mut key_buffer = Zeroizing::new([0u8; MAX_KEY_SIZE]);
-                let export = key_store
-                    .lock()
-                    .await
-                    .deref_mut()
-                    .export_symmetric_key_unchecked(key_id, key_buffer.as_mut_slice());
-                match export {
-                    Ok(key) => self.encrypt(client_id, request_id, key, nonce, aad, plaintext, tag),
-                    Err(e) => Response::Error {
-                        client_id,
-                        request_id,
-                        error: Error::KeyStore(e),
-                    },
-                }
-            }
         }
     }
 
@@ -143,30 +134,20 @@ impl<
         aad: &'data [u8],
         tag: &'data [u8],
     ) -> Response<'data> {
-        match self.key_store {
-            None => Response::Error {
+        let mut key_buffer = Zeroizing::new([0u8; KEY_SIZE]);
+        let export = self
+            .key_store
+            .lock()
+            .await
+            .deref_mut()
+            .export_symmetric_key_unchecked(key_id, key_buffer.as_mut_slice());
+        match export {
+            Ok(key) => self.decrypt(client_id, request_id, key, nonce, aad, ciphertext, tag),
+            Err(e) => Response::Error {
                 client_id,
                 request_id,
-                error: NoKeyStore,
+                error: Error::KeyStore(e),
             },
-            Some(key_store) => {
-                let mut key_buffer = Zeroizing::new([0u8; MAX_KEY_SIZE]);
-                let export = key_store
-                    .lock()
-                    .await
-                    .deref_mut()
-                    .export_symmetric_key_unchecked(key_id, key_buffer.as_mut_slice());
-                match export {
-                    Ok(key) => {
-                        self.decrypt(client_id, request_id, key, nonce, aad, ciphertext, tag)
-                    }
-                    Err(e) => Response::Error {
-                        client_id,
-                        request_id,
-                        error: Error::KeyStore(e),
-                    },
-                }
-            }
         }
     }
 

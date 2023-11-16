@@ -6,7 +6,7 @@ use rand::{CryptoRng, RngCore};
 /// # Arguments
 ///
 /// * `rng`: Random number generator to use for key generation.
-pub fn gen_key_pair<R, C>(rng: &mut R) -> (PublicKey<C>, SecretKey<C>)
+pub fn generate_key_pair<R, C>(rng: &mut R) -> (PublicKey<C>, SecretKey<C>)
 where
     R: CryptoRng + RngCore,
     C: Curve + CurveArithmetic,

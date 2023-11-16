@@ -4,25 +4,59 @@ mod tests {
     use futures::future::join;
     use heimlig::client::api::Api;
     use heimlig::client::api::SymmetricEncryptionAlgorithm::ChaCha20Poly1305;
-    use heimlig::common::jobs;
     use heimlig::common::jobs::{Error, Request, RequestType, Response};
     use heimlig::common::limits::MAX_RANDOM_SIZE;
-    use heimlig::config;
-    use heimlig::config::keystore::{KEY1, KEY2, KEY3};
     use heimlig::crypto::chacha20poly1305::{KEY_SIZE, NONCE_SIZE};
     use heimlig::crypto::rng::{EntropySource, Rng};
     use heimlig::hsm::core::Builder;
-    use heimlig::hsm::keystore::{KeyStore, MemoryKeyStore};
+    use heimlig::hsm::keystore::{KeyInfo, KeyPermissions, KeyStore, KeyType};
     use heimlig::hsm::workers::chachapoly_worker::ChaChaPolyWorker;
+    use heimlig::hsm::workers::ecc_worker::EccWorker;
     use heimlig::hsm::workers::rng_worker::RngWorker;
     use heimlig::integration::embassy::{
         AsyncQueue, RequestQueueSink, RequestQueueSource, ResponseQueueSink, ResponseQueueSource,
     };
+    use heimlig::integration::memory_key_store::MemoryKeyStore;
+    use std::ops::Deref;
 
     const QUEUE_SIZE: usize = 8;
     const PLAINTEXT_SIZE: usize = 36;
     const AAD_SIZE: usize = 33;
     const TAG_SIZE: usize = 16;
+
+    pub const NUM_KEYS: usize = 3;
+    pub const TOTAL_KEY_SIZE: usize =
+        SYM_128_KEY.ty.key_size() + SYM_256_KEY.ty.key_size() + ASYM_NIST_P256_KEY.ty.key_size();
+    const SYM_128_KEY: KeyInfo = KeyInfo {
+        id: 0,
+        ty: KeyType::Symmetric128Bits,
+        permissions: KeyPermissions {
+            import: true,
+            export: false,
+            overwrite: false,
+            delete: false,
+        },
+    };
+    const SYM_256_KEY: KeyInfo = KeyInfo {
+        id: 1,
+        ty: KeyType::Symmetric256Bits,
+        permissions: KeyPermissions {
+            import: true,
+            export: true,
+            overwrite: false,
+            delete: false,
+        },
+    };
+    const ASYM_NIST_P256_KEY: KeyInfo = KeyInfo {
+        id: 2,
+        ty: KeyType::EccKeypairNistP256,
+        permissions: KeyPermissions {
+            import: true,
+            export: true,
+            overwrite: false,
+            delete: false,
+        },
+    };
 
     #[derive(Default)]
     pub struct TestEntropySource {
@@ -40,17 +74,9 @@ mod tests {
         }
     }
 
-    fn init_rng() -> Rng<TestEntropySource> {
-        Rng::new(TestEntropySource::default(), None)
-    }
-
-    fn init_key_store(
-    ) -> MemoryKeyStore<{ config::keystore::TOTAL_SIZE }, { config::keystore::NUM_KEYS }> {
-        let key_infos = [KEY1, KEY2, KEY3];
-        MemoryKeyStore::<{ config::keystore::TOTAL_SIZE }, { config::keystore::NUM_KEYS }>::try_new(
-            &key_infos,
-        )
-        .expect("failed to create key store")
+    fn init_key_store(key_infos: &[KeyInfo]) -> MemoryKeyStore<{ TOTAL_KEY_SIZE }, { NUM_KEYS }> {
+        MemoryKeyStore::<{ TOTAL_KEY_SIZE }, { NUM_KEYS }>::try_new(key_infos)
+            .expect("failed to create key store")
     }
 
     fn split_queues<'ch, 'data>(
@@ -86,7 +112,6 @@ mod tests {
     async fn get_random() {
         const REQUEST_SIZE: usize = 16;
         let mut random_output = [0u8; REQUEST_SIZE];
-        let rng = init_rng();
         let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
         let mut client_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
         let mut rng_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
@@ -95,13 +120,19 @@ mod tests {
             split_queues(&mut client_requests, &mut client_responses);
         let (rng_requests_rx, rng_requests_tx, rng_responses_rx, rng_responses_tx) =
             split_queues(&mut rng_requests, &mut rng_responses);
+        let rng = Mutex::new(Rng::new(TestEntropySource::default(), None));
+        let key_infos = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
+        let mut key_store = init_key_store(&key_infos);
+        let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
         let mut rng_worker = RngWorker {
-            rng,
+            rng: &rng,
+            key_store: &key_store,
             requests: rng_requests_rx,
             responses: rng_responses_tx,
         };
         let mut core = Builder::<
             NoopRawMutex,
+            TestEntropySource,
             RequestQueueSource<'_, '_, QUEUE_SIZE>,
             ResponseQueueSink<'_, '_, QUEUE_SIZE>,
             RequestQueueSink<'_, '_, QUEUE_SIZE>,
@@ -109,7 +140,11 @@ mod tests {
         >::default()
         .with_client(req_client_rx, resp_client_tx)
         .expect("failed to add client")
-        .with_worker(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx)
+        .with_worker(
+            &[RequestType::GetRandom, RequestType::GenerateSymmetricKey],
+            rng_requests_tx,
+            rng_responses_rx,
+        )
         .expect("failed to add worker")
         .build();
         let mut api = Api::new(req_client_tx, resp_client_rx);
@@ -142,7 +177,6 @@ mod tests {
     async fn get_random_request_too_large() {
         const REQUEST_SIZE: usize = MAX_RANDOM_SIZE + 1;
         let mut random_output = [0u8; REQUEST_SIZE];
-        let rng = init_rng();
         let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
         let mut client_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
         let mut rng_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
@@ -151,13 +185,19 @@ mod tests {
             split_queues(&mut client_requests, &mut client_responses);
         let (rng_requests_rx, rng_requests_tx, rng_responses_rx, rng_responses_tx) =
             split_queues(&mut rng_requests, &mut rng_responses);
+        let rng = Mutex::new(Rng::new(TestEntropySource::default(), None));
+        let key_infos = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
+        let mut key_store = init_key_store(&key_infos);
+        let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
         let mut rng_worker = RngWorker {
-            rng,
+            rng: &rng,
+            key_store: &key_store,
             requests: rng_requests_rx,
             responses: rng_responses_tx,
         };
         let mut core = Builder::<
             NoopRawMutex,
+            TestEntropySource,
             RequestQueueSource<'_, '_, QUEUE_SIZE>,
             ResponseQueueSink<'_, '_, QUEUE_SIZE>,
             RequestQueueSink<'_, '_, QUEUE_SIZE>,
@@ -165,7 +205,11 @@ mod tests {
         >::default()
         .with_client(req_client_rx, resp_client_tx)
         .expect("failed to add client")
-        .with_worker(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx)
+        .with_worker(
+            &[RequestType::GetRandom, RequestType::GenerateSymmetricKey],
+            rng_requests_tx,
+            rng_responses_rx,
+        )
         .expect("failed to add worker")
         .build();
         let mut api = Api::new(req_client_tx, resp_client_rx);
@@ -187,7 +231,7 @@ mod tests {
                     error,
                 } => {
                     assert_eq!(request_id, org_request_id);
-                    assert_eq!(error, jobs::Error::RequestTooLarge);
+                    assert_eq!(error, Error::RequestTooLarge);
                 }
                 _ => panic!("Unexpected response type {:?}", response),
             },
@@ -210,15 +254,17 @@ mod tests {
             chachapoly_responses_rx,
             chachapoly_responses_tx,
         ) = split_queues(&mut chachapoly_requests, &mut chachapoly_responses);
-        let mut key_store = init_key_store();
+        let key_infos = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
+        let mut key_store = init_key_store(&key_infos);
         let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
         let mut chacha_worker = ChaChaPolyWorker {
-            key_store: Some(&key_store),
+            key_store: &key_store,
             requests: chachapoly_requests_rx,
             responses: chachapoly_responses_tx,
         };
         let mut core = Builder::<
             NoopRawMutex,
+            TestEntropySource,
             RequestQueueSource<'_, '_, QUEUE_SIZE>,
             ResponseQueueSink<'_, '_, QUEUE_SIZE>,
             RequestQueueSink<'_, '_, QUEUE_SIZE>,
@@ -243,7 +289,7 @@ mod tests {
 
         // Import key
         let org_request_id = api
-            .import_symmetric_key(KEY2.id, &key)
+            .import_symmetric_key(SYM_256_KEY.id, &key)
             .await
             .expect("failed to send request");
         core.execute()
@@ -267,7 +313,7 @@ mod tests {
         let org_request_id = api
             .encrypt(
                 ChaCha20Poly1305,
-                KEY2.id,
+                SYM_256_KEY.id,
                 &nonce,
                 &mut plaintext,
                 &aad,
@@ -298,7 +344,14 @@ mod tests {
 
         // Decrypt data
         let org_request_id = api
-            .decrypt(ChaCha20Poly1305, KEY2.id, &nonce, ciphertext, &aad, tag)
+            .decrypt(
+                ChaCha20Poly1305,
+                SYM_256_KEY.id,
+                &nonce,
+                ciphertext,
+                &aad,
+                tag,
+            )
             .await
             .expect("failed to send request");
         core.execute().await.expect("failed to forward request");
@@ -340,15 +393,17 @@ mod tests {
             chachapoly_responses_tx,
         ) = split_queues(&mut chachapoly_requests, &mut chachapoly_responses);
 
-        let mut key_store = init_key_store();
+        let key_infos = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
+        let mut key_store = init_key_store(&key_infos);
         let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
         let mut chacha_worker = ChaChaPolyWorker {
-            key_store: Some(&key_store),
+            key_store: &key_store,
             requests: chachapoly_requests_rx,
             responses: chachapoly_responses_tx,
         };
         let mut core = Builder::<
             NoopRawMutex,
+            TestEntropySource,
             RequestQueueSource<'_, '_, QUEUE_SIZE>,
             ResponseQueueSink<'_, '_, QUEUE_SIZE>,
             RequestQueueSink<'_, '_, QUEUE_SIZE>,
@@ -432,12 +487,164 @@ mod tests {
     }
 
     #[async_std::test]
+    async fn generate_symmetric_key() {
+        let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut client_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let mut rng_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut rng_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let (req_client_rx, req_client_tx, resp_client_rx, resp_client_tx) =
+            split_queues(&mut client_requests, &mut client_responses);
+        let (rng_requests_rx, rng_requests_tx, rng_responses_rx, rng_responses_tx) =
+            split_queues(&mut rng_requests, &mut rng_responses);
+        let rng = Mutex::new(Rng::new(TestEntropySource::default(), None));
+        let key_infos = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
+        let mut key_store = init_key_store(&key_infos);
+        let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
+        let mut rng_worker = RngWorker {
+            rng: &rng,
+            key_store: &key_store,
+            requests: rng_requests_rx,
+            responses: rng_responses_tx,
+        };
+        let mut core = Builder::<
+            NoopRawMutex,
+            TestEntropySource,
+            RequestQueueSource<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSink<'_, '_, QUEUE_SIZE>,
+            RequestQueueSink<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSource<'_, '_, QUEUE_SIZE>,
+        >::default()
+        .with_client(req_client_rx, resp_client_tx)
+        .expect("failed to add client")
+        .with_worker(
+            &[RequestType::GetRandom, RequestType::GenerateSymmetricKey],
+            rng_requests_tx,
+            rng_responses_rx,
+        )
+        .expect("failed to add worker")
+        .build();
+        let mut api = Api::new(req_client_tx, resp_client_rx);
+
+        let key_info = SYM_256_KEY;
+        let org_request_id = api
+            .generate_symmetric_key(key_info.id)
+            .await
+            .expect("failed to send request");
+        let (core_res, worker_res) = join(core.execute(), rng_worker.execute()).await;
+        core_res.expect("failed to forward request");
+        worker_res.expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        match api.recv_response().await {
+            None => panic!("Failed to receive expected response"),
+            Some(response) => match response {
+                Response::GenerateSymmetricKey {
+                    client_id: _client_id,
+                    request_id,
+                } => {
+                    assert_eq!(request_id, org_request_id);
+                    assert!(key_store.lock().await.deref().is_stored(key_info.id));
+                    let mut key_bytes = [0u8; KeyType::MAX_SYMMETRIC_KEY_SIZE];
+                    let key_bytes = &mut key_bytes[..key_info.ty.key_size()];
+                    let exported_key = key_store
+                        .lock()
+                        .await
+                        .export_symmetric_key(key_info.id, key_bytes)
+                        .expect("failed to export symmetric key");
+                    assert_eq!(exported_key.len(), key_info.ty.key_size());
+                }
+                _ => panic!("Unexpected response type {:?}", response),
+            },
+        }
+    }
+
+    #[async_std::test]
+    async fn generate_ecc_key_pair() {
+        let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut client_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let mut ecc_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut ecc_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let (req_client_rx, req_client_tx, resp_client_rx, resp_client_tx) =
+            split_queues(&mut client_requests, &mut client_responses);
+        let (ecc_requests_rx, ecc_requests_tx, ecc_responses_rx, ecc_responses_tx) =
+            split_queues(&mut ecc_requests, &mut ecc_responses);
+        let rng = Mutex::new(Rng::new(TestEntropySource::default(), None));
+        let key_infos = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
+        let mut key_store = init_key_store(&key_infos);
+        let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
+        let mut ecc_worker = EccWorker {
+            rng: &rng,
+            key_store: &key_store,
+            requests: ecc_requests_rx,
+            responses: ecc_responses_tx,
+        };
+        let mut core = Builder::<
+            NoopRawMutex,
+            TestEntropySource,
+            RequestQueueSource<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSink<'_, '_, QUEUE_SIZE>,
+            RequestQueueSink<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSource<'_, '_, QUEUE_SIZE>,
+        >::default()
+        .with_client(req_client_rx, resp_client_tx)
+        .expect("failed to add client")
+        .with_worker(
+            &[RequestType::GenerateKeyPair],
+            ecc_requests_tx,
+            ecc_responses_rx,
+        )
+        .expect("failed to add worker")
+        .build();
+        let mut api = Api::new(req_client_tx, resp_client_rx);
+
+        let key_info = ASYM_NIST_P256_KEY;
+        let org_request_id = api
+            .generate_key_pair(key_info.id)
+            .await
+            .expect("failed to send request");
+        let (core_res, worker_res) = join(core.execute(), ecc_worker.execute()).await;
+        core_res.expect("failed to forward request");
+        worker_res.expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        match api.recv_response().await {
+            None => panic!("Failed to receive expected response"),
+            Some(response) => match response {
+                Response::GenerateKeyPair {
+                    client_id: _client_id,
+                    request_id,
+                } => {
+                    assert_eq!(request_id, org_request_id);
+                    assert!(key_store.lock().await.deref().is_stored(key_info.id));
+                    // Check public key
+                    let mut public_key_bytes = [0u8; KeyType::MAX_PUBLIC_KEY_SIZE];
+                    let public_key_bytes = &mut public_key_bytes[..key_info.ty.public_key_size()];
+                    let exported_public_key = key_store
+                        .lock()
+                        .await
+                        .export_public_key(key_info.id, public_key_bytes)
+                        .expect("failed to export public key");
+                    assert_eq!(exported_public_key.len(), key_info.ty.public_key_size());
+                    // Check private key
+                    let mut private_key_bytes = [0u8; KeyType::MAX_PRIVATE_KEY_SIZE];
+                    let private_key_bytes =
+                        &mut private_key_bytes[..key_info.ty.private_key_size()];
+                    let exported_public_key = key_store
+                        .lock()
+                        .await
+                        .export_private_key(key_info.id, private_key_bytes)
+                        .expect("failed to export private key");
+                    assert_eq!(exported_public_key.len(), key_info.ty.private_key_size());
+                }
+                _ => panic!("Unexpected response type {:?}", response),
+            },
+        }
+    }
+
+    #[async_std::test]
     async fn multiple_clients() {
         const REQUEST1_SIZE: usize = 16;
         const REQUEST2_SIZE: usize = 17;
         let mut random_output1 = [0u8; REQUEST1_SIZE];
         let mut random_output2 = [0u8; REQUEST2_SIZE];
-        let rng = init_rng();
         let mut client1_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
         let mut client1_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
         let mut client2_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
@@ -450,13 +657,19 @@ mod tests {
             split_queues(&mut client2_requests, &mut client2_responses);
         let (rng_requests_rx, rng_requests_tx, rng_responses_rx, rng_responses_tx) =
             split_queues(&mut rng_requests, &mut rng_responses);
+        let rng = Mutex::new(Rng::new(TestEntropySource::default(), None));
+        let key_infos = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
+        let mut key_store = init_key_store(&key_infos);
+        let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
         let mut rng_worker = RngWorker {
-            rng,
+            rng: &rng,
+            key_store: &key_store,
             requests: rng_requests_rx,
             responses: rng_responses_tx,
         };
         let mut core = Builder::<
             NoopRawMutex,
+            TestEntropySource,
             RequestQueueSource<'_, '_, QUEUE_SIZE>,
             ResponseQueueSink<'_, '_, QUEUE_SIZE>,
             RequestQueueSink<'_, '_, QUEUE_SIZE>,
@@ -466,7 +679,11 @@ mod tests {
         .expect("failed to add client 1")
         .with_client(req_client2_rx, resp_client2_tx)
         .expect("failed to add client 2")
-        .with_worker(&[RequestType::GetRandom], rng_requests_tx, rng_responses_rx)
+        .with_worker(
+            &[RequestType::GetRandom, RequestType::GenerateSymmetricKey],
+            rng_requests_tx,
+            rng_responses_rx,
+        )
         .expect("failed to add worker")
         .build();
         let mut api1 = Api::new(req_client1_tx, resp_client1_rx);
@@ -531,6 +748,7 @@ mod tests {
             split_queues(&mut client_requests, &mut client_responses);
         let mut core = Builder::<
             NoopRawMutex,
+            TestEntropySource,
             RequestQueueSource<'_, '_, QUEUE_SIZE>,
             ResponseQueueSink<'_, '_, QUEUE_SIZE>,
             RequestQueueSink<'_, '_, QUEUE_SIZE>,
