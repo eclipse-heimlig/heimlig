@@ -29,8 +29,12 @@ pub enum Error {
     InvalidPrivateKey,
     /// Invalid public key format.
     InvalidPublicKey,
+    /// Invalid size of the signature.
+    InvalidSignatureSize,
     /// Invalid signature.
     InvalidSignature,
+    /// Invalid size of the digest.
+    InvalidDigestSize,
 }
 
 /// Validation of key and initialization vector/nonce sizes.
