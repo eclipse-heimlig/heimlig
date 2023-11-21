@@ -97,6 +97,48 @@ impl<
         self.send_request(request).await
     }
 
+    pub async fn export_symmetric_key(
+        &mut self,
+        key_id: KeyId,
+        data: &'data mut [u8],
+    ) -> Result<RequestId, Error> {
+        let request = Request::ExportSymmetricKey {
+            client_id: ClientId::default(),
+            request_id: RequestId::default(),
+            key_id,
+            data,
+        };
+        self.send_request(request).await
+    }
+
+    pub async fn export_public_key(
+        &mut self,
+        key_id: KeyId,
+        public_key: &'data mut [u8],
+    ) -> Result<RequestId, Error> {
+        let request = Request::ExportPublicKey {
+            client_id: ClientId::default(),
+            request_id: RequestId::default(),
+            key_id,
+            public_key,
+        };
+        self.send_request(request).await
+    }
+
+    pub async fn export_private_key(
+        &mut self,
+        key_id: KeyId,
+        private_key: &'data mut [u8],
+    ) -> Result<RequestId, Error> {
+        let request = Request::ExportPrivateKey {
+            client_id: ClientId::default(),
+            request_id: RequestId::default(),
+            key_id,
+            private_key,
+        };
+        self.send_request(request).await
+    }
+
     pub async fn encrypt(
         &mut self,
         algorithm: SymmetricEncryptionAlgorithm,

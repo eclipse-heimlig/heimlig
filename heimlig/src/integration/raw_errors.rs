@@ -6,20 +6,20 @@ use crate::hsm::keystore;
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum JobErrorRaw {
-    /// A cryptographic error occurred.
-    Crypto(CryptoErrorRaw),
-    /// The amount of requested data was too large.
-    RequestTooLarge,
-    /// No key store present.
-    NoKeyStore,
-    /// A key store error occurred.
-    KeyStore(KeyStoreErrorRaw),
-    /// Failed to send through channel.
-    Send,
     /// No worker found for received request type.
     NoWorkerForRequest,
     /// A worker encountered a request type that it cannot handle.  
     UnexpectedRequestType,
+    /// The amount of requested data was too large.
+    RequestTooLarge,
+    /// No key store present.
+    NoKeyStore,
+    /// Failed to send through channel.
+    Send,
+    /// A cryptographic error occurred.
+    Crypto(CryptoErrorRaw),
+    /// A key store error occurred.
+    KeyStore(KeyStoreErrorRaw),
 }
 
 /// Raw version of crypto::Error
@@ -71,13 +71,13 @@ pub enum KeyStoreErrorRaw {
 impl From<jobs::Error> for JobErrorRaw {
     fn from(value: jobs::Error) -> Self {
         match value {
+            jobs::Error::NoWorkerForRequest => JobErrorRaw::NoWorkerForRequest,
+            jobs::Error::UnexpectedRequestType => JobErrorRaw::UnexpectedRequestType,
             jobs::Error::Crypto(e) => JobErrorRaw::Crypto(e.into()),
             jobs::Error::RequestTooLarge => JobErrorRaw::RequestTooLarge,
             jobs::Error::NoKeyStore => JobErrorRaw::NoKeyStore,
             jobs::Error::KeyStore(e) => JobErrorRaw::KeyStore(e.into()),
             jobs::Error::Send => JobErrorRaw::Send,
-            jobs::Error::NoWorkerForRequest => JobErrorRaw::NoWorkerForRequest,
-            jobs::Error::UnexpectedRequestType => JobErrorRaw::UnexpectedRequestType,
         }
     }
 }

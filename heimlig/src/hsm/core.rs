@@ -1,6 +1,7 @@
 use crate::common::jobs;
 use crate::common::jobs::{ClientId, Request, RequestId, RequestType, Response};
 use crate::crypto::rng::{EntropySource, Rng};
+use crate::hsm::keystore;
 use crate::hsm::keystore::KeyStore;
 use core::future::poll_fn;
 use core::ops::DerefMut;
@@ -42,8 +43,8 @@ pub enum InternalError {
     EmptyClientRequestQueue(ClientId),
     /// An empty worker response queue was encountered even though a previous check made sure that it was non-empty.
     EmptyWorkerResponseQueue(WorkerId),
-    /// A worker or the core encountered a request type it cannot handle
-    InvalidRequestType(RequestType),
+    /// The core encountered a request type it cannot handle
+    UnexpectedCoreRequest(RequestType),
     // The client ID of the response that was determined to be processed next did not match the one in the response queue.
     ClientIdMismatch(ClientId, ClientId),
 }
@@ -81,14 +82,13 @@ enum Job {
     RespondNoWorkerForRequest(ClientId),
 }
 
-// TODO: Could be made configurable once `generic_const_exprs` feature is stable
+// TODO: Can be made configurable once `generic_const_exprs` is stable
 // https://doc.rust-lang.org/beta/unstable-book/language-features/generic-const-exprs.html
-
 /// Maximum number of allowed clients
 pub const MAX_CLIENTS: usize = 8;
 /// Maximum number of allowed workers
 pub const MAX_WORKERS: usize = 16;
-// TODO: Could be made configurable once `core::mem::variant_count` is stable
+// TODO: Can be made configurable once `core::mem::variant_count` is stable
 // https://github.com/rust-lang/rust/issues/73662
 /// Maximum number of different request types handles by a worker
 const MAX_REQUEST_TYPES: usize = 8;
@@ -418,97 +418,142 @@ impl<
     }
 
     async fn process_on_core(&mut self, client_id: ClientId) -> Result<(), Error> {
-        return match self.clients.get(client_id.idx()) {
-            None => Err(Error::Internal(InternalError::InvalidClientId(client_id))),
-            Some(client) => {
-                let request = client
-                    .requests
-                    .lock()
-                    .await
-                    .deref_mut()
-                    .next()
-                    .await
-                    .ok_or(Error::Internal(InternalError::EmptyClientRequestQueue(
-                        client_id,
-                    )))?;
-                match request {
-                    Request::ImportSymmetricKey {
-                        client_id,
-                        request_id,
-                        key_id,
-                        data,
-                    } => {
-                        let response = {
-                            match self.key_store {
-                                None => Response::Error {
-                                    client_id,
-                                    request_id,
-                                    error: jobs::Error::NoKeyStore,
-                                },
-                                Some(key_store) => {
-                                    match key_store
-                                        .lock()
-                                        .await
-                                        .deref_mut()
-                                        .import_symmetric_key(key_id, data)
-                                    {
-                                        Ok(()) => Response::ImportSymmetricKey {
-                                            client_id,
-                                            request_id,
-                                        },
-                                        Err(e) => Response::Error {
-                                            client_id,
-                                            request_id,
-                                            error: jobs::Error::KeyStore(e),
-                                        },
-                                    }
-                                }
-                            }
-                        };
-                        self.send_to_client(response).await
+        let Some(client) = self.clients.get(client_id.idx()) else {
+            return Err(Error::Internal(InternalError::InvalidClientId(client_id)));
+        };
+        let request = client
+            .requests
+            .lock()
+            .await
+            .deref_mut()
+            .next()
+            .await
+            .ok_or(Error::Internal(InternalError::EmptyClientRequestQueue(
+                client_id,
+            )))?;
+        let response = match request {
+            Request::ImportSymmetricKey {
+                client_id,
+                request_id,
+                key_id,
+                data,
+            } => match self.key_store {
+                None => Ok(Self::no_key_store_response(client_id, request_id)),
+                Some(key_store) => {
+                    match key_store
+                        .lock()
+                        .await
+                        .deref_mut()
+                        .import_symmetric_key(key_id, data)
+                    {
+                        Ok(()) => Ok(Response::ImportSymmetricKey {
+                            client_id,
+                            request_id,
+                        }),
+                        Err(e) => Ok(Self::key_store_error_response(client_id, request_id, e)),
                     }
-                    Request::ImportKeyPair {
-                        client_id,
-                        request_id,
+                }
+            },
+            Request::ImportKeyPair {
+                client_id,
+                request_id,
+                key_id,
+                public_key,
+                private_key,
+            } => match self.key_store {
+                None => Ok(Self::no_key_store_response(client_id, request_id)),
+                Some(key_store) => {
+                    match key_store.lock().await.deref_mut().import_key_pair(
                         key_id,
                         public_key,
                         private_key,
-                    } => {
-                        let response = {
-                            match self.key_store {
-                                None => Response::Error {
-                                    client_id,
-                                    request_id,
-                                    error: jobs::Error::NoKeyStore,
-                                },
-                                Some(key_store) => {
-                                    match key_store.lock().await.deref_mut().import_key_pair(
-                                        key_id,
-                                        public_key,
-                                        private_key,
-                                    ) {
-                                        Ok(()) => Response::ImportKeyPair {
-                                            client_id,
-                                            request_id,
-                                        },
-                                        Err(e) => Response::Error {
-                                            client_id,
-                                            request_id,
-                                            error: jobs::Error::KeyStore(e),
-                                        },
-                                    }
-                                }
-                            }
-                        };
-                        self.send_to_client(response).await
+                    ) {
+                        Ok(()) => Ok(Response::ImportKeyPair {
+                            client_id,
+                            request_id,
+                        }),
+                        Err(e) => Ok(Self::key_store_error_response(client_id, request_id, e)),
                     }
-
-                    _ => Err(Error::Internal(InternalError::InvalidRequestType(
-                        request.get_type(),
-                    ))),
                 }
-            }
-        };
+            },
+            Request::ExportSymmetricKey {
+                client_id,
+                request_id,
+                key_id,
+                data,
+            } => match self.key_store {
+                None => Ok(Self::no_key_store_response(client_id, request_id)),
+                Some(key_store) => {
+                    match key_store
+                        .lock()
+                        .await
+                        .deref_mut()
+                        .export_symmetric_key(key_id, data)
+                    {
+                        Ok(written) => Ok(Response::ExportSymmetricKey {
+                            client_id,
+                            request_id,
+                            key: written,
+                        }),
+                        Err(e) => Ok(Self::key_store_error_response(client_id, request_id, e)),
+                    }
+                }
+            },
+            Request::ExportPublicKey {
+                client_id,
+                request_id,
+                key_id,
+                public_key,
+            } => match self.key_store {
+                None => Ok(Self::no_key_store_response(client_id, request_id)),
+                Some(key_store) => {
+                    match key_store
+                        .lock()
+                        .await
+                        .deref_mut()
+                        .export_public_key(key_id, public_key)
+                    {
+                        Ok(written) => Ok(Response::ExportPublicKey {
+                            client_id,
+                            request_id,
+                            public_key: written,
+                        }),
+                        Err(e) => Ok(Self::key_store_error_response(client_id, request_id, e)),
+                    }
+                }
+            },
+            Request::ExportPrivateKey {
+                client_id,
+                request_id,
+                key_id,
+                private_key,
+            } => match self.key_store {
+                None => Ok(Self::no_key_store_response(client_id, request_id)),
+                Some(key_store) => {
+                    match key_store
+                        .lock()
+                        .await
+                        .deref_mut()
+                        .export_private_key(key_id, private_key)
+                    {
+                        Ok(written) => Ok(Response::ExportPrivateKey {
+                            client_id,
+                            request_id,
+                            private_key: written,
+                        }),
+                        Err(e) => Ok(Response::Error {
+                            client_id,
+                            request_id,
+                            error: jobs::Error::KeyStore(e),
+                        }),
+                    }
+                }
+            },
+            _ => Err(Error::Internal(InternalError::UnexpectedCoreRequest(
+                request.get_type(),
+            ))),
+        }?;
+        self.send_to_client(response).await
     }
 
     async fn respond_no_worker_for_request(&mut self, client_id: ClientId) -> Result<(), Error> {
@@ -533,5 +578,25 @@ impl<
                 .await
                 .map_err(|_e| Error::Send)?),
         };
+    }
+
+    fn no_key_store_response(client_id: ClientId, request_id: RequestId) -> Response<'data> {
+        Response::Error {
+            client_id,
+            request_id,
+            error: jobs::Error::NoKeyStore,
+        }
+    }
+
+    fn key_store_error_response(
+        client_id: ClientId,
+        request_id: RequestId,
+        error: keystore::Error,
+    ) -> Response<'data> {
+        Response::Error {
+            client_id,
+            request_id,
+            error: jobs::Error::KeyStore(error),
+        }
     }
 }

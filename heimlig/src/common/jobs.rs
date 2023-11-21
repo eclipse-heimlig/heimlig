@@ -3,20 +3,20 @@ use crate::hsm::keystore::KeyId;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Error {
-    /// A cryptographic error occurred.
-    Crypto(crate::crypto::Error),
-    /// The amount of requested data was too large.
-    RequestTooLarge,
-    /// No key store present.
-    NoKeyStore,
-    /// A key store error occurred.
-    KeyStore(keystore::Error),
-    /// Failed to send through channel.
-    Send,
     /// No worker found for received request type.
     NoWorkerForRequest,
     /// A worker encountered a request type that it cannot handle.  
     UnexpectedRequestType,
+    /// The amount of requested data was too large.
+    RequestTooLarge,
+    /// No key store present.
+    NoKeyStore,
+    /// Failed to send through channel.
+    Send,
+    /// A cryptographic error occurred.
+    Crypto(crate::crypto::Error),
+    /// A key store error occurred.
+    KeyStore(keystore::Error),
 }
 
 /// Used to distinguish multiple clients
@@ -76,6 +76,9 @@ pub enum RequestType {
     GenerateKeyPair,
     ImportSymmetricKey,
     ImportKeyPair,
+    ExportSymmetricKey,
+    ExportPublicKey,
+    ExportPrivateKey,
     EncryptChaChaPoly,
     EncryptChaChaPolyExternalKey,
     DecryptChaChaPoly,
@@ -112,6 +115,24 @@ pub enum Request<'data> {
         key_id: KeyId,
         public_key: &'data [u8],
         private_key: &'data [u8],
+    },
+    ExportSymmetricKey {
+        client_id: ClientId,
+        request_id: RequestId,
+        key_id: KeyId,
+        data: &'data mut [u8],
+    },
+    ExportPublicKey {
+        client_id: ClientId,
+        request_id: RequestId,
+        key_id: KeyId,
+        public_key: &'data mut [u8],
+    },
+    ExportPrivateKey {
+        client_id: ClientId,
+        request_id: RequestId,
+        key_id: KeyId,
+        private_key: &'data mut [u8],
     },
     EncryptChaChaPoly {
         client_id: ClientId,
@@ -157,7 +178,11 @@ impl RequestType {
     pub fn is_handled_by_core(&self) -> bool {
         matches!(
             self,
-            RequestType::ImportSymmetricKey | RequestType::ImportKeyPair
+            RequestType::ImportSymmetricKey
+                | RequestType::ImportKeyPair
+                | RequestType::ExportSymmetricKey
+                | RequestType::ExportPublicKey
+                | RequestType::ExportPrivateKey
         )
     }
 
@@ -196,6 +221,21 @@ pub enum Response<'data> {
         client_id: ClientId,
         request_id: RequestId,
     },
+    ExportSymmetricKey {
+        client_id: ClientId,
+        request_id: RequestId,
+        key: &'data [u8],
+    },
+    ExportPublicKey {
+        client_id: ClientId,
+        request_id: RequestId,
+        public_key: &'data [u8],
+    },
+    ExportPrivateKey {
+        client_id: ClientId,
+        request_id: RequestId,
+        private_key: &'data [u8],
+    },
     EncryptChaChaPoly {
         client_id: ClientId,
         request_id: RequestId,
@@ -217,6 +257,9 @@ impl<'data> Request<'data> {
             Request::GenerateKeyPair { .. } => RequestType::GenerateKeyPair,
             Request::ImportSymmetricKey { .. } => RequestType::ImportSymmetricKey,
             Request::ImportKeyPair { .. } => RequestType::ImportKeyPair,
+            Request::ExportSymmetricKey { .. } => RequestType::ExportSymmetricKey,
+            Request::ExportPublicKey { .. } => RequestType::ExportPublicKey,
+            Request::ExportPrivateKey { .. } => RequestType::ExportPrivateKey,
             Request::EncryptChaChaPoly { .. } => RequestType::EncryptChaChaPoly,
             Request::EncryptChaChaPolyExternalKey { .. } => {
                 RequestType::EncryptChaChaPolyExternalKey
@@ -235,6 +278,9 @@ impl<'data> Request<'data> {
             Request::GenerateKeyPair { client_id, .. } => *client_id = new_client_id,
             Request::ImportSymmetricKey { client_id, .. } => *client_id = new_client_id,
             Request::ImportKeyPair { client_id, .. } => *client_id = new_client_id,
+            Request::ExportSymmetricKey { client_id, .. } => *client_id = new_client_id,
+            Request::ExportPublicKey { client_id, .. } => *client_id = new_client_id,
+            Request::ExportPrivateKey { client_id, .. } => *client_id = new_client_id,
             Request::EncryptChaChaPoly { client_id, .. } => *client_id = new_client_id,
             Request::EncryptChaChaPolyExternalKey { client_id, .. } => *client_id = new_client_id,
             Request::DecryptChaChaPoly { client_id, .. } => *client_id = new_client_id,
@@ -249,6 +295,9 @@ impl<'data> Request<'data> {
             Request::GenerateKeyPair { request_id, .. } => *request_id = new_request_id,
             Request::ImportSymmetricKey { request_id, .. } => *request_id = new_request_id,
             Request::ImportKeyPair { request_id, .. } => *request_id = new_request_id,
+            Request::ExportSymmetricKey { request_id, .. } => *request_id = new_request_id,
+            Request::ExportPublicKey { request_id, .. } => *request_id = new_request_id,
+            Request::ExportPrivateKey { request_id, .. } => *request_id = new_request_id,
             Request::EncryptChaChaPoly { request_id, .. } => *request_id = new_request_id,
             Request::EncryptChaChaPolyExternalKey { request_id, .. } => {
                 *request_id = new_request_id
@@ -270,6 +319,9 @@ impl<'data> Response<'data> {
             Response::GenerateKeyPair { client_id, .. } => client_id,
             Response::ImportSymmetricKey { client_id, .. } => client_id,
             Response::ImportKeyPair { client_id, .. } => client_id,
+            Response::ExportSymmetricKey { client_id, .. } => client_id,
+            Response::ExportPublicKey { client_id, .. } => client_id,
+            Response::ExportPrivateKey { client_id, .. } => client_id,
             Response::EncryptChaChaPoly { client_id, .. } => client_id,
             Response::DecryptChaChaPoly { client_id, .. } => client_id,
         }
