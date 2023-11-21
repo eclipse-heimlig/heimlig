@@ -109,7 +109,12 @@ pub trait KeyStore {
     fn get_key_info(&self, id: KeyId) -> Result<KeyInfo, Error>;
 
     /// Write symmetric key to storage.
-    fn import_symmetric_key(&mut self, id: KeyId, data: &[u8]) -> Result<(), Error>;
+    fn import_symmetric_key(
+        &mut self,
+        id: KeyId,
+        data: &[u8],
+        overwrite: bool,
+    ) -> Result<(), Error>;
 
     /// Write asymmetric key pair to storage.
     fn import_key_pair(
@@ -117,6 +122,7 @@ pub trait KeyStore {
         id: KeyId,
         public_key: &[u8],
         private_key: &[u8],
+        overwrite: bool,
     ) -> Result<(), Error>;
 
     /// Read symmetric key from storage.

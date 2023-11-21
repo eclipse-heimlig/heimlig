@@ -25,7 +25,13 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         }
     }
 
-    fn import_symmetric_key(&mut self, id: KeyId, data: &[u8]) -> Result<(), Error> {
+    fn import_symmetric_key(
+        &mut self,
+        id: KeyId,
+        data: &[u8],
+        overwrite: bool,
+    ) -> Result<(), Error> {
+        let key_exists = self.is_stored(id);
         match self.layout.get_mut(id) {
             None => Err(Error::InvalidKeyId),
             Some(key_layout) => {
@@ -33,6 +39,9 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
                     return Err(Error::InvalidKeyType);
                 }
                 if !key_layout.info.permissions.import {
+                    return Err(Error::NotAllowed);
+                }
+                if key_exists && (!overwrite || !key_layout.info.permissions.overwrite) {
                     return Err(Error::NotAllowed);
                 }
                 if data.len() != key_layout.info.ty.key_size() {
@@ -53,7 +62,9 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         id: KeyId,
         public_key: &[u8],
         private_key: &[u8],
+        overwrite: bool,
     ) -> Result<(), Error> {
+        let key_exists = self.is_stored(id);
         match self.layout.get_mut(id) {
             None => Err(Error::InvalidKeyId),
             Some(key_layout) => {
@@ -61,6 +72,9 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
                     return Err(Error::InvalidKeyType);
                 }
                 if !key_layout.info.permissions.import {
+                    return Err(Error::NotAllowed);
+                }
+                if key_exists && (!overwrite || !key_layout.info.permissions.overwrite) {
                     return Err(Error::NotAllowed);
                 }
                 if (public_key.len() != 2 * private_key.len())
@@ -378,7 +392,7 @@ pub(crate) mod test {
         // Store first key
         src_buffer.fill(1);
         assert!(key_store
-            .import_symmetric_key(KEY1_INFO.id, &src_buffer[0..KEY1_INFO.ty.key_size()])
+            .import_symmetric_key(KEY1_INFO.id, &src_buffer[0..KEY1_INFO.ty.key_size()], false)
             .is_ok());
         assert!(key_store.is_stored(KEY1_INFO.id));
         assert_eq!(
@@ -401,7 +415,8 @@ pub(crate) mod test {
             .import_key_pair(
                 KEY2_INFO.id,
                 &src_buffer[0..KEY2_INFO.ty.public_key_size()],
-                &src_buffer[KEY2_INFO.ty.public_key_size()..]
+                &src_buffer[KEY2_INFO.ty.public_key_size()..],
+                false
             )
             .is_ok());
         assert!(key_store.is_stored(KEY2_INFO.id));
@@ -459,7 +474,7 @@ pub(crate) mod test {
         let mut key_store = MemoryKeyStore::<{ TOTAL_KEY_SIZE }, 2>::try_new(&key_infos)
             .expect("failed to create key store");
         assert!(key_store
-            .import_symmetric_key(NO_EXPORT_NO_OVERWRITE_NO_DELETE.id, &src_buffer)
+            .import_symmetric_key(NO_EXPORT_NO_OVERWRITE_NO_DELETE.id, &src_buffer, false)
             .is_ok());
         match key_store.export_symmetric_key(NO_EXPORT_NO_OVERWRITE_NO_DELETE.id, &mut dest_buffer)
         {
@@ -470,5 +485,33 @@ pub(crate) mod test {
             Ok(_) => panic!("Operation should have failed"),
             Err(e) => assert_eq!(e, Error::NotAllowed),
         }
+    }
+
+    #[test]
+    fn overwrite_allowed() {
+        const NO_EXPORT_OVERWRITE_NO_DELETE: KeyInfo = KeyInfo {
+            id: KeyId(0),
+            ty: KeyType::Symmetric128Bits,
+            permissions: KeyPermissions {
+                import: true,
+                export: false,
+                overwrite: true,
+                delete: false,
+            },
+        };
+        let key_infos: [KeyInfo; 1] = [NO_EXPORT_OVERWRITE_NO_DELETE];
+        let src_buffer = [0u8; NO_EXPORT_OVERWRITE_NO_DELETE.ty.key_size()];
+        let mut key_store = MemoryKeyStore::<{ TOTAL_KEY_SIZE }, 2>::try_new(&key_infos)
+            .expect("failed to create key store");
+        assert!(key_store
+            .import_symmetric_key(NO_EXPORT_OVERWRITE_NO_DELETE.id, &src_buffer, false)
+            .is_ok());
+        match key_store.import_symmetric_key(NO_EXPORT_OVERWRITE_NO_DELETE.id, &src_buffer, false) {
+            Ok(_) => panic!("Operation should have failed"),
+            Err(e) => assert_eq!(e, Error::NotAllowed),
+        }
+        assert!(key_store
+            .import_symmetric_key(NO_EXPORT_OVERWRITE_NO_DELETE.id, &src_buffer, true)
+            .is_ok());
     }
 }

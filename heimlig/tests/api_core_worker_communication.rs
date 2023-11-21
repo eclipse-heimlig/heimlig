@@ -286,7 +286,7 @@ mod tests {
 
         // Import key
         let org_request_id = api
-            .import_symmetric_key(SYM_256_KEY.id, &key)
+            .import_symmetric_key(SYM_256_KEY.id, &key, false)
             .await
             .expect("failed to send request");
         core.execute()
@@ -523,7 +523,7 @@ mod tests {
 
         // Generate key
         let org_request_id = api
-            .generate_symmetric_key(KEY_INFO.id)
+            .generate_symmetric_key(KEY_INFO.id, false)
             .await
             .expect("failed to send request");
         let (core_res, worker_res) = join(core.execute(), rng_worker.execute()).await;
@@ -607,7 +607,7 @@ mod tests {
         let mut api = Api::new(req_client_tx, resp_client_rx);
 
         let org_request_id = api
-            .generate_key_pair(KEY_INFO.id)
+            .generate_key_pair(KEY_INFO.id, false)
             .await
             .expect("failed to send request");
         let (core_res, worker_res) = join(core.execute(), ecc_worker.execute()).await;

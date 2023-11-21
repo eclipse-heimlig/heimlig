@@ -48,7 +48,11 @@ impl<
                         client_id,
                         request_id,
                         key_id,
-                    } => self.generate_key_pair(client_id, request_id, key_id).await,
+                        overwrite,
+                    } => {
+                        self.generate_key_pair(client_id, request_id, key_id, overwrite)
+                            .await
+                    }
                     _ => Err(Error::UnexpectedRequestType)?,
                 };
                 self.responses
@@ -64,6 +68,7 @@ impl<
         client_id: ClientId,
         request_id: RequestId,
         key_id: KeyId,
+        overwrite: bool,
     ) -> Response<'data> {
         let locked_key_store = self.key_store.lock().await;
         let key_info = locked_key_store.deref().get_key_info(key_id);
@@ -75,7 +80,7 @@ impl<
             },
             Ok(key_info) => {
                 let key_exists = locked_key_store.deref().is_stored(key_id);
-                if key_exists && !key_info.permissions.overwrite {
+                if key_exists && (!overwrite || !key_info.permissions.overwrite) {
                     return Response::Error {
                         client_id,
                         request_id,
@@ -96,6 +101,7 @@ impl<
                             client_id,
                             request_id,
                             key_info,
+                            overwrite,
                         )
                         .await
                     }
@@ -105,6 +111,7 @@ impl<
                             client_id,
                             request_id,
                             key_info,
+                            overwrite,
                         )
                         .await
                     }
@@ -124,6 +131,7 @@ impl<
         client_id: ClientId,
         request_id: RequestId,
         key_info: KeyInfo,
+        overwrite: bool,
     ) -> Response<'data>
     where
         C: CurveArithmetic,
@@ -156,6 +164,7 @@ impl<
             key_info.id,
             public_key_bytes,
             private_key_bytes.as_slice(),
+            overwrite,
         ) {
             Ok(()) => Response::GenerateKeyPair {
                 client_id,

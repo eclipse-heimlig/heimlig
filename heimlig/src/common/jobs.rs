@@ -97,17 +97,20 @@ pub enum Request<'data> {
         client_id: ClientId,
         request_id: RequestId,
         key_id: KeyId,
+        overwrite: bool,
     },
     GenerateKeyPair {
         client_id: ClientId,
         request_id: RequestId,
         key_id: KeyId,
+        overwrite: bool,
     },
     ImportSymmetricKey {
         client_id: ClientId,
         request_id: RequestId,
         key_id: KeyId,
         data: &'data [u8],
+        overwrite: bool,
     },
     ImportKeyPair {
         client_id: ClientId,
@@ -115,6 +118,7 @@ pub enum Request<'data> {
         key_id: KeyId,
         public_key: &'data [u8],
         private_key: &'data [u8],
+        overwrite: bool,
     },
     ExportSymmetricKey {
         client_id: ClientId,

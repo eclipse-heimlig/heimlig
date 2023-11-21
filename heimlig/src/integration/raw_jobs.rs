@@ -40,11 +40,13 @@ pub enum RequestRaw {
         client_id: ClientIdRaw,
         request_id: RequestIdRaw,
         key_id: KeyIdRaw,
+        overwrite: bool,
     },
     GenerateKeyPair {
         client_id: ClientIdRaw,
         request_id: RequestIdRaw,
         key_id: KeyIdRaw,
+        overwrite: bool,
     },
     ImportSymmetricKey {
         client_id: ClientIdRaw,
@@ -52,6 +54,7 @@ pub enum RequestRaw {
         key_id: KeyIdRaw,
         data_data: *const u8,
         data_size: u32,
+        overwrite: bool,
     },
     ImportKeyPair {
         client_id: ClientIdRaw,
@@ -61,6 +64,7 @@ pub enum RequestRaw {
         public_key_size: u32,
         private_key_data: *const u8,
         private_key_size: u32,
+        overwrite: bool,
     },
     ExportSymmetricKey {
         client_id: ClientIdRaw,
@@ -263,19 +267,23 @@ impl RequestRaw {
                 client_id,
                 request_id,
                 key_id,
+                overwrite,
             } => Request::GenerateSymmetricKey {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
                 key_id: key_id.into(),
+                overwrite,
             },
             RequestRaw::GenerateKeyPair {
                 client_id,
                 request_id,
                 key_id,
+                overwrite,
             } => Request::GenerateKeyPair {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
                 key_id: key_id.into(),
+                overwrite,
             },
             RequestRaw::ImportSymmetricKey {
                 client_id,
@@ -283,11 +291,13 @@ impl RequestRaw {
                 key_id,
                 data_data,
                 data_size,
+                overwrite,
             } => Request::ImportSymmetricKey {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
                 key_id: key_id.into(),
                 data: check_pointer_and_size(data_data, data_size, &validator)?,
+                overwrite,
             },
             RequestRaw::ImportKeyPair {
                 client_id,
@@ -297,6 +307,7 @@ impl RequestRaw {
                 public_key_size,
                 private_key_data,
                 private_key_size,
+                overwrite,
             } => Request::ImportKeyPair {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
@@ -307,6 +318,7 @@ impl RequestRaw {
                     private_key_size,
                     &validator,
                 )?,
+                overwrite,
             },
             RequestRaw::ExportSymmetricKey {
                 client_id,
@@ -474,31 +486,37 @@ impl From<Request<'_>> for RequestRaw {
                 client_id,
                 request_id,
                 key_id,
+                overwrite,
             } => RequestRaw::GenerateSymmetricKey {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
                 key_id: key_id.into(),
+                overwrite,
             },
             Request::GenerateKeyPair {
                 client_id,
                 request_id,
                 key_id,
+                overwrite,
             } => RequestRaw::GenerateKeyPair {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
                 key_id: key_id.into(),
+                overwrite,
             },
             Request::ImportSymmetricKey {
                 client_id,
                 request_id,
                 key_id,
                 data,
+                overwrite,
             } => RequestRaw::ImportSymmetricKey {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
                 key_id: key_id.into(),
                 data_data: data.as_ptr(),
                 data_size: data.len() as u32,
+                overwrite,
             },
             Request::ImportKeyPair {
                 client_id,
@@ -506,6 +524,7 @@ impl From<Request<'_>> for RequestRaw {
                 key_id,
                 public_key,
                 private_key,
+                overwrite,
             } => RequestRaw::ImportKeyPair {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
@@ -514,6 +533,7 @@ impl From<Request<'_>> for RequestRaw {
                 public_key_size: public_key.len() as u32,
                 private_key_data: private_key.as_ptr(),
                 private_key_size: private_key.len() as u32,
+                overwrite,
             },
             Request::ExportSymmetricKey {
                 client_id,

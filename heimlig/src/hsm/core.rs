@@ -437,6 +437,7 @@ impl<
                 request_id,
                 key_id,
                 data,
+                overwrite,
             } => match self.key_store {
                 None => Ok(Self::no_key_store_response(client_id, request_id)),
                 Some(key_store) => {
@@ -444,7 +445,7 @@ impl<
                         .lock()
                         .await
                         .deref_mut()
-                        .import_symmetric_key(key_id, data)
+                        .import_symmetric_key(key_id, data, overwrite)
                     {
                         Ok(()) => Ok(Response::ImportSymmetricKey {
                             client_id,
@@ -460,6 +461,7 @@ impl<
                 key_id,
                 public_key,
                 private_key,
+                overwrite,
             } => match self.key_store {
                 None => Ok(Self::no_key_store_response(client_id, request_id)),
                 Some(key_store) => {
@@ -467,6 +469,7 @@ impl<
                         key_id,
                         public_key,
                         private_key,
+                        overwrite,
                     ) {
                         Ok(()) => Ok(Response::ImportKeyPair {
                             client_id,
