@@ -2,12 +2,6 @@ use crate::common::jobs::{Request, Response};
 use crate::integration::raw_errors::JobErrorRaw;
 use core::slice;
 
-/// Function to trigger the generation of `RequestRaw` and `ResponseRaw` definition
-#[no_mangle]
-pub extern "C" fn trigger_cbindgen_request_raw_response_raw(_request: RequestRaw) -> ResponseRaw {
-    unreachable!()
-}
-
 type ClientIdRaw = u32;
 type RequestIdRaw = u32;
 type KeyIdRaw = u32;
@@ -847,6 +841,12 @@ fn bool_to_bool_raw(overwrite: bool) -> BoolRaw {
     } else {
         0
     }
+}
+
+/// Function to trigger the generation of `RequestRaw` and `ResponseRaw` definition
+#[no_mangle]
+pub extern "C" fn trigger_cbindgen_request_raw_response_raw(_request: RequestRaw) -> ResponseRaw {
+    unreachable!()
 }
 
 #[cfg(test)]
