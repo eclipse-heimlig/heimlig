@@ -31,7 +31,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         data: &[u8],
         overwrite: bool,
     ) -> Result<(), Error> {
-        let key_exists = self.is_stored(id);
+        let key_exists = self.is_key_available(id);
         match self.layout.get_mut(id) {
             None => Err(Error::InvalidKeyId),
             Some(key_layout) => {
@@ -64,7 +64,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         private_key: &[u8],
         overwrite: bool,
     ) -> Result<(), Error> {
-        let key_exists = self.is_stored(id);
+        let key_exists = self.is_key_available(id);
         match self.layout.get_mut(id) {
             None => Err(Error::InvalidKeyId),
             Some(key_layout) => {
@@ -241,7 +241,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         }
     }
 
-    fn is_stored(&self, id: KeyId) -> bool {
+    fn is_key_available(&self, id: KeyId) -> bool {
         match self.layout.get(id) {
             None => false,
             Some(key_layout) => key_layout.actual_size > 0,
@@ -379,7 +379,7 @@ pub(crate) mod test {
             .expect("failed to create key store");
         for key_id in 0..10 {
             let key_id: KeyId = key_id.into();
-            assert!(!key_store.is_stored(key_id));
+            assert!(!key_store.is_key_available(key_id));
             assert!(key_store.size(key_id).is_err());
             assert!(key_store
                 .export_public_key(key_id, &mut dest_buffer)
@@ -394,7 +394,7 @@ pub(crate) mod test {
         assert!(key_store
             .import_symmetric_key(KEY1_INFO.id, &src_buffer[0..KEY1_INFO.ty.key_size()], false)
             .is_ok());
-        assert!(key_store.is_stored(KEY1_INFO.id));
+        assert!(key_store.is_key_available(KEY1_INFO.id));
         assert_eq!(
             key_store
                 .export_symmetric_key(KEY1_INFO.id, &mut dest_buffer)
@@ -419,8 +419,8 @@ pub(crate) mod test {
                 false
             )
             .is_ok());
-        assert!(key_store.is_stored(KEY2_INFO.id));
-        assert!(key_store.is_stored(KEY1_INFO.id));
+        assert!(key_store.is_key_available(KEY2_INFO.id));
+        assert!(key_store.is_key_available(KEY1_INFO.id));
         assert_eq!(
             key_store
                 .export_public_key(
@@ -451,9 +451,9 @@ pub(crate) mod test {
         // Delete keys
         assert_eq!(key_store.delete(UNKNOWN_KEY_ID), Err(Error::InvalidKeyId));
         assert!(key_store.delete(KEY1_INFO.id).is_ok());
-        assert!(!key_store.is_stored(KEY1_INFO.id));
+        assert!(!key_store.is_key_available(KEY1_INFO.id));
         assert!(key_store.delete(KEY2_INFO.id).is_ok());
-        assert!(!key_store.is_stored(KEY2_INFO.id));
+        assert!(!key_store.is_key_available(KEY2_INFO.id));
     }
 
     #[test]

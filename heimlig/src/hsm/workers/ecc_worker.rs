@@ -79,7 +79,7 @@ impl<
                 error: Error::KeyStore(e),
             },
             Ok(key_info) => {
-                let key_exists = locked_key_store.deref().is_stored(key_id);
+                let key_exists = locked_key_store.deref().is_key_available(key_id);
                 if key_exists && (!overwrite || !key_info.permissions.overwrite) {
                     return Response::Error {
                         client_id,

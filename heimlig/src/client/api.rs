@@ -153,6 +153,15 @@ impl<
         self.send_request(request).await
     }
 
+    pub async fn is_key_available(&mut self, key_id: KeyId) -> Result<RequestId, Error> {
+        let request = Request::IsKeyAvailable {
+            client_id: ClientId::default(),
+            request_id: RequestId::default(),
+            key_id,
+        };
+        self.send_request(request).await
+    }
+
     pub async fn encrypt(
         &mut self,
         algorithm: SymmetricEncryptionAlgorithm,

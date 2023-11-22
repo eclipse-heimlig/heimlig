@@ -79,6 +79,7 @@ pub enum RequestType {
     ExportSymmetricKey,
     ExportPublicKey,
     ExportPrivateKey,
+    IsKeyAvailable,
     EncryptChaChaPoly,
     EncryptChaChaPolyExternalKey,
     DecryptChaChaPoly,
@@ -138,6 +139,11 @@ pub enum Request<'data> {
         key_id: KeyId,
         private_key: &'data mut [u8],
     },
+    IsKeyAvailable {
+        client_id: ClientId,
+        request_id: RequestId,
+        key_id: KeyId,
+    },
     EncryptChaChaPoly {
         client_id: ClientId,
         request_id: RequestId,
@@ -187,6 +193,7 @@ impl RequestType {
                 | RequestType::ExportSymmetricKey
                 | RequestType::ExportPublicKey
                 | RequestType::ExportPrivateKey
+                | RequestType::IsKeyAvailable
         )
     }
 
@@ -240,6 +247,11 @@ pub enum Response<'data> {
         request_id: RequestId,
         private_key: &'data [u8],
     },
+    IsKeyAvailable {
+        client_id: ClientId,
+        request_id: RequestId,
+        is_available: bool,
+    },
     EncryptChaChaPoly {
         client_id: ClientId,
         request_id: RequestId,
@@ -264,6 +276,7 @@ impl<'data> Request<'data> {
             Request::ExportSymmetricKey { .. } => RequestType::ExportSymmetricKey,
             Request::ExportPublicKey { .. } => RequestType::ExportPublicKey,
             Request::ExportPrivateKey { .. } => RequestType::ExportPrivateKey,
+            Request::IsKeyAvailable { .. } => RequestType::IsKeyAvailable,
             Request::EncryptChaChaPoly { .. } => RequestType::EncryptChaChaPoly,
             Request::EncryptChaChaPolyExternalKey { .. } => {
                 RequestType::EncryptChaChaPolyExternalKey
@@ -285,6 +298,7 @@ impl<'data> Request<'data> {
             Request::ExportSymmetricKey { client_id, .. } => *client_id = new_client_id,
             Request::ExportPublicKey { client_id, .. } => *client_id = new_client_id,
             Request::ExportPrivateKey { client_id, .. } => *client_id = new_client_id,
+            Request::IsKeyAvailable { client_id, .. } => *client_id = new_client_id,
             Request::EncryptChaChaPoly { client_id, .. } => *client_id = new_client_id,
             Request::EncryptChaChaPolyExternalKey { client_id, .. } => *client_id = new_client_id,
             Request::DecryptChaChaPoly { client_id, .. } => *client_id = new_client_id,
@@ -302,6 +316,7 @@ impl<'data> Request<'data> {
             Request::ExportSymmetricKey { request_id, .. } => *request_id = new_request_id,
             Request::ExportPublicKey { request_id, .. } => *request_id = new_request_id,
             Request::ExportPrivateKey { request_id, .. } => *request_id = new_request_id,
+            Request::IsKeyAvailable { request_id, .. } => *request_id = new_request_id,
             Request::EncryptChaChaPoly { request_id, .. } => *request_id = new_request_id,
             Request::EncryptChaChaPolyExternalKey { request_id, .. } => {
                 *request_id = new_request_id
@@ -326,6 +341,7 @@ impl<'data> Response<'data> {
             Response::ExportSymmetricKey { client_id, .. } => client_id,
             Response::ExportPublicKey { client_id, .. } => client_id,
             Response::ExportPrivateKey { client_id, .. } => client_id,
+            Response::IsKeyAvailable { client_id, .. } => client_id,
             Response::EncryptChaChaPoly { client_id, .. } => client_id,
             Response::DecryptChaChaPoly { client_id, .. } => client_id,
         }

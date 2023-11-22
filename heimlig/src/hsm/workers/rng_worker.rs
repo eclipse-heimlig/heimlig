@@ -104,7 +104,7 @@ impl<
             },
             Ok(key_info) => {
                 let mut locked_key_store = self.key_store.lock().await;
-                let key_exists = locked_key_store.deref().is_stored(key_id);
+                let key_exists = locked_key_store.deref().is_key_available(key_id);
                 if key_exists && (!overwrite || !key_info.permissions.overwrite) {
                     return Response::Error {
                         client_id,

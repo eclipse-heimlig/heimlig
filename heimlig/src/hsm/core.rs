@@ -432,6 +432,21 @@ impl<
                 client_id,
             )))?;
         let response = match request {
+            Request::IsKeyAvailable {
+                client_id,
+                request_id,
+                key_id,
+            } => match self.key_store {
+                None => Ok(Self::no_key_store_response(client_id, request_id)),
+                Some(key_store) => {
+                    let is_available = key_store.lock().await.deref_mut().is_key_available(key_id);
+                    Ok(Response::IsKeyAvailable {
+                        client_id,
+                        request_id,
+                        is_available,
+                    })
+                }
+            },
             Request::ImportSymmetricKey {
                 client_id,
                 request_id,

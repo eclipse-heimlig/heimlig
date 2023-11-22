@@ -11,6 +11,7 @@ pub extern "C" fn trigger_cbindgen_request_raw_response_raw(_request: RequestRaw
 type ClientIdRaw = u32;
 type RequestIdRaw = u32;
 type KeyIdRaw = u32;
+type BoolRaw = u32; // 0 == false, 1 == true
 
 // TODO: replace with core::mem::variant_count::<RequestRaw>(); once it is stable
 // https://github.com/rust-lang/rust/issues/73662
@@ -40,13 +41,13 @@ pub enum RequestRaw {
         client_id: ClientIdRaw,
         request_id: RequestIdRaw,
         key_id: KeyIdRaw,
-        overwrite: bool,
+        overwrite: BoolRaw,
     },
     GenerateKeyPair {
         client_id: ClientIdRaw,
         request_id: RequestIdRaw,
         key_id: KeyIdRaw,
-        overwrite: bool,
+        overwrite: BoolRaw,
     },
     ImportSymmetricKey {
         client_id: ClientIdRaw,
@@ -54,7 +55,7 @@ pub enum RequestRaw {
         key_id: KeyIdRaw,
         data_data: *const u8,
         data_size: u32,
-        overwrite: bool,
+        overwrite: BoolRaw,
     },
     ImportKeyPair {
         client_id: ClientIdRaw,
@@ -64,7 +65,7 @@ pub enum RequestRaw {
         public_key_size: u32,
         private_key_data: *const u8,
         private_key_size: u32,
-        overwrite: bool,
+        overwrite: BoolRaw,
     },
     ExportSymmetricKey {
         client_id: ClientIdRaw,
@@ -86,6 +87,11 @@ pub enum RequestRaw {
         key_id: KeyIdRaw,
         private_key_data: *mut u8,
         private_key_size: u32,
+    },
+    IsKeyAvailable {
+        client_id: ClientIdRaw,
+        request_id: RequestIdRaw,
+        key_id: KeyIdRaw,
     },
     EncryptChaChaPoly {
         client_id: ClientIdRaw,
@@ -193,6 +199,11 @@ pub enum ResponseRaw {
         private_key_data: *const u8,
         private_key_size: u32,
     },
+    IsKeyAvailable {
+        client_id: ClientIdRaw,
+        request_id: RequestIdRaw,
+        is_available: u32,
+    },
     EncryptChaChaPoly {
         client_id: ClientIdRaw,
         request_id: RequestIdRaw,
@@ -272,7 +283,7 @@ impl RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
                 key_id: key_id.into(),
-                overwrite,
+                overwrite: bool_raw_to_bool(overwrite),
             },
             RequestRaw::GenerateKeyPair {
                 client_id,
@@ -283,7 +294,7 @@ impl RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
                 key_id: key_id.into(),
-                overwrite,
+                overwrite: bool_raw_to_bool(overwrite),
             },
             RequestRaw::ImportSymmetricKey {
                 client_id,
@@ -297,7 +308,7 @@ impl RequestRaw {
                 request_id: request_id.into(),
                 key_id: key_id.into(),
                 data: check_pointer_and_size(data_data, data_size, &validator)?,
-                overwrite,
+                overwrite: bool_raw_to_bool(overwrite),
             },
             RequestRaw::ImportKeyPair {
                 client_id,
@@ -318,7 +329,7 @@ impl RequestRaw {
                     private_key_size,
                     &validator,
                 )?,
-                overwrite,
+                overwrite: bool_raw_to_bool(overwrite),
             },
             RequestRaw::ExportSymmetricKey {
                 client_id,
@@ -363,6 +374,15 @@ impl RequestRaw {
                     private_key_size,
                     &validator,
                 )?,
+            },
+            RequestRaw::IsKeyAvailable {
+                client_id,
+                request_id,
+                key_id,
+            } => Request::IsKeyAvailable {
+                client_id: client_id.into(),
+                request_id: request_id.into(),
+                key_id: key_id.into(),
             },
             RequestRaw::EncryptChaChaPoly {
                 client_id,
@@ -491,7 +511,7 @@ impl From<Request<'_>> for RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
                 key_id: key_id.into(),
-                overwrite,
+                overwrite: bool_to_bool_raw(overwrite),
             },
             Request::GenerateKeyPair {
                 client_id,
@@ -502,7 +522,7 @@ impl From<Request<'_>> for RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
                 key_id: key_id.into(),
-                overwrite,
+                overwrite: bool_to_bool_raw(overwrite),
             },
             Request::ImportSymmetricKey {
                 client_id,
@@ -516,7 +536,7 @@ impl From<Request<'_>> for RequestRaw {
                 key_id: key_id.into(),
                 data_data: data.as_ptr(),
                 data_size: data.len() as u32,
-                overwrite,
+                overwrite: bool_to_bool_raw(overwrite),
             },
             Request::ImportKeyPair {
                 client_id,
@@ -533,7 +553,7 @@ impl From<Request<'_>> for RequestRaw {
                 public_key_size: public_key.len() as u32,
                 private_key_data: private_key.as_ptr(),
                 private_key_size: private_key.len() as u32,
-                overwrite,
+                overwrite: bool_to_bool_raw(overwrite),
             },
             Request::ExportSymmetricKey {
                 client_id,
@@ -570,6 +590,15 @@ impl From<Request<'_>> for RequestRaw {
                 key_id: key_id.into(),
                 private_key_data: private_key.as_mut_ptr(),
                 private_key_size: private_key.len() as u32,
+            },
+            Request::IsKeyAvailable {
+                client_id,
+                request_id,
+                key_id,
+            } => RequestRaw::IsKeyAvailable {
+                client_id: client_id.into(),
+                request_id: request_id.into(),
+                key_id: key_id.into(),
             },
             Request::EncryptChaChaPoly {
                 client_id,
@@ -742,6 +771,15 @@ impl From<Response<'_>> for ResponseRaw {
                 private_key_data: private_key.as_ptr(),
                 private_key_size: private_key.len() as u32,
             },
+            Response::IsKeyAvailable {
+                client_id,
+                request_id,
+                is_available,
+            } => ResponseRaw::IsKeyAvailable {
+                client_id: client_id.into(),
+                request_id: request_id.into(),
+                is_available: bool_to_bool_raw(is_available),
+            },
             Response::EncryptChaChaPoly {
                 client_id,
                 request_id,
@@ -797,6 +835,18 @@ fn check_mut_pointer_and_size<'a>(
         return Err(ValidationError::InvalidPointer);
     }
     Ok(unsafe { slice::from_raw_parts_mut(data, size as usize) })
+}
+
+fn bool_raw_to_bool(overwrite: BoolRaw) -> bool {
+    overwrite != 0
+}
+
+fn bool_to_bool_raw(overwrite: bool) -> BoolRaw {
+    if overwrite {
+        1
+    } else {
+        0
+    }
 }
 
 #[cfg(test)]

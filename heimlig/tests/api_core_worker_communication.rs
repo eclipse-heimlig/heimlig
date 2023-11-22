@@ -542,6 +542,26 @@ mod tests {
         };
         assert_eq!(request_id, org_request_id);
 
+        // Check key existence
+        let org_request_id = api
+            .is_key_available(KEY_INFO.id)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to process request");
+        let Some(response) = api.recv_response().await else {
+            panic!("Failed to receive expected response")
+        };
+        let Response::IsKeyAvailable {
+            client_id: _,
+            request_id,
+            is_available,
+        } = response
+        else {
+            panic!("Unexpected response type {:?}", response)
+        };
+        assert_eq!(request_id, org_request_id);
+        assert!(is_available);
+
         // Export key
         let org_request_id = api
             .export_symmetric_key(KEY_INFO.id, &mut large_key_buffer)
@@ -606,6 +626,7 @@ mod tests {
         .build();
         let mut api = Api::new(req_client_tx, resp_client_rx);
 
+        // Generate key
         let org_request_id = api
             .generate_key_pair(KEY_INFO.id, false)
             .await
@@ -625,6 +646,26 @@ mod tests {
             panic!("Unexpected response type {:?}", response)
         };
         assert_eq!(request_id, org_request_id);
+
+        // Check key existence
+        let org_request_id = api
+            .is_key_available(KEY_INFO.id)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to process request");
+        let Some(response) = api.recv_response().await else {
+            panic!("Failed to receive expected response")
+        };
+        let Response::IsKeyAvailable {
+            client_id: _,
+            request_id,
+            is_available,
+        } = response
+        else {
+            panic!("Unexpected response type {:?}", response)
+        };
+        assert_eq!(request_id, org_request_id);
+        assert!(is_available);
 
         // Export public key
         let org_request_id = api

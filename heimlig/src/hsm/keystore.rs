@@ -184,7 +184,7 @@ pub trait KeyStore {
     fn delete(&mut self, id: KeyId) -> Result<(), Error>;
 
     /// Returns whether or not a key for the given 'id' is present in the store.
-    fn is_stored(&self, id: KeyId) -> bool;
+    fn is_key_available(&self, id: KeyId) -> bool;
 
     /// Get the size of a key.
     fn size(&self, id: KeyId) -> Result<usize, Error>;
