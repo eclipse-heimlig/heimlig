@@ -48,7 +48,11 @@ impl<
                         client_id,
                         request_id,
                         key_id,
-                    } => self.generate_key_pair(client_id, request_id, key_id).await,
+                        overwrite,
+                    } => {
+                        self.generate_key_pair(client_id, request_id, key_id, overwrite)
+                            .await
+                    }
                     _ => Err(Error::UnexpectedRequestType)?,
                 };
                 self.responses
@@ -64,6 +68,7 @@ impl<
         client_id: ClientId,
         request_id: RequestId,
         key_id: KeyId,
+        overwrite: bool,
     ) -> Response<'data> {
         let locked_key_store = self.key_store.lock().await;
         let key_info = locked_key_store.deref().get_key_info(key_id);
@@ -73,48 +78,33 @@ impl<
                 request_id,
                 error: Error::KeyStore(e),
             },
-            Ok(key_info) => {
-                let key_exists = locked_key_store.deref().is_stored(key_id);
-                if key_exists && !key_info.permissions.overwrite {
-                    return Response::Error {
+            Ok(key_info) => match key_info.ty {
+                KeyType::EccKeypairNistP256 => {
+                    self.generate_key_pair_internal::<NistP256>(
+                        locked_key_store,
                         client_id,
                         request_id,
-                        error: Error::KeyStore(keystore::Error::NotAllowed),
-                    };
+                        key_info,
+                        overwrite,
+                    )
+                    .await
                 }
-                if !key_info.ty.is_asymmetric() {
-                    return Response::Error {
+                KeyType::EccKeypairNistP384 => {
+                    self.generate_key_pair_internal::<NistP384>(
+                        locked_key_store,
                         client_id,
                         request_id,
-                        error: Error::KeyStore(keystore::Error::InvalidKeyType),
-                    };
+                        key_info,
+                        overwrite,
+                    )
+                    .await
                 }
-                match key_info.ty {
-                    KeyType::EccKeypairNistP256 => {
-                        self.generate_key_pair_internal::<NistP256>(
-                            locked_key_store,
-                            client_id,
-                            request_id,
-                            key_info,
-                        )
-                        .await
-                    }
-                    KeyType::EccKeypairNistP384 => {
-                        self.generate_key_pair_internal::<NistP384>(
-                            locked_key_store,
-                            client_id,
-                            request_id,
-                            key_info,
-                        )
-                        .await
-                    }
-                    _ => Response::Error {
-                        client_id,
-                        request_id,
-                        error: Error::KeyStore(keystore::Error::InvalidKeyType),
-                    },
-                }
-            }
+                _ => Response::Error {
+                    client_id,
+                    request_id,
+                    error: Error::KeyStore(keystore::Error::InvalidKeyType),
+                },
+            },
         }
     }
 
@@ -124,6 +114,7 @@ impl<
         client_id: ClientId,
         request_id: RequestId,
         key_info: KeyInfo,
+        overwrite: bool,
     ) -> Response<'data>
     where
         C: CurveArithmetic,
@@ -156,6 +147,7 @@ impl<
             key_info.id,
             public_key_bytes,
             private_key_bytes.as_slice(),
+            overwrite,
         ) {
             Ok(()) => Response::GenerateKeyPair {
                 client_id,

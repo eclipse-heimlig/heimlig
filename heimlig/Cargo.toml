@@ -38,6 +38,9 @@ zeroize = { version = "1.6.0", default-features = false }
 [dev-dependencies]
 async-std = { version = "1.12.0", features = ["attributes"] }
 critical-section = { version = "1.1.2", default-features = false, features = ["std"] }
-heapless = "0.7.16"
-hex = "0.4.3"
+heapless = { version = "0.7.16", default-features = false }
+hex = { version = "0.4.3", default-features = false, features = ["alloc"] }
 ed25519-dalek = { version = "2.0.0", default-features = false, features = ["zeroize", "rand_core"] }
+
+[build-dependencies]
+cbindgen = { version = "0.26.0", default-features = false }

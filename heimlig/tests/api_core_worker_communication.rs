@@ -9,7 +9,7 @@ mod tests {
     use heimlig::crypto::chacha20poly1305::{KEY_SIZE, NONCE_SIZE};
     use heimlig::crypto::rng::{EntropySource, Rng};
     use heimlig::hsm::core::Builder;
-    use heimlig::hsm::keystore::{KeyInfo, KeyPermissions, KeyStore, KeyType};
+    use heimlig::hsm::keystore::{KeyId, KeyInfo, KeyPermissions, KeyStore, KeyType};
     use heimlig::hsm::workers::chachapoly_worker::ChaChaPolyWorker;
     use heimlig::hsm::workers::ecc_worker::EccWorker;
     use heimlig::hsm::workers::rng_worker::RngWorker;
@@ -17,7 +17,6 @@ mod tests {
         AsyncQueue, RequestQueueSink, RequestQueueSource, ResponseQueueSink, ResponseQueueSource,
     };
     use heimlig::integration::memory_key_store::MemoryKeyStore;
-    use std::ops::Deref;
 
     const QUEUE_SIZE: usize = 8;
     const PLAINTEXT_SIZE: usize = 36;
@@ -28,7 +27,7 @@ mod tests {
     pub const TOTAL_KEY_SIZE: usize =
         SYM_128_KEY.ty.key_size() + SYM_256_KEY.ty.key_size() + ASYM_NIST_P256_KEY.ty.key_size();
     const SYM_128_KEY: KeyInfo = KeyInfo {
-        id: 0,
+        id: KeyId(0),
         ty: KeyType::Symmetric128Bits,
         permissions: KeyPermissions {
             import: true,
@@ -38,7 +37,7 @@ mod tests {
         },
     };
     const SYM_256_KEY: KeyInfo = KeyInfo {
-        id: 1,
+        id: KeyId(1),
         ty: KeyType::Symmetric256Bits,
         permissions: KeyPermissions {
             import: true,
@@ -48,7 +47,7 @@ mod tests {
         },
     };
     const ASYM_NIST_P256_KEY: KeyInfo = KeyInfo {
-        id: 2,
+        id: KeyId(2),
         ty: KeyType::EccKeypairNistP256,
         permissions: KeyPermissions {
             import: true,
@@ -111,6 +110,7 @@ mod tests {
     #[async_std::test]
     async fn get_random() {
         const REQUEST_SIZE: usize = 16;
+        const KEY_INFOS: [KeyInfo; 3] = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
         let mut random_output = [0u8; REQUEST_SIZE];
         let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
         let mut client_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
@@ -121,8 +121,7 @@ mod tests {
         let (rng_requests_rx, rng_requests_tx, rng_responses_rx, rng_responses_tx) =
             split_queues(&mut rng_requests, &mut rng_responses);
         let rng = Mutex::new(Rng::new(TestEntropySource::default(), None));
-        let key_infos = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
-        let mut key_store = init_key_store(&key_infos);
+        let mut key_store = init_key_store(&KEY_INFOS);
         let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
         let mut rng_worker = RngWorker {
             rng: &rng,
@@ -157,25 +156,25 @@ mod tests {
         core_res.expect("failed to forward request");
         worker_res.expect("failed to process request");
         core.execute().await.expect("failed to forward response");
-        match api.recv_response().await {
-            None => panic!("Failed to receive expected response"),
-            Some(response) => match response {
-                Response::GetRandom {
-                    client_id: _client_id,
-                    request_id,
-                    data,
-                } => {
-                    assert_eq!(request_id, org_request_id);
-                    assert_eq!(data.len(), REQUEST_SIZE);
-                }
-                _ => panic!("Unexpected response type {:?}", response),
-            },
-        }
+        let Some(response) = api.recv_response().await else {
+            panic!("Failed to receive expected response")
+        };
+        let Response::GetRandom {
+            client_id: _client_id,
+            request_id,
+            data,
+        } = response
+        else {
+            panic!("Unexpected response type {:?}", response)
+        };
+        assert_eq!(request_id, org_request_id);
+        assert_eq!(data.len(), REQUEST_SIZE);
     }
 
     #[async_std::test]
     async fn get_random_request_too_large() {
         const REQUEST_SIZE: usize = MAX_RANDOM_SIZE + 1;
+        const KEY_INFOS: [KeyInfo; 3] = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
         let mut random_output = [0u8; REQUEST_SIZE];
         let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
         let mut client_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
@@ -186,8 +185,7 @@ mod tests {
         let (rng_requests_rx, rng_requests_tx, rng_responses_rx, rng_responses_tx) =
             split_queues(&mut rng_requests, &mut rng_responses);
         let rng = Mutex::new(Rng::new(TestEntropySource::default(), None));
-        let key_infos = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
-        let mut key_store = init_key_store(&key_infos);
+        let mut key_store = init_key_store(&KEY_INFOS);
         let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
         let mut rng_worker = RngWorker {
             rng: &rng,
@@ -222,24 +220,24 @@ mod tests {
         core_res.expect("failed to forward request");
         worker_res.expect("failed to process request");
         core.execute().await.expect("failed to forward response");
-        match api.recv_response().await {
-            None => panic!("Failed to receive expected response"),
-            Some(response) => match response {
-                Response::Error {
-                    client_id: _client_id,
-                    request_id,
-                    error,
-                } => {
-                    assert_eq!(request_id, org_request_id);
-                    assert_eq!(error, Error::RequestTooLarge);
-                }
-                _ => panic!("Unexpected response type {:?}", response),
-            },
-        }
+        let Some(response) = api.recv_response().await else {
+            panic!("Failed to receive expected response")
+        };
+        let Response::Error {
+            client_id: _client_id,
+            request_id,
+            error,
+        } = response
+        else {
+            panic!("Unexpected response type {:?}", response)
+        };
+        assert_eq!(request_id, org_request_id);
+        assert_eq!(error, Error::RequestTooLarge);
     }
 
     #[async_std::test]
     async fn encrypt_chachapoly() {
+        const KEY_INFOS: [KeyInfo; 3] = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
         let (key, nonce, mut plaintext, aad, mut tag) = alloc_chachapoly_vars();
         let org_plaintext = plaintext;
         let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
@@ -254,8 +252,7 @@ mod tests {
             chachapoly_responses_rx,
             chachapoly_responses_tx,
         ) = split_queues(&mut chachapoly_requests, &mut chachapoly_responses);
-        let key_infos = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
-        let mut key_store = init_key_store(&key_infos);
+        let mut key_store = init_key_store(&KEY_INFOS);
         let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
         let mut chacha_worker = ChaChaPolyWorker {
             key_store: &key_store,
@@ -289,7 +286,7 @@ mod tests {
 
         // Import key
         let org_request_id = api
-            .import_symmetric_key(SYM_256_KEY.id, &key)
+            .import_symmetric_key(SYM_256_KEY.id, &key, false)
             .await
             .expect("failed to send request");
         core.execute()
@@ -299,15 +296,14 @@ mod tests {
             .recv_response()
             .await
             .expect("Failed to receive expected response");
-        match response {
-            Response::ImportSymmetricKey {
-                client_id: _client_id,
-                request_id,
-            } => {
-                assert_eq!(org_request_id, request_id)
-            }
-            _ => panic!("Unexpected response type"),
+        let Response::ImportSymmetricKey {
+            client_id: _client_id,
+            request_id,
+        } = response
+        else {
+            panic!("Unexpected response type")
         };
+        assert_eq!(org_request_id, request_id);
 
         // Encrypt data
         let org_request_id = api
@@ -327,18 +323,17 @@ mod tests {
             .await
             .expect("failed to process request");
         core.execute().await.expect("failed to forward response");
-        let (request_id, ciphertext, tag) = match api
+        let Response::EncryptChaChaPoly {
+            client_id: _,
+            request_id,
+            ciphertext,
+            tag,
+        } = api
             .recv_response()
             .await
             .expect("Failed to receive expected response")
-        {
-            Response::EncryptChaChaPoly {
-                client_id: _client_id,
-                request_id,
-                ciphertext,
-                tag,
-            } => (request_id, ciphertext, tag),
-            _ => panic!("Unexpected response type"),
+        else {
+            panic!("Unexpected response type")
         };
         assert_eq!(request_id, org_request_id);
 
@@ -378,6 +373,7 @@ mod tests {
 
     #[async_std::test]
     async fn encrypt_chachapoly_external_key() {
+        const KEY_INFOS: [KeyInfo; 3] = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
         let (key, nonce, mut plaintext, aad, mut tag) = alloc_chachapoly_vars();
         let org_plaintext = plaintext;
         let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
@@ -393,8 +389,7 @@ mod tests {
             chachapoly_responses_tx,
         ) = split_queues(&mut chachapoly_requests, &mut chachapoly_responses);
 
-        let key_infos = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
-        let mut key_store = init_key_store(&key_infos);
+        let mut key_store = init_key_store(&KEY_INFOS);
         let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
         let mut chacha_worker = ChaChaPolyWorker {
             key_store: &key_store,
@@ -444,18 +439,17 @@ mod tests {
             .await
             .expect("failed to process request");
         core.execute().await.expect("failed to forward response");
-        let (request_id, ciphertext, tag) = match api
+        let Response::EncryptChaChaPoly {
+            client_id: _client_id,
+            request_id,
+            ciphertext,
+            tag,
+        } = api
             .recv_response()
             .await
             .expect("Failed to receive expected response")
-        {
-            Response::EncryptChaChaPoly {
-                client_id: _client_id,
-                request_id,
-                ciphertext,
-                tag,
-            } => (request_id, ciphertext, tag),
-            _ => panic!("Unexpected response type"),
+        else {
+            panic!("Unexpected response type")
         };
         assert_eq!(request_id, org_request_id);
 
@@ -470,17 +464,16 @@ mod tests {
             .await
             .expect("failed to process request");
         core.execute().await.expect("failed to forward response");
-        let (request_id, plaintext) = match api
+        let Response::DecryptChaChaPoly {
+            client_id: _client_id,
+            request_id,
+            plaintext,
+        } = api
             .recv_response()
             .await
             .expect("Failed to receive expected response")
-        {
-            Response::DecryptChaChaPoly {
-                client_id: _client_id,
-                request_id,
-                plaintext,
-            } => (request_id, plaintext),
-            _ => panic!("Unexpected response type"),
+        else {
+            panic!("Unexpected response type")
         };
         assert_eq!(request_id, org_request_id);
         assert_eq!(plaintext, org_plaintext)
@@ -488,6 +481,9 @@ mod tests {
 
     #[async_std::test]
     async fn generate_symmetric_key() {
+        const KEY_INFOS: [KeyInfo; 3] = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
+        const KEY_INFO: KeyInfo = KEY_INFOS[1];
+        let mut large_key_buffer = [0u8; 2 * KEY_INFO.ty.key_size()];
         let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
         let mut client_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
         let mut rng_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
@@ -497,8 +493,7 @@ mod tests {
         let (rng_requests_rx, rng_requests_tx, rng_responses_rx, rng_responses_tx) =
             split_queues(&mut rng_requests, &mut rng_responses);
         let rng = Mutex::new(Rng::new(TestEntropySource::default(), None));
-        let key_infos = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
-        let mut key_store = init_key_store(&key_infos);
+        let mut key_store = init_key_store(&KEY_INFOS);
         let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
         let mut rng_worker = RngWorker {
             rng: &rng,
@@ -514,6 +509,7 @@ mod tests {
             RequestQueueSink<'_, '_, QUEUE_SIZE>,
             ResponseQueueSource<'_, '_, QUEUE_SIZE>,
         >::default()
+        .with_keystore(&key_store)
         .with_client(req_client_rx, resp_client_tx)
         .expect("failed to add client")
         .with_worker(
@@ -525,40 +521,74 @@ mod tests {
         .build();
         let mut api = Api::new(req_client_tx, resp_client_rx);
 
-        let key_info = SYM_256_KEY;
+        // Generate key
         let org_request_id = api
-            .generate_symmetric_key(key_info.id)
+            .generate_symmetric_key(KEY_INFO.id, false)
             .await
             .expect("failed to send request");
         let (core_res, worker_res) = join(core.execute(), rng_worker.execute()).await;
         core_res.expect("failed to forward request");
         worker_res.expect("failed to process request");
         core.execute().await.expect("failed to forward response");
-        match api.recv_response().await {
-            None => panic!("Failed to receive expected response"),
-            Some(response) => match response {
-                Response::GenerateSymmetricKey {
-                    client_id: _client_id,
-                    request_id,
-                } => {
-                    assert_eq!(request_id, org_request_id);
-                    assert!(key_store.lock().await.deref().is_stored(key_info.id));
-                    let mut key_bytes = [0u8; KeyType::MAX_SYMMETRIC_KEY_SIZE];
-                    let key_bytes = &mut key_bytes[..key_info.ty.key_size()];
-                    let exported_key = key_store
-                        .lock()
-                        .await
-                        .export_symmetric_key(key_info.id, key_bytes)
-                        .expect("failed to export symmetric key");
-                    assert_eq!(exported_key.len(), key_info.ty.key_size());
-                }
-                _ => panic!("Unexpected response type {:?}", response),
-            },
-        }
+        let Some(response) = api.recv_response().await else {
+            panic!("Failed to receive expected response")
+        };
+        let Response::GenerateSymmetricKey {
+            client_id: _,
+            request_id,
+        } = response
+        else {
+            panic!("Unexpected response type {:?}", response)
+        };
+        assert_eq!(request_id, org_request_id);
+
+        // Check key existence
+        let org_request_id = api
+            .is_key_available(KEY_INFO.id)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to process request");
+        let Some(response) = api.recv_response().await else {
+            panic!("Failed to receive expected response")
+        };
+        let Response::IsKeyAvailable {
+            client_id: _,
+            request_id,
+            is_available,
+        } = response
+        else {
+            panic!("Unexpected response type {:?}", response)
+        };
+        assert_eq!(request_id, org_request_id);
+        assert!(is_available);
+
+        // Export key
+        let org_request_id = api
+            .export_symmetric_key(KEY_INFO.id, &mut large_key_buffer)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to process request");
+        let Some(response) = api.recv_response().await else {
+            panic!("Failed to receive expected response")
+        };
+        let Response::ExportSymmetricKey {
+            client_id: _,
+            request_id,
+            key,
+        } = response
+        else {
+            panic!("Unexpected response type {:?}", response)
+        };
+        assert_eq!(request_id, org_request_id);
+        assert_eq!(key.len(), KEY_INFO.ty.key_size()); // Large buffer was only used partially
     }
 
     #[async_std::test]
     async fn generate_ecc_key_pair() {
+        const KEY_INFOS: [KeyInfo; 3] = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
+        const KEY_INFO: KeyInfo = KEY_INFOS[2];
+        let mut large_public_key_buffer = [0u8; 2 * KEY_INFO.ty.public_key_size()];
+        let mut large_private_key_buffer = [0u8; 2 * KEY_INFO.ty.private_key_size()];
         let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
         let mut client_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
         let mut ecc_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
@@ -568,8 +598,7 @@ mod tests {
         let (ecc_requests_rx, ecc_requests_tx, ecc_responses_rx, ecc_responses_tx) =
             split_queues(&mut ecc_requests, &mut ecc_responses);
         let rng = Mutex::new(Rng::new(TestEntropySource::default(), None));
-        let key_infos = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
-        let mut key_store = init_key_store(&key_infos);
+        let mut key_store = init_key_store(&KEY_INFOS);
         let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
         let mut ecc_worker = EccWorker {
             rng: &rng,
@@ -585,6 +614,7 @@ mod tests {
             RequestQueueSink<'_, '_, QUEUE_SIZE>,
             ResponseQueueSource<'_, '_, QUEUE_SIZE>,
         >::default()
+        .with_keystore(&key_store)
         .with_client(req_client_rx, resp_client_tx)
         .expect("failed to add client")
         .with_worker(
@@ -596,53 +626,93 @@ mod tests {
         .build();
         let mut api = Api::new(req_client_tx, resp_client_rx);
 
-        let key_info = ASYM_NIST_P256_KEY;
+        // Generate key
         let org_request_id = api
-            .generate_key_pair(key_info.id)
+            .generate_key_pair(KEY_INFO.id, false)
             .await
             .expect("failed to send request");
         let (core_res, worker_res) = join(core.execute(), ecc_worker.execute()).await;
         core_res.expect("failed to forward request");
         worker_res.expect("failed to process request");
         core.execute().await.expect("failed to forward response");
-        match api.recv_response().await {
-            None => panic!("Failed to receive expected response"),
-            Some(response) => match response {
-                Response::GenerateKeyPair {
-                    client_id: _client_id,
-                    request_id,
-                } => {
-                    assert_eq!(request_id, org_request_id);
-                    assert!(key_store.lock().await.deref().is_stored(key_info.id));
-                    // Check public key
-                    let mut public_key_bytes = [0u8; KeyType::MAX_PUBLIC_KEY_SIZE];
-                    let public_key_bytes = &mut public_key_bytes[..key_info.ty.public_key_size()];
-                    let exported_public_key = key_store
-                        .lock()
-                        .await
-                        .export_public_key(key_info.id, public_key_bytes)
-                        .expect("failed to export public key");
-                    assert_eq!(exported_public_key.len(), key_info.ty.public_key_size());
-                    // Check private key
-                    let mut private_key_bytes = [0u8; KeyType::MAX_PRIVATE_KEY_SIZE];
-                    let private_key_bytes =
-                        &mut private_key_bytes[..key_info.ty.private_key_size()];
-                    let exported_public_key = key_store
-                        .lock()
-                        .await
-                        .export_private_key(key_info.id, private_key_bytes)
-                        .expect("failed to export private key");
-                    assert_eq!(exported_public_key.len(), key_info.ty.private_key_size());
-                }
-                _ => panic!("Unexpected response type {:?}", response),
-            },
-        }
+        let Some(response) = api.recv_response().await else {
+            panic!("Failed to receive expected response")
+        };
+        let Response::GenerateKeyPair {
+            client_id: _client_id,
+            request_id,
+        } = response
+        else {
+            panic!("Unexpected response type {:?}", response)
+        };
+        assert_eq!(request_id, org_request_id);
+
+        // Check key existence
+        let org_request_id = api
+            .is_key_available(KEY_INFO.id)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to process request");
+        let Some(response) = api.recv_response().await else {
+            panic!("Failed to receive expected response")
+        };
+        let Response::IsKeyAvailable {
+            client_id: _,
+            request_id,
+            is_available,
+        } = response
+        else {
+            panic!("Unexpected response type {:?}", response)
+        };
+        assert_eq!(request_id, org_request_id);
+        assert!(is_available);
+
+        // Export public key
+        let org_request_id = api
+            .export_public_key(KEY_INFO.id, &mut large_public_key_buffer)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to process request");
+        let Some(response) = api.recv_response().await else {
+            panic!("Failed to receive expected response")
+        };
+        let Response::ExportPublicKey {
+            client_id: _,
+            request_id,
+            public_key,
+        } = response
+        else {
+            panic!("Unexpected response type {:?}", response)
+        };
+        assert_eq!(request_id, org_request_id);
+        assert_eq!(public_key.len(), KEY_INFO.ty.public_key_size()); // Large buffer was only used partially
+
+        // Export private key
+        let org_request_id = api
+            .export_private_key(KEY_INFO.id, &mut large_private_key_buffer)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to process request");
+        let Some(response) = api.recv_response().await else {
+            panic!("Failed to receive expected response")
+        };
+        let Response::ExportPrivateKey {
+            client_id: _,
+            request_id,
+            private_key,
+        } = response
+        else {
+            panic!("Unexpected response type {:?}", response)
+        };
+        assert_eq!(request_id, org_request_id);
+        assert_eq!(private_key.len(), KEY_INFO.ty.private_key_size()); // Large buffer was only used partially
     }
 
     #[async_std::test]
     async fn multiple_clients() {
         const REQUEST1_SIZE: usize = 16;
         const REQUEST2_SIZE: usize = 17;
+        const KEY_INFOS: [KeyInfo; 3] = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
         let mut random_output1 = [0u8; REQUEST1_SIZE];
         let mut random_output2 = [0u8; REQUEST2_SIZE];
         let mut client1_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
@@ -658,8 +728,7 @@ mod tests {
         let (rng_requests_rx, rng_requests_tx, rng_responses_rx, rng_responses_tx) =
             split_queues(&mut rng_requests, &mut rng_responses);
         let rng = Mutex::new(Rng::new(TestEntropySource::default(), None));
-        let key_infos = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
-        let mut key_store = init_key_store(&key_infos);
+        let mut key_store = init_key_store(&KEY_INFOS);
         let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
         let mut rng_worker = RngWorker {
             rng: &rng,
@@ -705,36 +774,32 @@ mod tests {
                 .expect("failed to process request");
             core.execute().await.expect("failed to forward response");
         }
-        let client1_id = match api1.recv_response().await {
-            None => panic!("Failed to receive expected response"),
-            Some(response) => match response {
-                Response::GetRandom {
-                    client_id,
-                    request_id,
-                    data,
-                } => {
-                    assert_eq!(request_id, org_request1_id);
-                    assert_eq!(data.len(), REQUEST1_SIZE);
-                    client_id
-                }
-                _ => panic!("Unexpected response type {:?}", response),
-            },
+        let Some(response) = api1.recv_response().await else {
+            panic!("Failed to receive expected response")
         };
-        let client2_id = match api2.recv_response().await {
-            None => panic!("Failed to receive expected response"),
-            Some(response) => match response {
-                Response::GetRandom {
-                    client_id,
-                    request_id,
-                    data,
-                } => {
-                    assert_eq!(request_id, org_request2_id);
-                    assert_eq!(data.len(), REQUEST2_SIZE);
-                    client_id
-                }
-                _ => panic!("Unexpected response type {:?}", response),
-            },
+        let Response::GetRandom {
+            client_id: client1_id,
+            request_id,
+            data,
+        } = response
+        else {
+            panic!("Unexpected response type {:?}", response)
         };
+        assert_eq!(request_id, org_request1_id);
+        assert_eq!(data.len(), REQUEST1_SIZE);
+        let Some(response) = api2.recv_response().await else {
+            panic!("Failed to receive expected response")
+        };
+        let Response::GetRandom {
+            client_id: client2_id,
+            request_id,
+            data,
+        } = response
+        else {
+            panic!("Unexpected response type {:?}", response)
+        };
+        assert_eq!(request_id, org_request2_id);
+        assert_eq!(data.len(), REQUEST2_SIZE);
         assert_ne!(client1_id, client2_id);
     }
 
@@ -764,24 +829,20 @@ mod tests {
             .await
             .expect("failed to send request");
         core.execute().await.expect("failed to forward request");
-        match api.recv_response().await {
-            None => panic!("Failed to receive expected response"),
-            Some(response) => match response {
-                Response::Error {
-                    client_id: _client_id,
-                    request_id,
-                    error,
-                } => {
-                    assert_eq!(request_id, org_request_id);
-                    match error {
-                        Error::NoWorkerForRequest => {}
-                        _ => {
-                            panic!("Unexpected error type {:?}", error)
-                        }
-                    }
-                }
-                _ => panic!("Unexpected response type {:?}", response),
-            },
-        }
+        let Some(response) = api.recv_response().await else {
+            panic!("Failed to receive expected response")
+        };
+        let Response::Error {
+            client_id: _client_id,
+            request_id,
+            error,
+        } = response
+        else {
+            panic!("Unexpected response type {:?}", response)
+        };
+        assert_eq!(request_id, org_request_id);
+        let Error::NoWorkerForRequest = error else {
+            panic!("Unexpected error type {:?}", error)
+        };
     }
 }

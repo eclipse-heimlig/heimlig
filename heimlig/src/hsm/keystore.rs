@@ -1,24 +1,25 @@
 use const_default::ConstDefault;
 
 /// Identifier to reference HSM keys
-pub type KeyId = u32;
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
+pub struct KeyId(pub u32);
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Error {
     /// The operation is not permitted
     NotAllowed,
-    /// The requested ID is not defined.
-    InvalidKeyId,
-    /// The type of the key (symmetric/asymmetric) does not match.
-    InvalidKeyType,
-    /// The provided memory buffer was too small.
-    InvalidBufferSize,
     /// The requested key was not found.
     KeyNotFound,
     /// The key store cannot handle the amount of requested keys.
     KeyStoreTooSmall,
     /// Attempted to create a key store with duplicate storage IDs.
     DuplicateIds,
+    /// The requested ID is not defined.
+    InvalidKeyId,
+    /// The type of the key (symmetric/asymmetric) does not match.
+    InvalidKeyType,
+    /// Size of the provided buffer is invalid.
+    InvalidBufferSize,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -48,6 +49,18 @@ pub struct KeyInfo {
     pub id: KeyId,
     pub ty: KeyType,
     pub permissions: KeyPermissions,
+}
+
+impl From<KeyId> for u32 {
+    fn from(value: KeyId) -> Self {
+        value.0
+    }
+}
+
+impl From<u32> for KeyId {
+    fn from(value: u32) -> Self {
+        KeyId(value)
+    }
 }
 
 impl KeyType {
@@ -96,7 +109,12 @@ pub trait KeyStore {
     fn get_key_info(&self, id: KeyId) -> Result<KeyInfo, Error>;
 
     /// Write symmetric key to storage.
-    fn import_symmetric_key(&mut self, id: KeyId, data: &[u8]) -> Result<(), Error>;
+    fn import_symmetric_key(
+        &mut self,
+        id: KeyId,
+        data: &[u8],
+        overwrite: bool,
+    ) -> Result<(), Error>;
 
     /// Write asymmetric key pair to storage.
     fn import_key_pair(
@@ -104,6 +122,7 @@ pub trait KeyStore {
         id: KeyId,
         public_key: &[u8],
         private_key: &[u8],
+        overwrite: bool,
     ) -> Result<(), Error>;
 
     /// Read symmetric key from storage.
@@ -165,7 +184,7 @@ pub trait KeyStore {
     fn delete(&mut self, id: KeyId) -> Result<(), Error>;
 
     /// Returns whether or not a key for the given 'id' is present in the store.
-    fn is_stored(&self, id: KeyId) -> bool;
+    fn is_key_available(&self, id: KeyId) -> bool;
 
     /// Get the size of a key.
     fn size(&self, id: KeyId) -> Result<usize, Error>;

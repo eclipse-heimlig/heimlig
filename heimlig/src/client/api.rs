@@ -49,20 +49,30 @@ impl<
         self.send_request(request).await
     }
 
-    pub async fn generate_symmetric_key(&mut self, key_id: KeyId) -> Result<RequestId, Error> {
+    pub async fn generate_symmetric_key(
+        &mut self,
+        key_id: KeyId,
+        overwrite: bool,
+    ) -> Result<RequestId, Error> {
         let request = Request::GenerateSymmetricKey {
             client_id: ClientId::default(),
             request_id: RequestId::default(),
             key_id,
+            overwrite,
         };
         self.send_request(request).await
     }
 
-    pub async fn generate_key_pair(&mut self, key_id: KeyId) -> Result<RequestId, Error> {
+    pub async fn generate_key_pair(
+        &mut self,
+        key_id: KeyId,
+        overwrite: bool,
+    ) -> Result<RequestId, Error> {
         let request = Request::GenerateKeyPair {
             client_id: ClientId::default(),
             request_id: RequestId::default(),
             key_id,
+            overwrite,
         };
         self.send_request(request).await
     }
@@ -71,12 +81,14 @@ impl<
         &mut self,
         key_id: KeyId,
         data: &'data [u8],
+        overwrite: bool,
     ) -> Result<RequestId, Error> {
         let request = Request::ImportSymmetricKey {
             client_id: ClientId::default(),
             request_id: RequestId::default(),
             key_id,
             data,
+            overwrite,
         };
         self.send_request(request).await
     }
@@ -86,6 +98,7 @@ impl<
         key_id: KeyId,
         public_key: &'data [u8],
         private_key: &'data [u8],
+        overwrite: bool,
     ) -> Result<RequestId, Error> {
         let request = Request::ImportKeyPair {
             client_id: ClientId::default(),
@@ -93,6 +106,58 @@ impl<
             key_id,
             public_key,
             private_key,
+            overwrite,
+        };
+        self.send_request(request).await
+    }
+
+    pub async fn export_symmetric_key(
+        &mut self,
+        key_id: KeyId,
+        data: &'data mut [u8],
+    ) -> Result<RequestId, Error> {
+        let request = Request::ExportSymmetricKey {
+            client_id: ClientId::default(),
+            request_id: RequestId::default(),
+            key_id,
+            data,
+        };
+        self.send_request(request).await
+    }
+
+    pub async fn export_public_key(
+        &mut self,
+        key_id: KeyId,
+        public_key: &'data mut [u8],
+    ) -> Result<RequestId, Error> {
+        let request = Request::ExportPublicKey {
+            client_id: ClientId::default(),
+            request_id: RequestId::default(),
+            key_id,
+            public_key,
+        };
+        self.send_request(request).await
+    }
+
+    pub async fn export_private_key(
+        &mut self,
+        key_id: KeyId,
+        private_key: &'data mut [u8],
+    ) -> Result<RequestId, Error> {
+        let request = Request::ExportPrivateKey {
+            client_id: ClientId::default(),
+            request_id: RequestId::default(),
+            key_id,
+            private_key,
+        };
+        self.send_request(request).await
+    }
+
+    pub async fn is_key_available(&mut self, key_id: KeyId) -> Result<RequestId, Error> {
+        let request = Request::IsKeyAvailable {
+            client_id: ClientId::default(),
+            request_id: RequestId::default(),
+            key_id,
         };
         self.send_request(request).await
     }
