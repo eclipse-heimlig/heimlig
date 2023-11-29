@@ -103,26 +103,15 @@ impl<
                 error: Error::KeyStore(e),
             },
             Ok(key_info) => {
-                let mut locked_key_store = self.key_store.lock().await;
-                let key_exists = locked_key_store.deref().is_key_available(key_id);
-                if key_exists && (!overwrite || !key_info.permissions.overwrite) {
-                    return Response::Error {
-                        client_id,
-                        request_id,
-                        error: Error::KeyStore(keystore::Error::NotAllowed),
-                    };
-                }
-                if !key_info.ty.is_symmetric() {
-                    return Response::Error {
-                        client_id,
-                        request_id,
-                        error: Error::KeyStore(keystore::Error::InvalidKeyType),
-                    };
-                }
                 let mut key = [0u8; keystore::KeyType::MAX_SYMMETRIC_KEY_SIZE];
                 let key = &mut key[0..key_info.ty.key_size()];
                 self.rng.lock().await.fill_bytes(key);
-                match locked_key_store.import_symmetric_key(key_id, key, overwrite) {
+                match self
+                    .key_store
+                    .lock()
+                    .await
+                    .import_symmetric_key(key_id, key, overwrite)
+                {
                     Ok(_) => Response::GenerateSymmetricKey {
                         client_id,
                         request_id,

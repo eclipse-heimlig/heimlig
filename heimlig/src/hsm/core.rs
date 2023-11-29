@@ -559,11 +559,7 @@ impl<
                             request_id,
                             private_key: written,
                         }),
-                        Err(e) => Ok(Response::Error {
-                            client_id,
-                            request_id,
-                            error: jobs::Error::KeyStore(e),
-                        }),
+                        Err(e) => Ok(Self::key_store_error_response(client_id, request_id, e)),
                     }
                 }
             },

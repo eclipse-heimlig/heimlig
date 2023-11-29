@@ -78,50 +78,33 @@ impl<
                 request_id,
                 error: Error::KeyStore(e),
             },
-            Ok(key_info) => {
-                let key_exists = locked_key_store.deref().is_key_available(key_id);
-                if key_exists && (!overwrite || !key_info.permissions.overwrite) {
-                    return Response::Error {
+            Ok(key_info) => match key_info.ty {
+                KeyType::EccKeypairNistP256 => {
+                    self.generate_key_pair_internal::<NistP256>(
+                        locked_key_store,
                         client_id,
                         request_id,
-                        error: Error::KeyStore(keystore::Error::NotAllowed),
-                    };
+                        key_info,
+                        overwrite,
+                    )
+                    .await
                 }
-                if !key_info.ty.is_asymmetric() {
-                    return Response::Error {
+                KeyType::EccKeypairNistP384 => {
+                    self.generate_key_pair_internal::<NistP384>(
+                        locked_key_store,
                         client_id,
                         request_id,
-                        error: Error::KeyStore(keystore::Error::InvalidKeyType),
-                    };
+                        key_info,
+                        overwrite,
+                    )
+                    .await
                 }
-                match key_info.ty {
-                    KeyType::EccKeypairNistP256 => {
-                        self.generate_key_pair_internal::<NistP256>(
-                            locked_key_store,
-                            client_id,
-                            request_id,
-                            key_info,
-                            overwrite,
-                        )
-                        .await
-                    }
-                    KeyType::EccKeypairNistP384 => {
-                        self.generate_key_pair_internal::<NistP384>(
-                            locked_key_store,
-                            client_id,
-                            request_id,
-                            key_info,
-                            overwrite,
-                        )
-                        .await
-                    }
-                    _ => Response::Error {
-                        client_id,
-                        request_id,
-                        error: Error::KeyStore(keystore::Error::InvalidKeyType),
-                    },
-                }
-            }
+                _ => Response::Error {
+                    client_id,
+                    request_id,
+                    error: Error::KeyStore(keystore::Error::InvalidKeyType),
+                },
+            },
         }
     }
 

@@ -260,14 +260,11 @@ impl RequestRaw {
                 request_id,
                 output_data,
                 output_size,
-            } => {
-                check_pointer_and_size(output_data, output_size, &validator)?;
-                Request::GetRandom {
-                    client_id: client_id.into(),
-                    request_id: request_id.into(),
-                    output: check_mut_pointer_and_size(output_data, output_size, &validator)?,
-                }
-            }
+            } => Request::GetRandom {
+                client_id: client_id.into(),
+                request_id: request_id.into(),
+                output: check_mut_pointer_and_size(output_data, output_size, &validator)?,
+            },
             RequestRaw::GenerateSymmetricKey {
                 client_id,
                 request_id,
@@ -433,21 +430,19 @@ impl RequestRaw {
                 aad_size,
                 tag_data,
                 tag_size,
-            } => {
-                check_pointer_and_size(nonce_data, nonce_size, &validator)?;
-                check_pointer_and_size(ciphertext_data, ciphertext_size, &validator)?;
-                check_pointer_and_size(aad_data, aad_size, &validator)?;
-                check_pointer_and_size(tag_data, tag_size, &validator)?;
-                Request::DecryptChaChaPoly {
-                    client_id: client_id.into(),
-                    request_id: request_id.into(),
-                    key_id: key_id.into(),
-                    nonce: &[],
-                    ciphertext: &mut [],
-                    aad: &[],
-                    tag: &[],
-                }
-            }
+            } => Request::DecryptChaChaPoly {
+                client_id: client_id.into(),
+                request_id: request_id.into(),
+                key_id: key_id.into(),
+                nonce: check_pointer_and_size(nonce_data, nonce_size, &validator)?,
+                ciphertext: check_mut_pointer_and_size(
+                    ciphertext_data,
+                    ciphertext_size,
+                    &validator,
+                )?,
+                aad: check_pointer_and_size(aad_data, aad_size, &validator)?,
+                tag: check_pointer_and_size(tag_data, tag_size, &validator)?,
+            },
             RequestRaw::DecryptChaChaPolyExternalKey {
                 client_id,
                 request_id,
@@ -461,22 +456,19 @@ impl RequestRaw {
                 aad_size,
                 tag_data,
                 tag_size,
-            } => {
-                check_pointer_and_size(key_data, key_size, &validator)?;
-                check_pointer_and_size(nonce_data, nonce_size, &validator)?;
-                check_pointer_and_size(ciphertext_data, ciphertext_size, &validator)?;
-                check_pointer_and_size(aad_data, aad_size, &validator)?;
-                check_pointer_and_size(tag_data, tag_size, &validator)?;
-                Request::DecryptChaChaPolyExternalKey {
-                    client_id: client_id.into(),
-                    request_id: request_id.into(),
-                    key: check_pointer_and_size(key_data, key_size, &validator)?,
-                    nonce: &[],
-                    ciphertext: &mut [],
-                    aad: &[],
-                    tag: &[],
-                }
-            }
+            } => Request::DecryptChaChaPolyExternalKey {
+                client_id: client_id.into(),
+                request_id: request_id.into(),
+                key: check_pointer_and_size(key_data, key_size, &validator)?,
+                nonce: check_pointer_and_size(nonce_data, nonce_size, &validator)?,
+                ciphertext: check_mut_pointer_and_size(
+                    ciphertext_data,
+                    ciphertext_size,
+                    &validator,
+                )?,
+                aad: check_pointer_and_size(aad_data, aad_size, &validator)?,
+                tag: check_pointer_and_size(tag_data, tag_size, &validator)?,
+            },
         };
         Ok(request)
     }
@@ -505,7 +497,7 @@ impl From<Request<'_>> for RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
                 key_id: key_id.into(),
-                overwrite: bool_to_bool_raw(overwrite),
+                overwrite: overwrite.into(),
             },
             Request::GenerateKeyPair {
                 client_id,
@@ -516,7 +508,7 @@ impl From<Request<'_>> for RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
                 key_id: key_id.into(),
-                overwrite: bool_to_bool_raw(overwrite),
+                overwrite: overwrite.into(),
             },
             Request::ImportSymmetricKey {
                 client_id,
@@ -530,7 +522,7 @@ impl From<Request<'_>> for RequestRaw {
                 key_id: key_id.into(),
                 data_data: data.as_ptr(),
                 data_size: data.len() as u32,
-                overwrite: bool_to_bool_raw(overwrite),
+                overwrite: overwrite.into(),
             },
             Request::ImportKeyPair {
                 client_id,
@@ -547,7 +539,7 @@ impl From<Request<'_>> for RequestRaw {
                 public_key_size: public_key.len() as u32,
                 private_key_data: private_key.as_ptr(),
                 private_key_size: private_key.len() as u32,
-                overwrite: bool_to_bool_raw(overwrite),
+                overwrite: overwrite.into(),
             },
             Request::ExportSymmetricKey {
                 client_id,
@@ -772,7 +764,7 @@ impl From<Response<'_>> for ResponseRaw {
             } => ResponseRaw::IsKeyAvailable {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                is_available: bool_to_bool_raw(is_available),
+                is_available: is_available.into(),
             },
             Response::EncryptChaChaPoly {
                 client_id,
@@ -833,14 +825,6 @@ fn check_mut_pointer_and_size<'a>(
 
 fn bool_raw_to_bool(overwrite: BoolRaw) -> bool {
     overwrite != 0
-}
-
-fn bool_to_bool_raw(overwrite: bool) -> BoolRaw {
-    if overwrite {
-        1
-    } else {
-        0
-    }
 }
 
 /// Function to trigger the generation of `RequestRaw` and `ResponseRaw` definition
