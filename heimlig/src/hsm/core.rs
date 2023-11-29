@@ -456,12 +456,12 @@ impl<
             } => match self.key_store {
                 None => Ok(Self::no_key_store_response(client_id, request_id)),
                 Some(key_store) => {
-                    match key_store
+                    let result = key_store
                         .lock()
                         .await
                         .deref_mut()
-                        .import_symmetric_key(key_id, data, overwrite)
-                    {
+                        .import_symmetric_key(key_id, data, overwrite);
+                    match result {
                         Ok(()) => Ok(Response::ImportSymmetricKey {
                             client_id,
                             request_id,
@@ -480,12 +480,13 @@ impl<
             } => match self.key_store {
                 None => Ok(Self::no_key_store_response(client_id, request_id)),
                 Some(key_store) => {
-                    match key_store.lock().await.deref_mut().import_key_pair(
+                    let result = key_store.lock().await.deref_mut().import_key_pair(
                         key_id,
                         public_key,
                         private_key,
                         overwrite,
-                    ) {
+                    );
+                    match result {
                         Ok(()) => Ok(Response::ImportKeyPair {
                             client_id,
                             request_id,
@@ -502,12 +503,12 @@ impl<
             } => match self.key_store {
                 None => Ok(Self::no_key_store_response(client_id, request_id)),
                 Some(key_store) => {
-                    match key_store
+                    let exported_key = key_store
                         .lock()
                         .await
                         .deref_mut()
-                        .export_symmetric_key(key_id, data)
-                    {
+                        .export_symmetric_key(key_id, data);
+                    match exported_key {
                         Ok(written) => Ok(Response::ExportSymmetricKey {
                             client_id,
                             request_id,
@@ -525,12 +526,12 @@ impl<
             } => match self.key_store {
                 None => Ok(Self::no_key_store_response(client_id, request_id)),
                 Some(key_store) => {
-                    match key_store
+                    let exported_key = key_store
                         .lock()
                         .await
                         .deref_mut()
-                        .export_public_key(key_id, public_key)
-                    {
+                        .export_public_key(key_id, public_key);
+                    match exported_key {
                         Ok(written) => Ok(Response::ExportPublicKey {
                             client_id,
                             request_id,
@@ -548,12 +549,12 @@ impl<
             } => match self.key_store {
                 None => Ok(Self::no_key_store_response(client_id, request_id)),
                 Some(key_store) => {
-                    match key_store
+                    let exported_key = key_store
                         .lock()
                         .await
                         .deref_mut()
-                        .export_private_key(key_id, private_key)
-                    {
+                        .export_private_key(key_id, private_key);
+                    match exported_key {
                         Ok(written) => Ok(Response::ExportPrivateKey {
                             client_id,
                             request_id,
