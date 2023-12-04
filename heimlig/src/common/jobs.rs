@@ -84,6 +84,10 @@ pub enum RequestType {
     EncryptChaChaPolyExternalKey,
     DecryptChaChaPoly,
     DecryptChaChaPolyExternalKey,
+    Sign,
+    SignExternalKey,
+    Verify,
+    VerifyExternalKey,
 }
 
 /// A request for the HSM to perform a cryptographic task.
@@ -180,6 +184,38 @@ pub enum Request<'data> {
         aad: &'data [u8],
         tag: &'data [u8],
     },
+    Sign {
+        client_id: ClientId,
+        request_id: RequestId,
+        key_id: KeyId,
+        message: &'data [u8],
+        prehashed: bool,
+        signature: &'data mut [u8],
+    },
+    SignExternalKey {
+        client_id: ClientId,
+        request_id: RequestId,
+        private_key: &'data [u8],
+        message: &'data [u8],
+        prehashed: bool,
+        signature: &'data mut [u8],
+    },
+    Verify {
+        client_id: ClientId,
+        request_id: RequestId,
+        key_id: KeyId,
+        message: &'data [u8],
+        prehashed: bool,
+        signature: &'data [u8],
+    },
+    VerifyExternalKey {
+        client_id: ClientId,
+        request_id: RequestId,
+        public_key: &'data [u8],
+        message: &'data [u8],
+        prehashed: bool,
+        signature: &'data [u8],
+    },
 }
 
 impl RequestType {
@@ -263,6 +299,16 @@ pub enum Response<'data> {
         request_id: RequestId,
         plaintext: &'data mut [u8],
     },
+    Sign {
+        client_id: ClientId,
+        request_id: RequestId,
+        signature: &'data mut [u8],
+    },
+    Verify {
+        client_id: ClientId,
+        request_id: RequestId,
+        verified: bool,
+    },
 }
 
 impl<'data> Request<'data> {
@@ -285,6 +331,10 @@ impl<'data> Request<'data> {
             Request::DecryptChaChaPolyExternalKey { .. } => {
                 RequestType::DecryptChaChaPolyExternalKey
             }
+            Request::Sign { .. } => RequestType::Sign,
+            Request::SignExternalKey { .. } => RequestType::SignExternalKey,
+            Request::Verify { .. } => RequestType::Verify,
+            Request::VerifyExternalKey { .. } => RequestType::VerifyExternalKey,
         }
     }
 
@@ -303,6 +353,10 @@ impl<'data> Request<'data> {
             Request::EncryptChaChaPolyExternalKey { client_id, .. } => *client_id = new_client_id,
             Request::DecryptChaChaPoly { client_id, .. } => *client_id = new_client_id,
             Request::DecryptChaChaPolyExternalKey { client_id, .. } => *client_id = new_client_id,
+            Request::Sign { client_id, .. } => *client_id = new_client_id,
+            Request::SignExternalKey { client_id, .. } => *client_id = new_client_id,
+            Request::Verify { client_id, .. } => *client_id = new_client_id,
+            Request::VerifyExternalKey { client_id, .. } => *client_id = new_client_id,
         }
     }
 
@@ -325,6 +379,10 @@ impl<'data> Request<'data> {
             Request::DecryptChaChaPolyExternalKey { request_id, .. } => {
                 *request_id = new_request_id
             }
+            Request::Sign { request_id, .. } => *request_id = new_request_id,
+            Request::SignExternalKey { request_id, .. } => *request_id = new_request_id,
+            Request::Verify { request_id, .. } => *request_id = new_request_id,
+            Request::VerifyExternalKey { request_id, .. } => *request_id = new_request_id,
         }
     }
 }
@@ -344,6 +402,8 @@ impl<'data> Response<'data> {
             Response::IsKeyAvailable { client_id, .. } => client_id,
             Response::EncryptChaChaPoly { client_id, .. } => client_id,
             Response::DecryptChaChaPoly { client_id, .. } => client_id,
+            Response::Sign { client_id, .. } => client_id,
+            Response::Verify { client_id, .. } => client_id,
         }
     }
 }

@@ -262,6 +262,78 @@ impl<
         }
     }
 
+    pub async fn sign(
+        &mut self,
+        key_id: KeyId,
+        message: &'data [u8],
+        prehashed: bool,
+        signature: &'data mut [u8],
+    ) -> Result<RequestId, Error> {
+        let request = Request::Sign {
+            client_id: ClientId::default(),
+            request_id: RequestId::default(),
+            key_id,
+            message,
+            prehashed,
+            signature,
+        };
+        self.send_request(request).await
+    }
+
+    pub async fn sign_external_key(
+        &mut self,
+        private_key: &'data [u8],
+        message: &'data [u8],
+        prehashed: bool,
+        signature: &'data mut [u8],
+    ) -> Result<RequestId, Error> {
+        let request = Request::SignExternalKey {
+            client_id: ClientId::default(),
+            request_id: RequestId::default(),
+            private_key,
+            message,
+            prehashed,
+            signature,
+        };
+        self.send_request(request).await
+    }
+
+    pub async fn verify(
+        &mut self,
+        key_id: KeyId,
+        message: &'data [u8],
+        prehashed: bool,
+        signature: &'data [u8],
+    ) -> Result<RequestId, Error> {
+        let request = Request::Verify {
+            client_id: ClientId::default(),
+            request_id: RequestId::default(),
+            key_id,
+            message,
+            prehashed,
+            signature,
+        };
+        self.send_request(request).await
+    }
+
+    pub async fn verify_external_key(
+        &mut self,
+        public_key: &'data [u8],
+        message: &'data [u8],
+        prehashed: bool,
+        signature: &'data [u8],
+    ) -> Result<RequestId, Error> {
+        let request = Request::VerifyExternalKey {
+            client_id: ClientId::default(),
+            request_id: RequestId::default(),
+            public_key,
+            message,
+            prehashed,
+            signature,
+        };
+        self.send_request(request).await
+    }
+
     async fn send_request(
         &mut self,
         mut request_without_id: Request<'data>,
