@@ -327,7 +327,7 @@ mod tests {
         let Response::EncryptChaChaPoly {
             client_id: _,
             request_id,
-            ciphertext,
+            buffer: ciphertext,
             tag,
         } = api
             .recv_response()
@@ -364,7 +364,7 @@ mod tests {
             Response::DecryptChaChaPoly {
                 client_id: _client_id,
                 request_id,
-                plaintext,
+                buffer: plaintext,
             } => (request_id, plaintext),
             resp => panic!("Unexpected response type {:?}", resp),
         };
@@ -443,7 +443,7 @@ mod tests {
         let Response::EncryptChaChaPoly {
             client_id: _client_id,
             request_id,
-            ciphertext,
+            buffer: ciphertext,
             tag,
         } = api
             .recv_response()
@@ -468,7 +468,7 @@ mod tests {
         let Response::DecryptChaChaPoly {
             client_id: _client_id,
             request_id,
-            plaintext,
+            buffer: plaintext,
         } = api
             .recv_response()
             .await

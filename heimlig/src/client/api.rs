@@ -167,7 +167,7 @@ impl<
         algorithm: SymmetricEncryptionAlgorithm,
         key_id: KeyId,
         nonce: &'data [u8],
-        plaintext: &'data mut [u8],
+        buffer: &'data mut [u8],
         aad: &'data [u8],
         tag: &'data mut [u8],
     ) -> Result<RequestId, Error> {
@@ -178,7 +178,7 @@ impl<
                     request_id: RequestId::default(),
                     key_id,
                     nonce,
-                    plaintext,
+                    buffer,
                     aad,
                     tag,
                 };
@@ -192,7 +192,7 @@ impl<
         algorithm: SymmetricEncryptionAlgorithm,
         key: &'data [u8],
         nonce: &'data [u8],
-        plaintext: &'data mut [u8],
+        buffer: &'data mut [u8],
         aad: &'data [u8],
         tag: &'data mut [u8],
     ) -> Result<RequestId, Error> {
@@ -203,7 +203,7 @@ impl<
                     request_id: RequestId::default(),
                     key,
                     nonce,
-                    plaintext,
+                    buffer,
                     aad,
                     tag,
                 };
@@ -217,7 +217,7 @@ impl<
         algorithm: SymmetricEncryptionAlgorithm,
         key_id: KeyId,
         nonce: &'data [u8],
-        ciphertext: &'data mut [u8],
+        buffer: &'data mut [u8],
         aad: &'data [u8],
         tag: &'data [u8],
     ) -> Result<RequestId, Error> {
@@ -228,7 +228,7 @@ impl<
                     request_id: RequestId::default(),
                     key_id,
                     nonce,
-                    ciphertext,
+                    buffer,
                     aad,
                     tag,
                 };
@@ -242,7 +242,7 @@ impl<
         algorithm: SymmetricEncryptionAlgorithm,
         key: &'data [u8],
         nonce: &'data [u8],
-        ciphertext: &'data mut [u8],
+        buffer: &'data mut [u8],
         aad: &'data [u8],
         tag: &'data [u8],
     ) -> Result<RequestId, Error> {
@@ -253,7 +253,7 @@ impl<
                     request_id: RequestId::default(),
                     key,
                     nonce,
-                    ciphertext,
+                    buffer,
                     aad,
                     tag,
                 };
