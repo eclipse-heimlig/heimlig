@@ -3,13 +3,14 @@ mod tests {
     use embassy_sync::mutex::Mutex;
     use futures::future::join;
     use heimlig::client::api::Api;
-    use heimlig::client::api::SymmetricEncryptionAlgorithm::ChaCha20Poly1305;
+    use heimlig::client::api::SymmetricEncryptionAlgorithm::{AesCbc, AesGcm, ChaCha20Poly1305};
     use heimlig::common::jobs::{Error, Request, RequestType, Response};
     use heimlig::common::limits::MAX_RANDOM_SIZE;
-    use heimlig::crypto::chacha20poly1305::{KEY_SIZE, NONCE_SIZE};
+    use heimlig::crypto;
     use heimlig::crypto::rng::{EntropySource, Rng};
     use heimlig::hsm::core::Builder;
     use heimlig::hsm::keystore::{KeyId, KeyInfo, KeyPermissions, KeyStore, KeyType};
+    use heimlig::hsm::workers::aes_worker::AesWorker;
     use heimlig::hsm::workers::chachapoly_worker::ChaChaPolyWorker;
     use heimlig::hsm::workers::ecc_worker::EccWorker;
     use heimlig::hsm::workers::rng_worker::RngWorker;
@@ -21,6 +22,7 @@ mod tests {
 
     const QUEUE_SIZE: usize = 8;
     const PLAINTEXT_SIZE: usize = 36;
+    const PLAINTEXT_PADDED_SIZE: usize = 48;
     const AAD_SIZE: usize = 33;
     const TAG_SIZE: usize = 16;
 
@@ -93,19 +95,51 @@ mod tests {
         (requests_rx, requests_tx, response_rx, response_tx)
     }
 
+    #[allow(clippy::type_complexity)]
     fn alloc_chachapoly_vars() -> (
-        [u8; KEY_SIZE],
-        [u8; NONCE_SIZE],
+        [u8; crypto::chacha20poly1305::KEY_SIZE],
+        [u8; crypto::chacha20poly1305::NONCE_SIZE],
         [u8; PLAINTEXT_SIZE],
         [u8; AAD_SIZE],
         [u8; TAG_SIZE],
     ) {
-        let key: [u8; KEY_SIZE] = *b"Fortuna Major or Oddsbodikins???";
-        let nonce: [u8; NONCE_SIZE] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+        let key: [u8; crypto::chacha20poly1305::KEY_SIZE] = *b"Fortuna Major or Oddsbodikins???";
+        let nonce: [u8; crypto::chacha20poly1305::NONCE_SIZE] =
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
         let plaintext: [u8; PLAINTEXT_SIZE] = *b"I solemnly swear I am up to no good!";
         let aad: [u8; AAD_SIZE] = *b"When in doubt, go to the library.";
         let tag: [u8; TAG_SIZE] = [0u8; TAG_SIZE];
         (key, nonce, plaintext, aad, tag)
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn alloc_aes_gcm_vars() -> (
+        [u8; crypto::aes::KEY256_SIZE],
+        [u8; crypto::aes::GCM_NONCE_SIZE],
+        [u8; PLAINTEXT_SIZE],
+        [u8; AAD_SIZE],
+        [u8; TAG_SIZE],
+    ) {
+        let key: [u8; crypto::aes::KEY256_SIZE] = *b"Fortuna Major or Oddsbodikins???";
+        let nonce: [u8; crypto::aes::GCM_NONCE_SIZE] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+        let plaintext: [u8; PLAINTEXT_SIZE] = *b"I solemnly swear I am up to no good!";
+        let aad: [u8; AAD_SIZE] = *b"When in doubt, go to the library.";
+        let tag: [u8; TAG_SIZE] = [0u8; TAG_SIZE];
+        (key, nonce, plaintext, aad, tag)
+    }
+
+    fn alloc_aes_cbc_vars() -> (
+        [u8; crypto::aes::KEY256_SIZE],
+        [u8; crypto::aes::IV_SIZE],
+        usize,
+        [u8; PLAINTEXT_PADDED_SIZE],
+    ) {
+        let key: [u8; crypto::aes::KEY256_SIZE] = *b"Fortuna Major or Oddsbodikins???";
+        let iv: [u8; crypto::aes::IV_SIZE] =
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        let mut buffer: [u8; PLAINTEXT_PADDED_SIZE] = [0u8; PLAINTEXT_PADDED_SIZE];
+        buffer[..PLAINTEXT_SIZE].copy_from_slice(b"I solemnly swear I am up to no good!");
+        (key, iv, PLAINTEXT_SIZE, buffer)
     }
 
     #[async_std::test]
@@ -237,250 +271,6 @@ mod tests {
     }
 
     #[async_std::test]
-    async fn encrypt_chachapoly() {
-        const KEY_INFOS: [KeyInfo; 3] = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
-        let (key, nonce, mut plaintext, aad, mut tag) = alloc_chachapoly_vars();
-        let org_plaintext = plaintext;
-        let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
-        let mut client_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
-        let mut chachapoly_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
-        let mut chachapoly_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
-        let (req_client_rx, req_client_tx, resp_client_rx, resp_client_tx) =
-            split_queues(&mut client_requests, &mut client_responses);
-        let (
-            chachapoly_requests_rx,
-            chachapoly_requests_tx,
-            chachapoly_responses_rx,
-            chachapoly_responses_tx,
-        ) = split_queues(&mut chachapoly_requests, &mut chachapoly_responses);
-        let mut key_store = init_key_store(&KEY_INFOS);
-        let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
-        let mut chacha_worker = ChaChaPolyWorker {
-            key_store: &key_store,
-            requests: chachapoly_requests_rx,
-            responses: chachapoly_responses_tx,
-        };
-        let mut core = Builder::<
-            NoopRawMutex,
-            TestEntropySource,
-            RequestQueueSource<'_, '_, QUEUE_SIZE>,
-            ResponseQueueSink<'_, '_, QUEUE_SIZE>,
-            RequestQueueSink<'_, '_, QUEUE_SIZE>,
-            ResponseQueueSource<'_, '_, QUEUE_SIZE>,
-        >::default()
-        .with_keystore(&key_store)
-        .with_client(req_client_rx, resp_client_tx)
-        .expect("failed to add client")
-        .with_worker(
-            &[
-                RequestType::EncryptChaChaPoly,
-                RequestType::EncryptChaChaPolyExternalKey,
-                RequestType::DecryptChaChaPoly,
-                RequestType::DecryptChaChaPolyExternalKey,
-            ],
-            chachapoly_requests_tx,
-            chachapoly_responses_rx,
-        )
-        .expect("failed to add worker")
-        .build();
-        let mut api = Api::new(req_client_tx, resp_client_rx);
-
-        // Import key
-        let org_request_id = api
-            .import_symmetric_key(SYM_256_KEY.id, &key, false)
-            .await
-            .expect("failed to send request");
-        core.execute()
-            .await
-            .expect("failed to process next request");
-        let response = api
-            .recv_response()
-            .await
-            .expect("Failed to receive expected response");
-        let Response::ImportSymmetricKey {
-            client_id: _client_id,
-            request_id,
-        } = response
-        else {
-            panic!("Unexpected response type")
-        };
-        assert_eq!(org_request_id, request_id);
-
-        // Encrypt data
-        let org_request_id = api
-            .encrypt_in_place(
-                ChaCha20Poly1305,
-                SYM_256_KEY.id,
-                &nonce,
-                &mut plaintext,
-                &aad,
-                &mut tag,
-            )
-            .await
-            .expect("failed to send request");
-        core.execute().await.expect("failed to forward request");
-        chacha_worker
-            .execute()
-            .await
-            .expect("failed to process request");
-        core.execute().await.expect("failed to forward response");
-        let Response::EncryptChaChaPoly {
-            client_id: _,
-            request_id,
-            buffer: ciphertext,
-            tag,
-        } = api
-            .recv_response()
-            .await
-            .expect("Failed to receive expected response")
-        else {
-            panic!("Unexpected response type")
-        };
-        assert_eq!(request_id, org_request_id);
-
-        // Decrypt data
-        let org_request_id = api
-            .decrypt_in_place(
-                ChaCha20Poly1305,
-                SYM_256_KEY.id,
-                &nonce,
-                ciphertext,
-                &aad,
-                tag,
-            )
-            .await
-            .expect("failed to send request");
-        core.execute().await.expect("failed to forward request");
-        chacha_worker
-            .execute()
-            .await
-            .expect("failed to process request");
-        core.execute().await.expect("failed to forward response");
-        let (request_id, plaintext) = match api
-            .recv_response()
-            .await
-            .expect("Failed to receive expected response")
-        {
-            Response::DecryptChaChaPoly {
-                client_id: _client_id,
-                request_id,
-                buffer: plaintext,
-            } => (request_id, plaintext),
-            resp => panic!("Unexpected response type {:?}", resp),
-        };
-        assert_eq!(request_id, org_request_id);
-        assert_eq!(plaintext, org_plaintext);
-    }
-
-    #[async_std::test]
-    async fn encrypt_chachapoly_external_key() {
-        const KEY_INFOS: [KeyInfo; 3] = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
-        let (key, nonce, mut plaintext, aad, mut tag) = alloc_chachapoly_vars();
-        let org_plaintext = plaintext;
-        let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
-        let mut client_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
-        let mut chachapoly_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
-        let mut chachapoly_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
-        let (req_client_rx, req_client_tx, resp_client_rx, resp_client_tx) =
-            split_queues(&mut client_requests, &mut client_responses);
-        let (
-            chachapoly_requests_rx,
-            chachapoly_requests_tx,
-            chachapoly_responses_rx,
-            chachapoly_responses_tx,
-        ) = split_queues(&mut chachapoly_requests, &mut chachapoly_responses);
-
-        let mut key_store = init_key_store(&KEY_INFOS);
-        let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
-        let mut chacha_worker = ChaChaPolyWorker {
-            key_store: &key_store,
-            requests: chachapoly_requests_rx,
-            responses: chachapoly_responses_tx,
-        };
-        let mut core = Builder::<
-            NoopRawMutex,
-            TestEntropySource,
-            RequestQueueSource<'_, '_, QUEUE_SIZE>,
-            ResponseQueueSink<'_, '_, QUEUE_SIZE>,
-            RequestQueueSink<'_, '_, QUEUE_SIZE>,
-            ResponseQueueSource<'_, '_, QUEUE_SIZE>,
-        >::default()
-        .with_keystore(&key_store)
-        .with_client(req_client_rx, resp_client_tx)
-        .expect("failed to add client")
-        .with_worker(
-            &[
-                RequestType::EncryptChaChaPoly,
-                RequestType::EncryptChaChaPolyExternalKey,
-                RequestType::DecryptChaChaPoly,
-                RequestType::DecryptChaChaPolyExternalKey,
-            ],
-            chachapoly_requests_tx,
-            chachapoly_responses_rx,
-        )
-        .expect("failed to add worker")
-        .build();
-        let mut api = Api::new(req_client_tx, resp_client_rx);
-
-        // Encrypt data
-        let org_request_id = api
-            .encrypt_in_place_external_key(
-                ChaCha20Poly1305,
-                &key,
-                &nonce,
-                &mut plaintext,
-                &aad,
-                &mut tag,
-            )
-            .await
-            .expect("failed to send request");
-        core.execute().await.expect("failed to forward request");
-        chacha_worker
-            .execute()
-            .await
-            .expect("failed to process request");
-        core.execute().await.expect("failed to forward response");
-        let Response::EncryptChaChaPoly {
-            client_id: _client_id,
-            request_id,
-            buffer: ciphertext,
-            tag,
-        } = api
-            .recv_response()
-            .await
-            .expect("Failed to receive expected response")
-        else {
-            panic!("Unexpected response type")
-        };
-        assert_eq!(request_id, org_request_id);
-
-        // Decrypt data
-        let org_request_id = api
-            .decrypt_in_place_external_key(ChaCha20Poly1305, &key, &nonce, ciphertext, &aad, tag)
-            .await
-            .expect("failed to send request");
-        core.execute().await.expect("failed to forward request");
-        chacha_worker
-            .execute()
-            .await
-            .expect("failed to process request");
-        core.execute().await.expect("failed to forward response");
-        let Response::DecryptChaChaPoly {
-            client_id: _client_id,
-            request_id,
-            buffer: plaintext,
-        } = api
-            .recv_response()
-            .await
-            .expect("Failed to receive expected response")
-        else {
-            panic!("Unexpected response type")
-        };
-        assert_eq!(request_id, org_request_id);
-        assert_eq!(plaintext, org_plaintext)
-    }
-
-    #[async_std::test]
     async fn generate_symmetric_key() {
         const KEY_INFOS: [KeyInfo; 3] = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
         const KEY_INFO: KeyInfo = KEY_INFOS[1];
@@ -582,6 +372,703 @@ mod tests {
         };
         assert_eq!(request_id, org_request_id);
         assert_eq!(key.len(), KEY_INFO.ty.key_size()); // Large buffer was only used partially
+    }
+
+    #[async_std::test]
+    async fn chachapoly_encrypt_in_place() {
+        const KEY_INFOS: [KeyInfo; 3] = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
+        let (key, nonce, mut plaintext, aad, mut tag) = alloc_chachapoly_vars();
+        let org_plaintext = plaintext;
+        let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut client_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let mut chachapoly_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut chachapoly_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let (req_client_rx, req_client_tx, resp_client_rx, resp_client_tx) =
+            split_queues(&mut client_requests, &mut client_responses);
+        let (
+            chachapoly_requests_rx,
+            chachapoly_requests_tx,
+            chachapoly_responses_rx,
+            chachapoly_responses_tx,
+        ) = split_queues(&mut chachapoly_requests, &mut chachapoly_responses);
+        let mut key_store = init_key_store(&KEY_INFOS);
+        let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
+        let mut chacha_worker = ChaChaPolyWorker {
+            key_store: &key_store,
+            requests: chachapoly_requests_rx,
+            responses: chachapoly_responses_tx,
+        };
+        let mut core = Builder::<
+            NoopRawMutex,
+            TestEntropySource,
+            RequestQueueSource<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSink<'_, '_, QUEUE_SIZE>,
+            RequestQueueSink<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSource<'_, '_, QUEUE_SIZE>,
+        >::default()
+        .with_keystore(&key_store)
+        .with_client(req_client_rx, resp_client_tx)
+        .expect("failed to add client")
+        .with_worker(
+            &[
+                RequestType::EncryptChaChaPoly,
+                RequestType::EncryptChaChaPolyExternalKey,
+                RequestType::DecryptChaChaPoly,
+                RequestType::DecryptChaChaPolyExternalKey,
+            ],
+            chachapoly_requests_tx,
+            chachapoly_responses_rx,
+        )
+        .expect("failed to add worker")
+        .build();
+        let mut api = Api::new(req_client_tx, resp_client_rx);
+
+        // Import key
+        let org_request_id = api
+            .import_symmetric_key(SYM_256_KEY.id, &key, false)
+            .await
+            .expect("failed to send request");
+        core.execute()
+            .await
+            .expect("failed to process next request");
+        let response = api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response");
+        let Response::ImportSymmetricKey {
+            client_id: _client_id,
+            request_id,
+        } = response
+        else {
+            panic!("Unexpected response type")
+        };
+        assert_eq!(org_request_id, request_id);
+
+        // Encrypt data
+        let org_request_id = api
+            .encrypt_in_place(
+                ChaCha20Poly1305,
+                SYM_256_KEY.id,
+                &nonce,
+                plaintext.len(),
+                &mut plaintext,
+                &aad,
+                &mut tag,
+            )
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        chacha_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let Response::EncryptChaChaPoly {
+            client_id: _,
+            request_id,
+            buffer,
+            tag,
+        } = api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response")
+        else {
+            panic!("Unexpected response type")
+        };
+        assert_eq!(request_id, org_request_id);
+
+        // Decrypt data
+        let org_request_id = api
+            .decrypt_in_place(ChaCha20Poly1305, SYM_256_KEY.id, &nonce, buffer, &aad, tag)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        chacha_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let (request_id, plaintext) = match api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response")
+        {
+            Response::DecryptChaChaPoly {
+                client_id: _client_id,
+                request_id,
+                buffer,
+            } => (request_id, buffer),
+            resp => panic!("Unexpected response type {:?}", resp),
+        };
+        assert_eq!(request_id, org_request_id);
+        assert_eq!(plaintext, org_plaintext);
+    }
+
+    #[async_std::test]
+    async fn chachapoly_encrypt_in_place_external_key() {
+        const KEY_INFOS: [KeyInfo; 3] = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
+        let (key, nonce, mut plaintext, aad, mut tag) = alloc_chachapoly_vars();
+        let org_plaintext = plaintext;
+        let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut client_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let mut chachapoly_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut chachapoly_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let (req_client_rx, req_client_tx, resp_client_rx, resp_client_tx) =
+            split_queues(&mut client_requests, &mut client_responses);
+        let (
+            chachapoly_requests_rx,
+            chachapoly_requests_tx,
+            chachapoly_responses_rx,
+            chachapoly_responses_tx,
+        ) = split_queues(&mut chachapoly_requests, &mut chachapoly_responses);
+        let mut key_store = init_key_store(&KEY_INFOS);
+        let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
+        let mut chacha_worker = ChaChaPolyWorker {
+            key_store: &key_store,
+            requests: chachapoly_requests_rx,
+            responses: chachapoly_responses_tx,
+        };
+        let mut core = Builder::<
+            NoopRawMutex,
+            TestEntropySource,
+            RequestQueueSource<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSink<'_, '_, QUEUE_SIZE>,
+            RequestQueueSink<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSource<'_, '_, QUEUE_SIZE>,
+        >::default()
+        .with_keystore(&key_store)
+        .with_client(req_client_rx, resp_client_tx)
+        .expect("failed to add client")
+        .with_worker(
+            &[
+                RequestType::EncryptChaChaPoly,
+                RequestType::EncryptChaChaPolyExternalKey,
+                RequestType::DecryptChaChaPoly,
+                RequestType::DecryptChaChaPolyExternalKey,
+            ],
+            chachapoly_requests_tx,
+            chachapoly_responses_rx,
+        )
+        .expect("failed to add worker")
+        .build();
+        let mut api = Api::new(req_client_tx, resp_client_rx);
+
+        // Encrypt data
+        let org_request_id = api
+            .encrypt_in_place_external_key(
+                ChaCha20Poly1305,
+                &key,
+                &nonce,
+                plaintext.len(),
+                &mut plaintext,
+                &aad,
+                &mut tag,
+            )
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        chacha_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let Response::EncryptChaChaPoly {
+            client_id: _client_id,
+            request_id,
+            buffer,
+            tag,
+        } = api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response")
+        else {
+            panic!("Unexpected response type")
+        };
+        assert_eq!(request_id, org_request_id);
+
+        // Decrypt data
+        let org_request_id = api
+            .decrypt_in_place_external_key(ChaCha20Poly1305, &key, &nonce, buffer, &aad, tag)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        chacha_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let Response::DecryptChaChaPoly {
+            client_id: _client_id,
+            request_id,
+            buffer: plaintext,
+        } = api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response")
+        else {
+            panic!("Unexpected response type")
+        };
+        assert_eq!(request_id, org_request_id);
+        assert_eq!(plaintext, org_plaintext)
+    }
+
+    #[async_std::test]
+    async fn aes_gcm_encrypt_in_place() {
+        const KEY_INFOS: [KeyInfo; 3] = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
+        let (key, nonce, mut plaintext, aad, mut tag) = alloc_aes_gcm_vars();
+        let org_plaintext = plaintext;
+        let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut client_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let mut aes_gcm_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut aes_gcm_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let (req_client_rx, req_client_tx, resp_client_rx, resp_client_tx) =
+            split_queues(&mut client_requests, &mut client_responses);
+        let (aes_gcm_requests_rx, aes_gcm_requests_tx, aes_gcm_responses_rx, aes_gcm_responses_tx) =
+            split_queues(&mut aes_gcm_requests, &mut aes_gcm_responses);
+        let mut key_store = init_key_store(&KEY_INFOS);
+        let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
+        let mut aes_gcm_worker = AesWorker {
+            key_store: &key_store,
+            requests: aes_gcm_requests_rx,
+            responses: aes_gcm_responses_tx,
+        };
+        let mut core = Builder::<
+            NoopRawMutex,
+            TestEntropySource,
+            RequestQueueSource<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSink<'_, '_, QUEUE_SIZE>,
+            RequestQueueSink<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSource<'_, '_, QUEUE_SIZE>,
+        >::default()
+        .with_keystore(&key_store)
+        .with_client(req_client_rx, resp_client_tx)
+        .expect("failed to add client")
+        .with_worker(
+            &[
+                RequestType::EncryptAesGcm,
+                RequestType::EncryptAesGcmExternalKey,
+                RequestType::DecryptAesGcm,
+                RequestType::DecryptAesGcmExternalKey,
+            ],
+            aes_gcm_requests_tx,
+            aes_gcm_responses_rx,
+        )
+        .expect("failed to add worker")
+        .build();
+        let mut api = Api::new(req_client_tx, resp_client_rx);
+
+        // Import key
+        let org_request_id = api
+            .import_symmetric_key(SYM_256_KEY.id, &key, false)
+            .await
+            .expect("failed to send request");
+        core.execute()
+            .await
+            .expect("failed to process next request");
+        let response = api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response");
+        let Response::ImportSymmetricKey {
+            client_id: _client_id,
+            request_id,
+        } = response
+        else {
+            panic!("Unexpected response type")
+        };
+        assert_eq!(org_request_id, request_id);
+
+        // Encrypt data
+        let org_request_id = api
+            .encrypt_in_place(
+                AesGcm,
+                SYM_256_KEY.id,
+                &nonce,
+                plaintext.len(),
+                &mut plaintext,
+                &aad,
+                &mut tag,
+            )
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        aes_gcm_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let Response::EncryptAesGcm {
+            client_id: _,
+            request_id,
+            buffer,
+            tag,
+        } = api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response")
+        else {
+            panic!("Unexpected response type")
+        };
+        assert_eq!(request_id, org_request_id);
+
+        // Decrypt data
+        let org_request_id = api
+            .decrypt_in_place(AesGcm, SYM_256_KEY.id, &nonce, buffer, &aad, tag)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        aes_gcm_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let Response::DecryptAesGcm {
+            client_id: _client_id,
+            request_id,
+            buffer: plaintext,
+        } = api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response")
+        else {
+            panic!("Unexpected response type")
+        };
+        assert_eq!(request_id, org_request_id);
+        assert_eq!(plaintext, org_plaintext);
+    }
+
+    #[async_std::test]
+    async fn aes_gcm_encrypt_in_place_external_key() {
+        const KEY_INFOS: [KeyInfo; 3] = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
+        let (key, nonce, mut plaintext, aad, mut tag) = alloc_aes_gcm_vars();
+        let org_plaintext = plaintext;
+        let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut client_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let mut aes_gcm_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut aes_gcm_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let (req_client_rx, req_client_tx, resp_client_rx, resp_client_tx) =
+            split_queues(&mut client_requests, &mut client_responses);
+        let (aes_gcm_requests_rx, aes_gcm_requests_tx, aes_gcm_responses_rx, aes_gcm_responses_tx) =
+            split_queues(&mut aes_gcm_requests, &mut aes_gcm_responses);
+
+        let mut key_store = init_key_store(&KEY_INFOS);
+        let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
+        let mut aes_gcm_worker = AesWorker {
+            key_store: &key_store,
+            requests: aes_gcm_requests_rx,
+            responses: aes_gcm_responses_tx,
+        };
+        let mut core = Builder::<
+            NoopRawMutex,
+            TestEntropySource,
+            RequestQueueSource<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSink<'_, '_, QUEUE_SIZE>,
+            RequestQueueSink<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSource<'_, '_, QUEUE_SIZE>,
+        >::default()
+        .with_keystore(&key_store)
+        .with_client(req_client_rx, resp_client_tx)
+        .expect("failed to add client")
+        .with_worker(
+            &[
+                RequestType::EncryptAesGcm,
+                RequestType::EncryptAesGcmExternalKey,
+                RequestType::DecryptAesGcm,
+                RequestType::DecryptAesGcmExternalKey,
+            ],
+            aes_gcm_requests_tx,
+            aes_gcm_responses_rx,
+        )
+        .expect("failed to add worker")
+        .build();
+        let mut api = Api::new(req_client_tx, resp_client_rx);
+
+        // Encrypt data
+        let org_request_id = api
+            .encrypt_in_place_external_key(
+                AesGcm,
+                &key,
+                &nonce,
+                plaintext.len(),
+                &mut plaintext,
+                &aad,
+                &mut tag,
+            )
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        aes_gcm_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let Response::EncryptAesGcm {
+            client_id: _client_id,
+            request_id,
+            buffer,
+            tag,
+        } = api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response")
+        else {
+            panic!("Unexpected response type")
+        };
+        assert_eq!(request_id, org_request_id);
+
+        // Decrypt data
+        let org_request_id = api
+            .decrypt_in_place_external_key(AesGcm, &key, &nonce, buffer, &aad, tag)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        aes_gcm_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let Response::DecryptAesGcm {
+            client_id: _client_id,
+            request_id,
+            buffer: plaintext,
+        } = api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response")
+        else {
+            panic!("Unexpected response type")
+        };
+        assert_eq!(request_id, org_request_id);
+        assert_eq!(plaintext, org_plaintext)
+    }
+
+    #[async_std::test]
+    async fn aes_cbc_encrypt_in_place() {
+        const KEY_INFOS: [KeyInfo; 3] = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
+        let (key, iv, plaintext_size, mut buffer) = alloc_aes_cbc_vars();
+        let org_buffer = buffer;
+        let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut client_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let mut aes_cbc_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut aes_cbc_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let (req_client_rx, req_client_tx, resp_client_rx, resp_client_tx) =
+            split_queues(&mut client_requests, &mut client_responses);
+        let (aes_cbc_requests_rx, aes_cbc_requests_tx, aes_cbc_responses_rx, aes_cbc_responses_tx) =
+            split_queues(&mut aes_cbc_requests, &mut aes_cbc_responses);
+        let mut key_store = init_key_store(&KEY_INFOS);
+        let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
+        let mut aes_cbc_worker = AesWorker {
+            key_store: &key_store,
+            requests: aes_cbc_requests_rx,
+            responses: aes_cbc_responses_tx,
+        };
+        let mut core = Builder::<
+            NoopRawMutex,
+            TestEntropySource,
+            RequestQueueSource<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSink<'_, '_, QUEUE_SIZE>,
+            RequestQueueSink<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSource<'_, '_, QUEUE_SIZE>,
+        >::default()
+        .with_keystore(&key_store)
+        .with_client(req_client_rx, resp_client_tx)
+        .expect("failed to add client")
+        .with_worker(
+            &[
+                RequestType::EncryptAesCbc,
+                RequestType::EncryptAesCbcExternalKey,
+                RequestType::DecryptAesCbc,
+                RequestType::DecryptAesCbcExternalKey,
+            ],
+            aes_cbc_requests_tx,
+            aes_cbc_responses_rx,
+        )
+        .expect("failed to add worker")
+        .build();
+        let mut api = Api::new(req_client_tx, resp_client_rx);
+
+        // Import key
+        let org_request_id = api
+            .import_symmetric_key(SYM_256_KEY.id, &key, false)
+            .await
+            .expect("failed to send request");
+        core.execute()
+            .await
+            .expect("failed to process next request");
+        let response = api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response");
+        let Response::ImportSymmetricKey {
+            client_id: _client_id,
+            request_id,
+        } = response
+        else {
+            panic!("Unexpected response type")
+        };
+        assert_eq!(org_request_id, request_id);
+
+        // Encrypt data
+        let org_request_id = api
+            .encrypt_in_place(
+                AesCbc,
+                SYM_256_KEY.id,
+                &iv,
+                plaintext_size,
+                &mut buffer,
+                &[],
+                &mut [],
+            )
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        aes_cbc_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let Response::EncryptAesCbc {
+            client_id: _,
+            request_id,
+            buffer,
+        } = api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response")
+        else {
+            panic!("Unexpected response type")
+        };
+        assert_eq!(request_id, org_request_id);
+
+        // Decrypt data
+        let org_request_id = api
+            .decrypt_in_place(AesCbc, SYM_256_KEY.id, &iv, buffer, &[], &[])
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        aes_cbc_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let Response::DecryptAesCbc {
+            client_id: _client_id,
+            request_id,
+            plaintext,
+        } = api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response")
+        else {
+            panic!("Unexpected response type")
+        };
+        assert_eq!(request_id, org_request_id);
+        let org_plaintext = &org_buffer[..PLAINTEXT_SIZE];
+        assert_eq!(plaintext, org_plaintext);
+    }
+
+    #[async_std::test]
+    async fn aes_cbc_encrypt_in_place_external_key() {
+        const KEY_INFOS: [KeyInfo; 3] = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
+        let (key, iv, plaintext_size, mut buffer) = alloc_aes_cbc_vars();
+        let org_buffer = buffer;
+        let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut client_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let mut aes_cbc_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut aes_cbc_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let (req_client_rx, req_client_tx, resp_client_rx, resp_client_tx) =
+            split_queues(&mut client_requests, &mut client_responses);
+        let (aes_cbc_requests_rx, aes_cbc_requests_tx, aes_cbc_responses_rx, aes_cbc_responses_tx) =
+            split_queues(&mut aes_cbc_requests, &mut aes_cbc_responses);
+        let mut key_store = init_key_store(&KEY_INFOS);
+        let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
+        let mut aes_cbc_worker = AesWorker {
+            key_store: &key_store,
+            requests: aes_cbc_requests_rx,
+            responses: aes_cbc_responses_tx,
+        };
+        let mut core = Builder::<
+            NoopRawMutex,
+            TestEntropySource,
+            RequestQueueSource<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSink<'_, '_, QUEUE_SIZE>,
+            RequestQueueSink<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSource<'_, '_, QUEUE_SIZE>,
+        >::default()
+        .with_keystore(&key_store)
+        .with_client(req_client_rx, resp_client_tx)
+        .expect("failed to add client")
+        .with_worker(
+            &[
+                RequestType::EncryptAesCbc,
+                RequestType::EncryptAesCbcExternalKey,
+                RequestType::DecryptAesCbc,
+                RequestType::DecryptAesCbcExternalKey,
+            ],
+            aes_cbc_requests_tx,
+            aes_cbc_responses_rx,
+        )
+        .expect("failed to add worker")
+        .build();
+        let mut api = Api::new(req_client_tx, resp_client_rx);
+
+        // Encrypt data
+        let org_request_id = api
+            .encrypt_in_place_external_key(
+                AesCbc,
+                &key,
+                &iv,
+                plaintext_size,
+                &mut buffer,
+                &[],
+                &mut [],
+            )
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        aes_cbc_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let Response::EncryptAesCbc {
+            client_id: _client_id,
+            request_id,
+            buffer,
+        } = api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response")
+        else {
+            panic!("Unexpected response type")
+        };
+        assert_eq!(request_id, org_request_id);
+
+        // Decrypt data
+        let org_request_id = api
+            .decrypt_in_place_external_key(AesCbc, &key, &iv, buffer, &[], &[])
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        aes_cbc_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let Response::DecryptAesCbc {
+            client_id: _client_id,
+            request_id,
+            plaintext,
+        } = api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response")
+        else {
+            panic!("Unexpected response type")
+        };
+        assert_eq!(request_id, org_request_id);
+        let org_plaintext = &org_buffer[..PLAINTEXT_SIZE];
+        assert_eq!(plaintext, org_plaintext)
     }
 
     #[async_std::test]

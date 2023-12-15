@@ -18,6 +18,8 @@ pub enum Error {
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum SymmetricEncryptionAlgorithm {
     ChaCha20Poly1305,
+    AesGcm,
+    AesCbc,
 }
 
 impl<
@@ -164,74 +166,61 @@ impl<
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn encrypt(
-        &mut self,
-        algorithm: SymmetricEncryptionAlgorithm,
-        key_id: KeyId,
-        nonce: &'data [u8],
-        plaintext: &'data [u8],
-        ciphertext: &'data mut [u8],
-        aad: &'data [u8],
-        tag: &'data mut [u8],
-    ) -> Result<RequestId, Error> {
-        match algorithm {
-            SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => {
-                if ciphertext.len() < plaintext.len() {
-                    return Err(Error::InvalidBufferSize);
-                }
-                let ciphertext = &mut ciphertext[..plaintext.len()];
-                ciphertext.copy_from_slice(plaintext);
-                let request = Request::EncryptChaChaPoly {
-                    client_id: ClientId::default(),
-                    request_id: RequestId::default(),
-                    key_id,
-                    nonce,
-                    buffer: ciphertext,
-                    aad,
-                    tag,
-                };
-                self.send_request(request).await
-            }
-        }
-    }
-
     pub async fn encrypt_in_place(
         &mut self,
         algorithm: SymmetricEncryptionAlgorithm,
         key_id: KeyId,
         nonce: &'data [u8],
+        plaintext_size: usize,
         buffer: &'data mut [u8],
         aad: &'data [u8],
         tag: &'data mut [u8],
     ) -> Result<RequestId, Error> {
-        match algorithm {
-            SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => {
-                let request = Request::EncryptChaChaPoly {
-                    client_id: ClientId::default(),
-                    request_id: RequestId::default(),
-                    key_id,
-                    nonce,
-                    buffer,
-                    aad,
-                    tag,
-                };
-                self.send_request(request).await
-            }
-        }
+        let request = match algorithm {
+            SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => Request::EncryptChaChaPoly {
+                client_id: ClientId::default(),
+                request_id: RequestId::default(),
+                key_id,
+                nonce,
+                buffer,
+                aad,
+                tag,
+            },
+            SymmetricEncryptionAlgorithm::AesGcm => Request::EncryptAesGcm {
+                client_id: Default::default(),
+                request_id: Default::default(),
+                key_id,
+                nonce,
+                buffer,
+                aad,
+                tag,
+            },
+            SymmetricEncryptionAlgorithm::AesCbc => Request::EncryptAesCbc {
+                client_id: Default::default(),
+                request_id: Default::default(),
+                key_id,
+                iv: nonce,
+                buffer,
+                plaintext_size,
+            },
+        };
+        self.send_request(request).await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn encrypt_in_place_external_key(
         &mut self,
         algorithm: SymmetricEncryptionAlgorithm,
         key: &'data [u8],
         nonce: &'data [u8],
+        plaintext_size: usize,
         buffer: &'data mut [u8],
         aad: &'data [u8],
         tag: &'data mut [u8],
     ) -> Result<RequestId, Error> {
-        match algorithm {
+        let request = match algorithm {
             SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => {
-                let request = Request::EncryptChaChaPolyExternalKey {
+                Request::EncryptChaChaPolyExternalKey {
                     client_id: ClientId::default(),
                     request_id: RequestId::default(),
                     key,
@@ -239,74 +228,27 @@ impl<
                     buffer,
                     aad,
                     tag,
-                };
-                self.send_request(request).await
-            }
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub async fn encrypt_external_key(
-        &mut self,
-        algorithm: SymmetricEncryptionAlgorithm,
-        key: &'data [u8],
-        nonce: &'data [u8],
-        plaintext: &'data [u8],
-        ciphertext: &'data mut [u8],
-        aad: &'data [u8],
-        tag: &'data mut [u8],
-    ) -> Result<RequestId, Error> {
-        match algorithm {
-            SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => {
-                if ciphertext.len() < plaintext.len() {
-                    return Err(Error::InvalidBufferSize);
                 }
-                let ciphertext = &mut ciphertext[..plaintext.len()];
-                ciphertext.copy_from_slice(plaintext);
-                let request = Request::EncryptChaChaPolyExternalKey {
-                    client_id: ClientId::default(),
-                    request_id: RequestId::default(),
-                    key,
-                    nonce,
-                    buffer: ciphertext,
-                    aad,
-                    tag,
-                };
-                self.send_request(request).await
             }
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub async fn decrypt(
-        &mut self,
-        algorithm: SymmetricEncryptionAlgorithm,
-        key_id: KeyId,
-        nonce: &'data [u8],
-        plaintext: &'data mut [u8],
-        ciphertext: &'data [u8],
-        aad: &'data [u8],
-        tag: &'data [u8],
-    ) -> Result<RequestId, Error> {
-        match algorithm {
-            SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => {
-                if plaintext.len() < ciphertext.len() {
-                    return Err(Error::InvalidBufferSize);
-                }
-                let plaintext = &mut plaintext[..ciphertext.len()];
-                plaintext.copy_from_slice(ciphertext);
-                let request = Request::DecryptChaChaPoly {
-                    client_id: ClientId::default(),
-                    request_id: RequestId::default(),
-                    key_id,
-                    nonce,
-                    buffer: plaintext,
-                    aad,
-                    tag,
-                };
-                self.send_request(request).await
-            }
-        }
+            SymmetricEncryptionAlgorithm::AesGcm => Request::EncryptAesGcmExternalKey {
+                client_id: Default::default(),
+                request_id: Default::default(),
+                key,
+                nonce,
+                buffer,
+                aad,
+                tag,
+            },
+            SymmetricEncryptionAlgorithm::AesCbc => Request::EncryptAesCbcExternalKey {
+                client_id: Default::default(),
+                request_id: Default::default(),
+                key,
+                iv: nonce,
+                buffer,
+                plaintext_size,
+            },
+        };
+        self.send_request(request).await
     }
 
     pub async fn decrypt_in_place(
@@ -318,52 +260,34 @@ impl<
         aad: &'data [u8],
         tag: &'data [u8],
     ) -> Result<RequestId, Error> {
-        match algorithm {
-            SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => {
-                let request = Request::DecryptChaChaPoly {
-                    client_id: ClientId::default(),
-                    request_id: RequestId::default(),
-                    key_id,
-                    nonce,
-                    buffer,
-                    aad,
-                    tag,
-                };
-                self.send_request(request).await
-            }
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub async fn decrypt_external_key(
-        &mut self,
-        algorithm: SymmetricEncryptionAlgorithm,
-        key: &'data [u8],
-        nonce: &'data [u8],
-        plaintext: &'data mut [u8],
-        ciphertext: &'data [u8],
-        aad: &'data [u8],
-        tag: &'data [u8],
-    ) -> Result<RequestId, Error> {
-        match algorithm {
-            SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => {
-                if plaintext.len() < ciphertext.len() {
-                    return Err(Error::InvalidBufferSize);
-                }
-                let plaintext = &mut plaintext[..ciphertext.len()];
-                plaintext.copy_from_slice(ciphertext);
-                let request = Request::DecryptChaChaPolyExternalKey {
-                    client_id: ClientId::default(),
-                    request_id: RequestId::default(),
-                    key,
-                    nonce,
-                    buffer: plaintext,
-                    aad,
-                    tag,
-                };
-                self.send_request(request).await
-            }
-        }
+        let request = match algorithm {
+            SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => Request::DecryptChaChaPoly {
+                client_id: ClientId::default(),
+                request_id: RequestId::default(),
+                key_id,
+                nonce,
+                buffer,
+                aad,
+                tag,
+            },
+            SymmetricEncryptionAlgorithm::AesGcm => Request::DecryptAesGcm {
+                client_id: Default::default(),
+                request_id: Default::default(),
+                key_id,
+                nonce,
+                buffer,
+                aad,
+                tag,
+            },
+            SymmetricEncryptionAlgorithm::AesCbc => Request::DecryptAesCbc {
+                client_id: Default::default(),
+                request_id: Default::default(),
+                key_id,
+                iv: nonce,
+                buffer,
+            },
+        };
+        self.send_request(request).await
     }
 
     pub async fn decrypt_in_place_external_key(
@@ -375,9 +299,9 @@ impl<
         aad: &'data [u8],
         tag: &'data [u8],
     ) -> Result<RequestId, Error> {
-        match algorithm {
+        let request = match algorithm {
             SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => {
-                let request = Request::DecryptChaChaPolyExternalKey {
+                Request::DecryptChaChaPolyExternalKey {
                     client_id: ClientId::default(),
                     request_id: RequestId::default(),
                     key,
@@ -385,10 +309,26 @@ impl<
                     buffer,
                     aad,
                     tag,
-                };
-                self.send_request(request).await
+                }
             }
-        }
+            SymmetricEncryptionAlgorithm::AesGcm => Request::DecryptAesGcmExternalKey {
+                client_id: Default::default(),
+                request_id: Default::default(),
+                key,
+                nonce,
+                buffer,
+                aad,
+                tag,
+            },
+            SymmetricEncryptionAlgorithm::AesCbc => Request::DecryptAesCbcExternalKey {
+                client_id: Default::default(),
+                request_id: Default::default(),
+                key,
+                iv: nonce,
+                buffer,
+            },
+        };
+        self.send_request(request).await
     }
 
     pub async fn sign(

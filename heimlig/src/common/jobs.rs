@@ -192,42 +192,6 @@ pub enum Request<'data> {
         aad: &'data [u8],
         tag: &'data [u8],
     },
-    EncryptAesCbc {
-        client_id: ClientId,
-        request_id: RequestId,
-        key_id: KeyId,
-        nonce: &'data [u8],
-        buffer: &'data mut [u8],
-        aad: &'data [u8],
-        tag: &'data mut [u8],
-    },
-    EncryptAesCbcExternalKey {
-        client_id: ClientId,
-        request_id: RequestId,
-        key: &'data [u8],
-        nonce: &'data [u8],
-        buffer: &'data mut [u8],
-        aad: &'data [u8],
-        tag: &'data mut [u8],
-    },
-    DecryptAesCbc {
-        client_id: ClientId,
-        request_id: RequestId,
-        key_id: KeyId,
-        nonce: &'data [u8],
-        buffer: &'data mut [u8],
-        aad: &'data [u8],
-        tag: &'data [u8],
-    },
-    DecryptAesCbcExternalKey {
-        client_id: ClientId,
-        request_id: RequestId,
-        key: &'data [u8],
-        nonce: &'data [u8],
-        buffer: &'data mut [u8],
-        aad: &'data [u8],
-        tag: &'data [u8],
-    },
     EncryptAesGcm {
         client_id: ClientId,
         request_id: RequestId,
@@ -263,6 +227,36 @@ pub enum Request<'data> {
         buffer: &'data mut [u8],
         aad: &'data [u8],
         tag: &'data [u8],
+    },
+    EncryptAesCbc {
+        client_id: ClientId,
+        request_id: RequestId,
+        key_id: KeyId,
+        iv: &'data [u8],
+        buffer: &'data mut [u8],
+        plaintext_size: usize,
+    },
+    EncryptAesCbcExternalKey {
+        client_id: ClientId,
+        request_id: RequestId,
+        key: &'data [u8],
+        iv: &'data [u8],
+        buffer: &'data mut [u8],
+        plaintext_size: usize,
+    },
+    DecryptAesCbc {
+        client_id: ClientId,
+        request_id: RequestId,
+        key_id: KeyId,
+        iv: &'data [u8],
+        buffer: &'data mut [u8],
+    },
+    DecryptAesCbcExternalKey {
+        client_id: ClientId,
+        request_id: RequestId,
+        key: &'data [u8],
+        iv: &'data [u8],
+        buffer: &'data mut [u8],
     },
     Sign {
         client_id: ClientId,
@@ -319,6 +313,8 @@ impl RequestType {
     }
 }
 
+// All slices are mutable here as the borrow checker should guarantee to the client that it has
+// exclusive access to the underlying memory and can safely deallocate it.
 /// A response from the HSM containing the results of a cryptographic task.
 #[derive(Debug)]
 pub enum Response<'data> {
@@ -351,17 +347,17 @@ pub enum Response<'data> {
     ExportSymmetricKey {
         client_id: ClientId,
         request_id: RequestId,
-        key: &'data [u8],
+        key: &'data mut [u8],
     },
     ExportPublicKey {
         client_id: ClientId,
         request_id: RequestId,
-        public_key: &'data [u8],
+        public_key: &'data mut [u8],
     },
     ExportPrivateKey {
         client_id: ClientId,
         request_id: RequestId,
-        private_key: &'data [u8],
+        private_key: &'data mut [u8],
     },
     IsKeyAvailable {
         client_id: ClientId,
@@ -394,12 +390,11 @@ pub enum Response<'data> {
         client_id: ClientId,
         request_id: RequestId,
         buffer: &'data mut [u8],
-        tag: &'data mut [u8],
     },
     DecryptAesCbc {
         client_id: ClientId,
         request_id: RequestId,
-        buffer: &'data mut [u8],
+        plaintext: &'data mut [u8], // Subslice of original buffer without padding
     },
     Sign {
         client_id: ClientId,

@@ -509,11 +509,14 @@ impl<
                         .deref_mut()
                         .export_symmetric_key(key_id, data);
                     match exported_key {
-                        Ok(written) => Ok(Response::ExportSymmetricKey {
-                            client_id,
-                            request_id,
-                            key: written,
-                        }),
+                        Ok(written) => {
+                            let written_len = written.len();
+                            Ok(Response::ExportSymmetricKey {
+                                client_id,
+                                request_id,
+                                key: &mut data[..written_len],
+                            })
+                        }
                         Err(e) => Ok(Self::key_store_error_response(client_id, request_id, e)),
                     }
                 }
@@ -532,11 +535,14 @@ impl<
                         .deref_mut()
                         .export_public_key(key_id, public_key);
                     match exported_key {
-                        Ok(written) => Ok(Response::ExportPublicKey {
-                            client_id,
-                            request_id,
-                            public_key: written,
-                        }),
+                        Ok(written) => {
+                            let exported_key_len = written.len();
+                            Ok(Response::ExportPublicKey {
+                                client_id,
+                                request_id,
+                                public_key: &mut public_key[..exported_key_len],
+                            })
+                        }
                         Err(e) => Ok(Self::key_store_error_response(client_id, request_id, e)),
                     }
                 }
@@ -555,11 +561,14 @@ impl<
                         .deref_mut()
                         .export_private_key(key_id, private_key);
                     match exported_key {
-                        Ok(written) => Ok(Response::ExportPrivateKey {
-                            client_id,
-                            request_id,
-                            private_key: written,
-                        }),
+                        Ok(written) => {
+                            let written_len = written.len();
+                            Ok(Response::ExportPrivateKey {
+                                client_id,
+                                request_id,
+                                private_key: &mut private_key[..written_len],
+                            })
+                        }
                         Err(e) => Ok(Self::key_store_error_response(client_id, request_id, e)),
                     }
                 }
