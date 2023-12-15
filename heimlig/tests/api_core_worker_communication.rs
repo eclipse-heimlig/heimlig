@@ -17,6 +17,7 @@ mod tests {
         AsyncQueue, RequestQueueSink, RequestQueueSource, ResponseQueueSink, ResponseQueueSource,
     };
     use heimlig::integration::memory_key_store::MemoryKeyStore;
+    use sha2::{Digest, Sha256};
 
     const QUEUE_SIZE: usize = 8;
     const PLAINTEXT_SIZE: usize = 36;
@@ -584,11 +585,15 @@ mod tests {
     }
 
     #[async_std::test]
-    async fn generate_ecc_key_pair() {
+    async fn sign_verify_nist_p256() {
         const KEY_INFOS: [KeyInfo; 3] = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
         const KEY_INFO: KeyInfo = KEY_INFOS[2];
         let mut large_public_key_buffer = [0u8; 2 * KEY_INFO.ty.public_key_size()];
         let mut large_private_key_buffer = [0u8; 2 * KEY_INFO.ty.private_key_size()];
+        let mut signature = [0u8; KEY_INFO.ty.signature_size()];
+        let mut signature_external_key = [0u8; KEY_INFO.ty.signature_size()];
+        let message: &[u8] = b"But my patience isn't limitless... unlike my authority.";
+        let digest = Sha256::digest(message);
         let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
         let mut client_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
         let mut ecc_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
@@ -618,7 +623,13 @@ mod tests {
         .with_client(req_client_rx, resp_client_tx)
         .expect("failed to add client")
         .with_worker(
-            &[RequestType::GenerateKeyPair],
+            &[
+                RequestType::GenerateKeyPair,
+                RequestType::Sign,
+                RequestType::Verify,
+                RequestType::SignExternalKey,
+                RequestType::VerifyExternalKey,
+            ],
             ecc_requests_tx,
             ecc_responses_rx,
         )
@@ -706,6 +717,111 @@ mod tests {
         };
         assert_eq!(request_id, org_request_id);
         assert_eq!(private_key.len(), KEY_INFO.ty.private_key_size()); // Large buffer was only used partially
+
+        // Sign message.
+        let org_request_id = api
+            .sign(KEY_INFO.id, message, false, &mut signature)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to process request");
+        ecc_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let Some(response) = api.recv_response().await else {
+            panic!("Failed to receive expected response")
+        };
+        let Response::Sign {
+            client_id: _,
+            request_id,
+            signature,
+        } = response
+        else {
+            panic!("Unexpected response type {:?}", response)
+        };
+        assert_eq!(request_id, org_request_id);
+
+        // Verify message.
+        let org_request_id = api
+            .verify(KEY_INFO.id, message, false, signature)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        ecc_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let Some(response) = api.recv_response().await else {
+            panic!("Failed to receive expected response")
+        };
+        let Response::Verify {
+            client_id: _,
+            request_id,
+            verified,
+        } = response
+        else {
+            panic!("Unexpected response type {:?}", response)
+        };
+        assert_eq!(request_id, org_request_id);
+        assert!(verified);
+
+        // Sign digest with external key.
+        let org_request_id = api
+            .sign_external_key(
+                private_key,
+                digest.as_slice(),
+                true,
+                &mut signature_external_key,
+            )
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to process request");
+        ecc_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let Some(response) = api.recv_response().await else {
+            panic!("Failed to receive expected response")
+        };
+        let Response::Sign {
+            client_id: _,
+            request_id,
+            signature: signature_external_key,
+        } = response
+        else {
+            panic!("Unexpected response type {:?}", response)
+        };
+        assert_eq!(request_id, org_request_id);
+
+        assert_eq!(signature, signature_external_key);
+
+        // Verify digest with external key.
+        let org_request_id = api
+            .verify_external_key(public_key, digest.as_slice(), true, signature_external_key)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        ecc_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let Some(response) = api.recv_response().await else {
+            panic!("Failed to receive expected response")
+        };
+        let Response::Verify {
+            client_id: _,
+            request_id,
+            verified,
+        } = response
+        else {
+            panic!("Unexpected response type {:?}", response)
+        };
+        assert_eq!(request_id, org_request_id);
+        assert!(verified);
     }
 
     #[async_std::test]

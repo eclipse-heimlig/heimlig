@@ -44,8 +44,12 @@ pub enum CryptoErrorRaw {
     InvalidPrivateKey,
     /// Invalid public key format.
     InvalidPublicKey,
+    /// Invalid size of the signature.
+    InvalidSignatureSize,
     /// Invalid signature.
     InvalidSignature,
+    /// Invalid size of the digest.
+    InvalidDigestSize,
 }
 
 /// Raw version of keystore::Error
@@ -94,7 +98,9 @@ impl From<crypto::Error> for CryptoErrorRaw {
             crypto::Error::InvalidPadding => CryptoErrorRaw::InvalidPadding,
             crypto::Error::InvalidPrivateKey => CryptoErrorRaw::InvalidPrivateKey,
             crypto::Error::InvalidPublicKey => CryptoErrorRaw::InvalidPublicKey,
+            crypto::Error::InvalidSignatureSize => CryptoErrorRaw::InvalidSignatureSize,
             crypto::Error::InvalidSignature => CryptoErrorRaw::InvalidSignature,
+            crypto::Error::InvalidDigestSize => CryptoErrorRaw::InvalidDigestSize,
         }
     }
 }

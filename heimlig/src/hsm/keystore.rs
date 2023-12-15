@@ -95,6 +95,10 @@ impl KeyType {
         self.curve_size()
     }
 
+    pub const fn signature_size(&self) -> usize {
+        2 * self.curve_size()
+    }
+
     pub const fn key_size(&self) -> usize {
         match self {
             KeyType::Symmetric128Bits => 16,
