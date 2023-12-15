@@ -308,7 +308,7 @@ mod tests {
 
         // Encrypt data
         let org_request_id = api
-            .encrypt(
+            .encrypt_in_place(
                 ChaCha20Poly1305,
                 SYM_256_KEY.id,
                 &nonce,
@@ -340,7 +340,7 @@ mod tests {
 
         // Decrypt data
         let org_request_id = api
-            .decrypt(
+            .decrypt_in_place(
                 ChaCha20Poly1305,
                 SYM_256_KEY.id,
                 &nonce,
@@ -424,7 +424,7 @@ mod tests {
 
         // Encrypt data
         let org_request_id = api
-            .encrypt_external_key(
+            .encrypt_in_place_external_key(
                 ChaCha20Poly1305,
                 &key,
                 &nonce,
@@ -456,7 +456,7 @@ mod tests {
 
         // Decrypt data
         let org_request_id = api
-            .decrypt_external_key(ChaCha20Poly1305, &key, &nonce, ciphertext, &aad, tag)
+            .decrypt_in_place_external_key(ChaCha20Poly1305, &key, &nonce, ciphertext, &aad, tag)
             .await
             .expect("failed to send request");
         core.execute().await.expect("failed to forward request");
