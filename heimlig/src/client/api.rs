@@ -12,11 +12,10 @@ pub struct Api<'data, Req: Sink<Request<'data>>, Resp: Stream<Item = Response<'d
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Error {
     Send,
-    InvalidBufferSize,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum SymmetricEncryptionAlgorithm {
+pub enum SymmetricAlgorithm {
     ChaCha20Poly1305,
     AesGcm,
     AesCbc,
@@ -52,6 +51,7 @@ impl<
         self.send_request(request).await
     }
 
+    /// Generate an symmetric key pair and store it in the HSM.
     pub async fn generate_symmetric_key(
         &mut self,
         key_id: KeyId,
@@ -66,6 +66,7 @@ impl<
         self.send_request(request).await
     }
 
+    /// Generate an asymmetric key pair and store it in the HSM.
     pub async fn generate_key_pair(
         &mut self,
         key_id: KeyId,
@@ -80,6 +81,7 @@ impl<
         self.send_request(request).await
     }
 
+    /// Import a symmetric key into the HSM.
     pub async fn import_symmetric_key(
         &mut self,
         key_id: KeyId,
@@ -96,6 +98,7 @@ impl<
         self.send_request(request).await
     }
 
+    /// Import an asymmetric key pair into the HSM.
     pub async fn import_key_pair(
         &mut self,
         key_id: KeyId,
@@ -114,6 +117,7 @@ impl<
         self.send_request(request).await
     }
 
+    /// Export an symmetric private key that is stored in the HSM.
     pub async fn export_symmetric_key(
         &mut self,
         key_id: KeyId,
@@ -128,6 +132,7 @@ impl<
         self.send_request(request).await
     }
 
+    /// Export an asymmetric public key that is stored in the HSM.
     pub async fn export_public_key(
         &mut self,
         key_id: KeyId,
@@ -142,6 +147,8 @@ impl<
         self.send_request(request).await
     }
 
+    /// Export an asymmetric private key that is stored in the HSM.
+    /// This function only works for keys whose permission allow their private half to be exported.   
     pub async fn export_private_key(
         &mut self,
         key_id: KeyId,
@@ -156,6 +163,7 @@ impl<
         self.send_request(request).await
     }
 
+    /// Check whether a key for the given `KeyId` is stored in the HSM
     pub async fn is_key_available(&mut self, key_id: KeyId) -> Result<RequestId, Error> {
         let request = Request::IsKeyAvailable {
             client_id: ClientId::default(),
@@ -165,10 +173,22 @@ impl<
         self.send_request(request).await
     }
 
+    /// Symmetrically encrypt a buffer in-place using a key stored in the HSM.
+    ///
+    /// # Arguments
+    ///
+    /// * `algorithm`: The `SymmetricEncryptionAlgorithm` to be used
+    /// * `key_id`: The key identifier to use
+    /// * `nonce`: The 'Number used once' to use
+    /// * `plaintext_size`: Used for algorithms that require padding (e.g. AES-CBC) only.
+    /// Indicates the size of the actual plaintext located in `buffer` starting from the beginning.
+    /// * `buffer`: The buffer containing the plaintext and room for padding (if needed)
+    /// * `aad`: 'Additional authenticated data' to be used for tag computation
+    /// * `tag`: Buffer for the generated tag
     #[allow(clippy::too_many_arguments)]
     pub async fn encrypt_in_place(
         &mut self,
-        algorithm: SymmetricEncryptionAlgorithm,
+        algorithm: SymmetricAlgorithm,
         key_id: KeyId,
         nonce: &'data [u8],
         plaintext_size: usize,
@@ -177,7 +197,7 @@ impl<
         tag: &'data mut [u8],
     ) -> Result<RequestId, Error> {
         let request = match algorithm {
-            SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => Request::EncryptChaChaPoly {
+            SymmetricAlgorithm::ChaCha20Poly1305 => Request::EncryptChaChaPoly {
                 client_id: ClientId::default(),
                 request_id: RequestId::default(),
                 key_id,
@@ -186,7 +206,7 @@ impl<
                 aad,
                 tag,
             },
-            SymmetricEncryptionAlgorithm::AesGcm => Request::EncryptAesGcm {
+            SymmetricAlgorithm::AesGcm => Request::EncryptAesGcm {
                 client_id: Default::default(),
                 request_id: Default::default(),
                 key_id,
@@ -195,7 +215,7 @@ impl<
                 aad,
                 tag,
             },
-            SymmetricEncryptionAlgorithm::AesCbc => Request::EncryptAesCbc {
+            SymmetricAlgorithm::AesCbc => Request::EncryptAesCbc {
                 client_id: Default::default(),
                 request_id: Default::default(),
                 key_id,
@@ -207,10 +227,22 @@ impl<
         self.send_request(request).await
     }
 
+    /// Symmetrically encrypt a buffer in-place using a caller-provided key.
+    ///
+    /// # Arguments
+    ///
+    /// * `algorithm`: The `SymmetricEncryptionAlgorithm` to be used
+    /// * `key`: The key to use
+    /// * `nonce`: The 'Number used once' to use
+    /// * `plaintext_size`: Used for algorithms that require padding (e.g. AES-CBC) only.
+    /// Indicates the size of the actual plaintext located in `buffer` starting from the beginning.
+    /// * `buffer`: The buffer containing the plaintext and room for padding (if needed)
+    /// * `aad`: 'Additional authenticated data' to be used for tag computation
+    /// * `tag`: Buffer for the generated tag
     #[allow(clippy::too_many_arguments)]
     pub async fn encrypt_in_place_external_key(
         &mut self,
-        algorithm: SymmetricEncryptionAlgorithm,
+        algorithm: SymmetricAlgorithm,
         key: &'data [u8],
         nonce: &'data [u8],
         plaintext_size: usize,
@@ -219,18 +251,16 @@ impl<
         tag: &'data mut [u8],
     ) -> Result<RequestId, Error> {
         let request = match algorithm {
-            SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => {
-                Request::EncryptChaChaPolyExternalKey {
-                    client_id: ClientId::default(),
-                    request_id: RequestId::default(),
-                    key,
-                    nonce,
-                    buffer,
-                    aad,
-                    tag,
-                }
-            }
-            SymmetricEncryptionAlgorithm::AesGcm => Request::EncryptAesGcmExternalKey {
+            SymmetricAlgorithm::ChaCha20Poly1305 => Request::EncryptChaChaPolyExternalKey {
+                client_id: ClientId::default(),
+                request_id: RequestId::default(),
+                key,
+                nonce,
+                buffer,
+                aad,
+                tag,
+            },
+            SymmetricAlgorithm::AesGcm => Request::EncryptAesGcmExternalKey {
                 client_id: Default::default(),
                 request_id: Default::default(),
                 key,
@@ -239,7 +269,7 @@ impl<
                 aad,
                 tag,
             },
-            SymmetricEncryptionAlgorithm::AesCbc => Request::EncryptAesCbcExternalKey {
+            SymmetricAlgorithm::AesCbc => Request::EncryptAesCbcExternalKey {
                 client_id: Default::default(),
                 request_id: Default::default(),
                 key,
@@ -251,9 +281,19 @@ impl<
         self.send_request(request).await
     }
 
+    /// Symmetrically decrypt a buffer in-place using a key stored in the HSM.
+    ///
+    /// # Arguments
+    ///
+    /// * `algorithm`: The `SymmetricEncryptionAlgorithm` to be used
+    /// * `key_id`: The key identifier to use
+    /// * `nonce`: The 'Number used once' to use
+    /// * `buffer`: The buffer containing the plaintext and room for padding (if needed)
+    /// * `aad`: 'Additional authenticated data' to be used for tag computation
+    /// * `tag`: The authentication tag used to authenticate the data
     pub async fn decrypt_in_place(
         &mut self,
-        algorithm: SymmetricEncryptionAlgorithm,
+        algorithm: SymmetricAlgorithm,
         key_id: KeyId,
         nonce: &'data [u8],
         buffer: &'data mut [u8],
@@ -261,7 +301,7 @@ impl<
         tag: &'data [u8],
     ) -> Result<RequestId, Error> {
         let request = match algorithm {
-            SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => Request::DecryptChaChaPoly {
+            SymmetricAlgorithm::ChaCha20Poly1305 => Request::DecryptChaChaPoly {
                 client_id: ClientId::default(),
                 request_id: RequestId::default(),
                 key_id,
@@ -270,7 +310,7 @@ impl<
                 aad,
                 tag,
             },
-            SymmetricEncryptionAlgorithm::AesGcm => Request::DecryptAesGcm {
+            SymmetricAlgorithm::AesGcm => Request::DecryptAesGcm {
                 client_id: Default::default(),
                 request_id: Default::default(),
                 key_id,
@@ -279,7 +319,7 @@ impl<
                 aad,
                 tag,
             },
-            SymmetricEncryptionAlgorithm::AesCbc => Request::DecryptAesCbc {
+            SymmetricAlgorithm::AesCbc => Request::DecryptAesCbc {
                 client_id: Default::default(),
                 request_id: Default::default(),
                 key_id,
@@ -290,9 +330,21 @@ impl<
         self.send_request(request).await
     }
 
+    /// Symmetrically decrypt a buffer in-place using a caller-provided key.
+    ///
+    /// # Arguments
+    ///
+    /// * `algorithm`: The `SymmetricEncryptionAlgorithm` to be used
+    /// * `key`: The key to use
+    /// * `nonce`: The 'Number used once' to use
+    /// * `plaintext_size`: Used for algorithms that require padding (e.g. AES-CBC) only.
+    /// Indicates the size of the actual plaintext located in `buffer` starting from the beginning.
+    /// * `buffer`: The buffer containing the plaintext and room for padding (if needed)
+    /// * `aad`: 'Additional authenticated data' to be used for tag computation
+    /// * `tag`: The authentication tag used to authenticate the data
     pub async fn decrypt_in_place_external_key(
         &mut self,
-        algorithm: SymmetricEncryptionAlgorithm,
+        algorithm: SymmetricAlgorithm,
         key: &'data [u8],
         nonce: &'data [u8],
         buffer: &'data mut [u8],
@@ -300,18 +352,16 @@ impl<
         tag: &'data [u8],
     ) -> Result<RequestId, Error> {
         let request = match algorithm {
-            SymmetricEncryptionAlgorithm::ChaCha20Poly1305 => {
-                Request::DecryptChaChaPolyExternalKey {
-                    client_id: ClientId::default(),
-                    request_id: RequestId::default(),
-                    key,
-                    nonce,
-                    buffer,
-                    aad,
-                    tag,
-                }
-            }
-            SymmetricEncryptionAlgorithm::AesGcm => Request::DecryptAesGcmExternalKey {
+            SymmetricAlgorithm::ChaCha20Poly1305 => Request::DecryptChaChaPolyExternalKey {
+                client_id: ClientId::default(),
+                request_id: RequestId::default(),
+                key,
+                nonce,
+                buffer,
+                aad,
+                tag,
+            },
+            SymmetricAlgorithm::AesGcm => Request::DecryptAesGcmExternalKey {
                 client_id: Default::default(),
                 request_id: Default::default(),
                 key,
@@ -320,7 +370,7 @@ impl<
                 aad,
                 tag,
             },
-            SymmetricEncryptionAlgorithm::AesCbc => Request::DecryptAesCbcExternalKey {
+            SymmetricAlgorithm::AesCbc => Request::DecryptAesCbcExternalKey {
                 client_id: Default::default(),
                 request_id: Default::default(),
                 key,
@@ -331,6 +381,7 @@ impl<
         self.send_request(request).await
     }
 
+    /// Sign a prehashed message using a key stored in the HSM
     pub async fn sign(
         &mut self,
         key_id: KeyId,
@@ -349,6 +400,7 @@ impl<
         self.send_request(request).await
     }
 
+    /// Sign a prehashed message using a caller-provided key
     pub async fn sign_external_key(
         &mut self,
         private_key: &'data [u8],
@@ -367,6 +419,7 @@ impl<
         self.send_request(request).await
     }
 
+    /// Verify a prehashed message using a key stored in the HSM
     pub async fn verify(
         &mut self,
         key_id: KeyId,
@@ -385,6 +438,7 @@ impl<
         self.send_request(request).await
     }
 
+    /// Verify a prehashed message using a caller-provided key
     pub async fn verify_external_key(
         &mut self,
         public_key: &'data [u8],

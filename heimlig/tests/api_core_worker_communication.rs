@@ -3,7 +3,7 @@ mod tests {
     use embassy_sync::mutex::Mutex;
     use futures::future::join;
     use heimlig::client::api::Api;
-    use heimlig::client::api::SymmetricEncryptionAlgorithm::{AesCbc, AesGcm, ChaCha20Poly1305};
+    use heimlig::client::api::SymmetricAlgorithm::{AesCbc, AesGcm, ChaCha20Poly1305};
     use heimlig::common::jobs::{Error, Request, RequestType, Response};
     use heimlig::common::limits::MAX_RANDOM_SIZE;
     use heimlig::crypto;
@@ -34,7 +34,7 @@ mod tests {
         ty: KeyType::Symmetric128Bits,
         permissions: KeyPermissions {
             import: true,
-            export: false,
+            export_private: false,
             overwrite: false,
             delete: false,
         },
@@ -44,7 +44,7 @@ mod tests {
         ty: KeyType::Symmetric256Bits,
         permissions: KeyPermissions {
             import: true,
-            export: true,
+            export_private: true,
             overwrite: false,
             delete: false,
         },
@@ -54,7 +54,7 @@ mod tests {
         ty: KeyType::EccKeypairNistP256,
         permissions: KeyPermissions {
             import: true,
-            export: true,
+            export_private: true,
             overwrite: false,
             delete: false,
         },

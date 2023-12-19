@@ -110,7 +110,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         match self.layout.get(id) {
             None => Err(Error::InvalidKeyId),
             Some(key_layout) => {
-                if !key_layout.info.permissions.export {
+                if !key_layout.info.permissions.export_private {
                     return Err(Error::NotAllowed);
                 }
                 self.export_symmetric_key_unchecked(id, dest)
@@ -156,7 +156,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         match self.layout.get(id) {
             None => Err(Error::InvalidKeyId),
             Some(key_layout) => {
-                if !key_layout.info.permissions.export {
+                if !key_layout.info.permissions.export_private {
                     return Err(Error::NotAllowed);
                 }
                 self.export_private_key_unchecked(id, dest)
@@ -352,7 +352,7 @@ pub(crate) mod test {
         ty: KeyType::Symmetric128Bits,
         permissions: KeyPermissions {
             import: true,
-            export: true,
+            export_private: true,
             overwrite: false,
             delete: true,
         },
@@ -362,7 +362,7 @@ pub(crate) mod test {
         ty: KeyType::EccKeypairNistP256,
         permissions: KeyPermissions {
             import: true,
-            export: true,
+            export_private: true,
             overwrite: false,
             delete: true,
         },
@@ -463,7 +463,7 @@ pub(crate) mod test {
             ty: KeyType::Symmetric128Bits,
             permissions: KeyPermissions {
                 import: true,
-                export: false,
+                export_private: false,
                 overwrite: false,
                 delete: false,
             },
@@ -494,7 +494,7 @@ pub(crate) mod test {
             ty: KeyType::Symmetric128Bits,
             permissions: KeyPermissions {
                 import: true,
-                export: false,
+                export_private: false,
                 overwrite: true,
                 delete: false,
             },
