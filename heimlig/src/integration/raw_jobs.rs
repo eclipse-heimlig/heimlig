@@ -292,7 +292,7 @@ pub enum ResponseRaw {
     GetRandom {
         client_id: ClientIdRaw,
         request_id: RequestIdRaw,
-        data_data: *const u8,
+        data_data: *mut u8,
         data_size: u32,
     },
     GenerateSymmetricKey {
@@ -1305,7 +1305,7 @@ impl From<Response<'_>> for ResponseRaw {
             } => ResponseRaw::GetRandom {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                data_data: data.as_ptr(),
+                data_data: data.as_mut_ptr(),
                 data_size: data.len() as u32,
             },
             Response::GenerateSymmetricKey {
