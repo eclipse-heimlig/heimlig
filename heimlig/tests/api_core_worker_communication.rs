@@ -115,13 +115,13 @@ mod tests {
     #[allow(clippy::type_complexity)]
     fn alloc_aes_gcm_vars() -> (
         [u8; crypto::aes::KEY256_SIZE],
-        [u8; crypto::aes::GCM_NONCE_SIZE],
+        [u8; crypto::aes::GCM_IV_SIZE],
         [u8; PLAINTEXT_SIZE],
         [u8; AAD_SIZE],
         [u8; TAG_SIZE],
     ) {
         let key: [u8; crypto::aes::KEY256_SIZE] = *b"Fortuna Major or Oddsbodikins???";
-        let nonce: [u8; crypto::aes::GCM_NONCE_SIZE] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+        let nonce: [u8; crypto::aes::GCM_IV_SIZE] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
         let plaintext: [u8; PLAINTEXT_SIZE] = *b"I solemnly swear I am up to no good!";
         let aad: [u8; AAD_SIZE] = *b"When in doubt, go to the library.";
         let tag: [u8; TAG_SIZE] = [0u8; TAG_SIZE];

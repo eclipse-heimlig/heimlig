@@ -49,25 +49,25 @@ impl<
                         client_id,
                         request_id,
                         key_id,
-                        nonce,
+                        iv,
                         buffer,
                         aad,
                         tag,
                     } => {
-                        self.encrypt_aes_gcm(client_id, request_id, key_id, nonce, buffer, aad, tag)
+                        self.encrypt_aes_gcm(client_id, request_id, key_id, iv, buffer, aad, tag)
                             .await
                     }
                     Request::EncryptAesGcmExternalKey {
                         client_id,
                         request_id,
                         key,
-                        nonce,
+                        iv,
                         buffer,
                         aad,
                         tag,
                     } => {
                         self.encrypt_aes_gcm_external_key(
-                            client_id, request_id, key, nonce, buffer, aad, tag,
+                            client_id, request_id, key, iv, buffer, aad, tag,
                         )
                         .await
                     }
@@ -75,25 +75,25 @@ impl<
                         client_id,
                         request_id,
                         key_id,
-                        nonce,
+                        iv,
                         buffer,
                         aad,
                         tag,
                     } => {
-                        self.decrypt_aes_gcm(client_id, request_id, key_id, nonce, buffer, aad, tag)
+                        self.decrypt_aes_gcm(client_id, request_id, key_id, iv, buffer, aad, tag)
                             .await
                     }
                     Request::DecryptAesGcmExternalKey {
                         client_id,
                         request_id,
                         key,
-                        nonce,
+                        iv,
                         buffer,
                         aad,
                         tag,
                     } => {
                         self.decrypt_aes_gcm_external_key(
-                            client_id, request_id, key, nonce, buffer, aad, tag,
+                            client_id, request_id, key, iv, buffer, aad, tag,
                         )
                         .await
                     }
@@ -169,7 +169,7 @@ impl<
         client_id: ClientId,
         request_id: RequestId,
         key_id: KeyId,
-        nonce: &[u8],
+        iv: &[u8],
         buffer: &'data mut [u8],
         aad: &[u8],
         tag: &'data mut [u8],
@@ -188,10 +188,10 @@ impl<
             }
             Ok((key, key_info)) => match key_info.ty {
                 KeyType::Symmetric128Bits => {
-                    aes128gcm_encrypt_in_place_detached(key, nonce, aad, buffer)
+                    aes128gcm_encrypt_in_place_detached(key, iv, aad, buffer)
                 }
                 KeyType::Symmetric256Bits => {
-                    aes256gcm_encrypt_in_place_detached(key, nonce, aad, buffer)
+                    aes256gcm_encrypt_in_place_detached(key, iv, aad, buffer)
                 }
                 _ => {
                     return Response::Error {
@@ -234,14 +234,14 @@ impl<
         client_id: ClientId,
         request_id: RequestId,
         key: &[u8],
-        nonce: &[u8],
+        iv: &[u8],
         buffer: &'data mut [u8],
         aad: &[u8],
         tag: &'data mut [u8],
     ) -> Response<'data> {
         let result = match key.len() {
-            KEY128_SIZE => aes128gcm_encrypt_in_place_detached(key, nonce, aad, buffer),
-            KEY256_SIZE => aes256gcm_encrypt_in_place_detached(key, nonce, aad, buffer),
+            KEY128_SIZE => aes128gcm_encrypt_in_place_detached(key, iv, aad, buffer),
+            KEY256_SIZE => aes256gcm_encrypt_in_place_detached(key, iv, aad, buffer),
             _ => {
                 return Response::Error {
                     client_id,
@@ -282,7 +282,7 @@ impl<
         client_id: ClientId,
         request_id: RequestId,
         key_id: KeyId,
-        nonce: &[u8],
+        iv: &[u8],
         buffer: &'data mut [u8],
         aad: &[u8],
         tag: &[u8],
@@ -301,10 +301,10 @@ impl<
             }
             Ok((key, key_info)) => match key_info.ty {
                 KeyType::Symmetric128Bits => {
-                    aes128gcm_decrypt_in_place_detached(key, nonce, aad, buffer, tag)
+                    aes128gcm_decrypt_in_place_detached(key, iv, aad, buffer, tag)
                 }
                 KeyType::Symmetric256Bits => {
-                    aes256gcm_decrypt_in_place_detached(key, nonce, aad, buffer, tag)
+                    aes256gcm_decrypt_in_place_detached(key, iv, aad, buffer, tag)
                 }
                 _ => {
                     return Response::Error {
@@ -335,14 +335,14 @@ impl<
         client_id: ClientId,
         request_id: RequestId,
         key: &[u8],
-        nonce: &[u8],
+        iv: &[u8],
         buffer: &'data mut [u8],
         aad: &[u8],
         tag: &[u8],
     ) -> Response<'data> {
         let result = match key.len() {
-            KEY128_SIZE => aes128gcm_decrypt_in_place_detached(key, nonce, aad, buffer, tag),
-            KEY256_SIZE => aes256gcm_decrypt_in_place_detached(key, nonce, aad, buffer, tag),
+            KEY128_SIZE => aes128gcm_decrypt_in_place_detached(key, iv, aad, buffer, tag),
+            KEY256_SIZE => aes256gcm_decrypt_in_place_detached(key, iv, aad, buffer, tag),
             _ => {
                 return Response::Error {
                     client_id,
