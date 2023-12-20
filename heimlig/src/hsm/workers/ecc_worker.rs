@@ -42,80 +42,76 @@ impl<
     /// Drive the worker to process the next request.
     /// This method is supposed to be called by a system task that owns this worker.
     pub async fn execute(&mut self) -> Result<(), Error> {
-        match self.requests.next().await {
-            None => Err(Error::StreamTerminated),
-            Some(request) => {
-                let response = match request {
-                    Request::GenerateKeyPair {
-                        client_id,
-                        request_id,
-                        key_id,
-                        overwrite,
-                    } => {
-                        self.generate_key_pair(client_id, request_id, key_id, overwrite)
-                            .await
-                    }
-                    Request::Sign {
-                        client_id,
-                        request_id,
-                        key_id,
-                        message,
-                        prehashed,
-                        signature,
-                    } => {
-                        self.sign(client_id, request_id, key_id, message, prehashed, signature)
-                            .await
-                    }
-                    Request::SignExternalKey {
-                        client_id,
-                        request_id,
-                        private_key,
-                        message,
-                        prehashed,
-                        signature,
-                    } => {
-                        self.sing_external_key(
-                            client_id,
-                            request_id,
-                            private_key,
-                            message,
-                            prehashed,
-                            signature,
-                        )
-                        .await
-                    }
-                    Request::Verify {
-                        client_id,
-                        request_id,
-                        key_id,
-                        message,
-                        prehashed,
-                        signature,
-                    } => {
-                        self.verify(client_id, request_id, key_id, message, prehashed, signature)
-                            .await
-                    }
-                    Request::VerifyExternalKey {
-                        client_id,
-                        request_id,
-                        public_key,
-                        message,
-                        prehashed,
-                        signature,
-                    } => {
-                        self.verify_external_key(
-                            client_id, request_id, public_key, message, prehashed, signature,
-                        )
-                        .await
-                    }
-                    _ => Err(Error::UnexpectedRequestType)?,
-                };
-                self.responses
-                    .send(response)
+        let request = self.requests.next().await.ok_or(Error::StreamTerminated)?;
+        let response = match request {
+            Request::GenerateKeyPair {
+                client_id,
+                request_id,
+                key_id,
+                overwrite,
+            } => {
+                self.generate_key_pair(client_id, request_id, key_id, overwrite)
                     .await
-                    .map_err(|_e| Error::Send)
             }
-        }
+            Request::Sign {
+                client_id,
+                request_id,
+                key_id,
+                message,
+                prehashed,
+                signature,
+            } => {
+                self.sign(client_id, request_id, key_id, message, prehashed, signature)
+                    .await
+            }
+            Request::SignExternalKey {
+                client_id,
+                request_id,
+                private_key,
+                message,
+                prehashed,
+                signature,
+            } => {
+                self.sing_external_key(
+                    client_id,
+                    request_id,
+                    private_key,
+                    message,
+                    prehashed,
+                    signature,
+                )
+                .await
+            }
+            Request::Verify {
+                client_id,
+                request_id,
+                key_id,
+                message,
+                prehashed,
+                signature,
+            } => {
+                self.verify(client_id, request_id, key_id, message, prehashed, signature)
+                    .await
+            }
+            Request::VerifyExternalKey {
+                client_id,
+                request_id,
+                public_key,
+                message,
+                prehashed,
+                signature,
+            } => {
+                self.verify_external_key(
+                    client_id, request_id, public_key, message, prehashed, signature,
+                )
+                .await
+            }
+            _ => Err(Error::UnexpectedRequestType)?,
+        };
+        self.responses
+            .send(response)
+            .await
+            .map_err(|_e| Error::Send)
     }
 
     async fn generate_key_pair(

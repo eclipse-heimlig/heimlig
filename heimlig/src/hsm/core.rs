@@ -340,29 +340,27 @@ impl<
         client_id: ClientId,
         worker_id: WorkerId,
     ) -> Result<(), Error> {
-        return match self.workers.get(worker_id.idx()) {
-            None => Err(Error::Internal(InternalError::InvalidWorkerId(worker_id))),
-            Some(worker) => {
-                let response = worker
-                    .responses
-                    .lock()
-                    .await
-                    .deref_mut()
-                    .next()
-                    .await
-                    .ok_or(Error::Internal(InternalError::EmptyWorkerResponseQueue(
-                        worker_id,
-                    )))?;
-                // Mismatch of computed and response client IDs
-                if client_id != response.get_client_id() {
-                    return Err(Error::Internal(InternalError::ClientIdMismatch(
-                        client_id,
-                        response.get_client_id(),
-                    )));
-                }
-                self.send_to_client(response).await
-            }
-        };
+        let response = self
+            .workers
+            .get(worker_id.idx())
+            .ok_or(Error::Internal(InternalError::InvalidWorkerId(worker_id)))?
+            .responses
+            .lock()
+            .await
+            .deref_mut()
+            .next()
+            .await
+            .ok_or(Error::Internal(InternalError::EmptyWorkerResponseQueue(
+                worker_id,
+            )))?;
+        if client_id != response.get_client_id() {
+            // Mismatch of computed and response client IDs
+            return Err(Error::Internal(InternalError::ClientIdMismatch(
+                client_id,
+                response.get_client_id(),
+            )));
+        }
+        self.send_to_client(response).await
     }
 
     async fn forward_request(
@@ -370,36 +368,33 @@ impl<
         client_id: ClientId,
         worker_id: WorkerId,
     ) -> Result<(), Error> {
-        return match self.clients.get(client_id.idx()) {
-            None => Err(Error::Internal(InternalError::InvalidClientId(client_id))),
-            Some(client) => {
-                let mut request = client
-                    .requests
-                    .lock()
-                    .await
-                    .deref_mut()
-                    .next()
-                    .await
-                    .ok_or(Error::Internal(InternalError::EmptyClientRequestQueue(
-                        client_id,
-                    )))?;
+        let mut request = self
+            .clients
+            .get(client_id.idx())
+            .ok_or(Error::Internal(InternalError::InvalidClientId(client_id)))?
+            .requests
+            .lock()
+            .await
+            .deref_mut()
+            .next()
+            .await
+            .ok_or(Error::Internal(InternalError::EmptyClientRequestQueue(
+                client_id,
+            )))?;
 
-                // Fill client ID field that will be used to send back the response later
-                request.set_client_id(client_id);
+        // Fill client ID field that will be used to send back the response later
+        request.set_client_id(client_id);
 
-                match self.workers.get(worker_id.idx()) {
-                    None => Err(Error::Internal(InternalError::InvalidWorkerId(worker_id))),
-                    Some(worker) => worker
-                        .requests
-                        .lock()
-                        .await
-                        .deref_mut()
-                        .send(request)
-                        .await
-                        .map_err(|_e| Error::Send),
-                }
-            }
-        };
+        self.workers
+            .get(worker_id.idx())
+            .ok_or(Error::Internal(InternalError::InvalidWorkerId(worker_id)))?
+            .requests
+            .lock()
+            .await
+            .deref_mut()
+            .send(request)
+            .await
+            .map_err(|_e| Error::Send)
     }
 
     async fn process_on_core(&mut self, client_id: ClientId) -> Result<(), Error> {
@@ -576,17 +571,16 @@ impl<
 
     async fn send_to_client(&mut self, response: Response<'data>) -> Result<(), Error> {
         let client_id = response.get_client_id();
-        return match self.clients.get(client_id.idx()) {
-            None => Err(Error::Internal(InternalError::InvalidClientId(client_id))),
-            Some(client) => Ok(client
-                .responses
-                .lock()
-                .await
-                .deref_mut()
-                .send(response)
-                .await
-                .map_err(|_e| Error::Send)?),
-        };
+        self.clients
+            .get(client_id.idx())
+            .ok_or(Error::Internal(InternalError::InvalidClientId(client_id)))?
+            .responses
+            .lock()
+            .await
+            .deref_mut()
+            .send(response)
+            .await
+            .map_err(|_e| Error::Send)
     }
 
     fn no_key_store_response(client_id: ClientId, request_id: RequestId) -> Response<'data> {
