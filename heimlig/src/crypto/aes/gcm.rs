@@ -306,6 +306,19 @@ mod test {
                         ),
                         Err(Error::InvalidTagSize)
                     );
+                    let mut buffer = $plaintext.to_owned();
+                    let mut short_tag: Vec<u8, { GCM_TAG_SIZE - 1 }> = Vec::new();
+                    short_tag.resize(size, 0).expect("Allocation error");
+                    assert_eq!(
+                        encrypt_in_place_detached::<$cipher>(
+                            $key,
+                            $iv,
+                            &[],
+                            &mut buffer,
+                            &mut short_tag
+                        ),
+                        Err(Error::InvalidTagSize)
+                    );
                 }
 
                 let mut buffer = $plaintext.to_owned();

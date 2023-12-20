@@ -161,7 +161,6 @@ mod test {
                 encrypt_in_place_detached(&wrong_key, NONCE, &[], &mut buffer, &mut tag),
                 Err(Error::InvalidSymmetricKeySize)
             );
-            let tag = [0u8; TAG_SIZE];
             assert_eq!(
                 decrypt_in_place_detached(&wrong_key, NONCE, &[], &mut buffer, &tag),
                 Err(Error::InvalidSymmetricKeySize)
@@ -177,7 +176,6 @@ mod test {
                 encrypt_in_place_detached(KEY, &wrong_nonce, &[], &mut buffer, &mut tag),
                 Err(Error::InvalidIvSize)
             );
-            let tag = [0u8; TAG_SIZE];
             assert_eq!(
                 decrypt_in_place_detached(KEY, &wrong_nonce, &[], &mut buffer, &tag),
                 Err(Error::InvalidIvSize)
@@ -189,6 +187,10 @@ mod test {
             let mut wrong_tag: Vec<u8, MAX_SIZE> = Vec::new();
             wrong_tag.resize(size, 0).expect("Allocation error");
             let mut buffer = PLAINTEXT.to_owned();
+            assert_eq!(
+                encrypt_in_place_detached(KEY, NONCE, &[], &mut buffer, &mut wrong_tag),
+                Err(Error::InvalidTagSize)
+            );
             assert_eq!(
                 decrypt_in_place_detached(KEY, NONCE, &[], &mut buffer, &wrong_tag),
                 Err(Error::InvalidTagSize)
