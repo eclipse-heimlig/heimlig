@@ -37,7 +37,7 @@ pub struct KeyPermissions {
     pub import: bool,
     /// Whether or not private key material can be exported. Both symmetric keys and private
     /// asymmetric keys are considered private. Public keys are always exportable.
-    pub export: bool,
+    pub export_private: bool,
     /// Whether or not the key can be overwritten (either through import or generation).
     pub overwrite: bool,
     /// Whether or not the key can be deleted

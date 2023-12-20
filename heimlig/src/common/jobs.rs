@@ -84,6 +84,14 @@ pub enum RequestType {
     EncryptChaChaPolyExternalKey,
     DecryptChaChaPoly,
     DecryptChaChaPolyExternalKey,
+    EncryptAesGcm,
+    EncryptAesGcmExternalKey,
+    DecryptAesGcm,
+    DecryptAesGcmExternalKey,
+    EncryptAesCbc,
+    EncryptAesCbcExternalKey,
+    DecryptAesCbc,
+    DecryptAesCbcExternalKey,
     Sign,
     SignExternalKey,
     Verify,
@@ -153,7 +161,7 @@ pub enum Request<'data> {
         request_id: RequestId,
         key_id: KeyId,
         nonce: &'data [u8],
-        plaintext: &'data mut [u8],
+        buffer: &'data mut [u8],
         aad: &'data [u8],
         tag: &'data mut [u8],
     },
@@ -162,7 +170,7 @@ pub enum Request<'data> {
         request_id: RequestId,
         key: &'data [u8],
         nonce: &'data [u8],
-        plaintext: &'data mut [u8],
+        buffer: &'data mut [u8],
         aad: &'data [u8],
         tag: &'data mut [u8],
     },
@@ -171,7 +179,7 @@ pub enum Request<'data> {
         request_id: RequestId,
         key_id: KeyId,
         nonce: &'data [u8],
-        ciphertext: &'data mut [u8],
+        buffer: &'data mut [u8],
         aad: &'data [u8],
         tag: &'data [u8],
     },
@@ -180,9 +188,75 @@ pub enum Request<'data> {
         request_id: RequestId,
         key: &'data [u8],
         nonce: &'data [u8],
-        ciphertext: &'data mut [u8],
+        buffer: &'data mut [u8],
         aad: &'data [u8],
         tag: &'data [u8],
+    },
+    EncryptAesGcm {
+        client_id: ClientId,
+        request_id: RequestId,
+        key_id: KeyId,
+        iv: &'data [u8],
+        buffer: &'data mut [u8],
+        aad: &'data [u8],
+        tag: &'data mut [u8],
+    },
+    EncryptAesGcmExternalKey {
+        client_id: ClientId,
+        request_id: RequestId,
+        key: &'data [u8],
+        iv: &'data [u8],
+        buffer: &'data mut [u8],
+        aad: &'data [u8],
+        tag: &'data mut [u8],
+    },
+    DecryptAesGcm {
+        client_id: ClientId,
+        request_id: RequestId,
+        key_id: KeyId,
+        iv: &'data [u8],
+        buffer: &'data mut [u8],
+        aad: &'data [u8],
+        tag: &'data [u8],
+    },
+    DecryptAesGcmExternalKey {
+        client_id: ClientId,
+        request_id: RequestId,
+        key: &'data [u8],
+        iv: &'data [u8],
+        buffer: &'data mut [u8],
+        aad: &'data [u8],
+        tag: &'data [u8],
+    },
+    EncryptAesCbc {
+        client_id: ClientId,
+        request_id: RequestId,
+        key_id: KeyId,
+        iv: &'data [u8],
+        buffer: &'data mut [u8],
+        plaintext_size: usize,
+    },
+    EncryptAesCbcExternalKey {
+        client_id: ClientId,
+        request_id: RequestId,
+        key: &'data [u8],
+        iv: &'data [u8],
+        buffer: &'data mut [u8],
+        plaintext_size: usize,
+    },
+    DecryptAesCbc {
+        client_id: ClientId,
+        request_id: RequestId,
+        key_id: KeyId,
+        iv: &'data [u8],
+        buffer: &'data mut [u8],
+    },
+    DecryptAesCbcExternalKey {
+        client_id: ClientId,
+        request_id: RequestId,
+        key: &'data [u8],
+        iv: &'data [u8],
+        buffer: &'data mut [u8],
     },
     Sign {
         client_id: ClientId,
@@ -239,6 +313,8 @@ impl RequestType {
     }
 }
 
+// All slices are mutable here as the borrow checker should guarantee to the client that it has
+// exclusive access to the underlying memory and can safely deallocate it.
 /// A response from the HSM containing the results of a cryptographic task.
 #[derive(Debug)]
 pub enum Response<'data> {
@@ -271,17 +347,17 @@ pub enum Response<'data> {
     ExportSymmetricKey {
         client_id: ClientId,
         request_id: RequestId,
-        key: &'data [u8],
+        key: &'data mut [u8],
     },
     ExportPublicKey {
         client_id: ClientId,
         request_id: RequestId,
-        public_key: &'data [u8],
+        public_key: &'data mut [u8],
     },
     ExportPrivateKey {
         client_id: ClientId,
         request_id: RequestId,
-        private_key: &'data [u8],
+        private_key: &'data mut [u8],
     },
     IsKeyAvailable {
         client_id: ClientId,
@@ -291,13 +367,34 @@ pub enum Response<'data> {
     EncryptChaChaPoly {
         client_id: ClientId,
         request_id: RequestId,
-        ciphertext: &'data mut [u8],
+        buffer: &'data mut [u8],
         tag: &'data mut [u8],
     },
     DecryptChaChaPoly {
         client_id: ClientId,
         request_id: RequestId,
-        plaintext: &'data mut [u8],
+        buffer: &'data mut [u8],
+    },
+    EncryptAesGcm {
+        client_id: ClientId,
+        request_id: RequestId,
+        buffer: &'data mut [u8],
+        tag: &'data mut [u8],
+    },
+    DecryptAesGcm {
+        client_id: ClientId,
+        request_id: RequestId,
+        buffer: &'data mut [u8],
+    },
+    EncryptAesCbc {
+        client_id: ClientId,
+        request_id: RequestId,
+        buffer: &'data mut [u8],
+    },
+    DecryptAesCbc {
+        client_id: ClientId,
+        request_id: RequestId,
+        plaintext: &'data mut [u8], // Subslice of original buffer without padding
     },
     Sign {
         client_id: ClientId,
@@ -331,6 +428,14 @@ impl<'data> Request<'data> {
             Request::DecryptChaChaPolyExternalKey { .. } => {
                 RequestType::DecryptChaChaPolyExternalKey
             }
+            Request::EncryptAesGcm { .. } => RequestType::EncryptAesGcm,
+            Request::EncryptAesGcmExternalKey { .. } => RequestType::EncryptAesGcmExternalKey,
+            Request::DecryptAesGcm { .. } => RequestType::DecryptAesGcm,
+            Request::DecryptAesGcmExternalKey { .. } => RequestType::DecryptAesGcmExternalKey,
+            Request::EncryptAesCbc { .. } => RequestType::EncryptAesCbc,
+            Request::EncryptAesCbcExternalKey { .. } => RequestType::EncryptAesCbcExternalKey,
+            Request::DecryptAesCbc { .. } => RequestType::DecryptAesCbc,
+            Request::DecryptAesCbcExternalKey { .. } => RequestType::DecryptAesCbcExternalKey,
             Request::Sign { .. } => RequestType::Sign,
             Request::SignExternalKey { .. } => RequestType::SignExternalKey,
             Request::Verify { .. } => RequestType::Verify,
@@ -353,6 +458,14 @@ impl<'data> Request<'data> {
             Request::EncryptChaChaPolyExternalKey { client_id, .. } => *client_id = new_client_id,
             Request::DecryptChaChaPoly { client_id, .. } => *client_id = new_client_id,
             Request::DecryptChaChaPolyExternalKey { client_id, .. } => *client_id = new_client_id,
+            Request::EncryptAesGcm { client_id, .. } => *client_id = new_client_id,
+            Request::EncryptAesGcmExternalKey { client_id, .. } => *client_id = new_client_id,
+            Request::DecryptAesGcm { client_id, .. } => *client_id = new_client_id,
+            Request::DecryptAesGcmExternalKey { client_id, .. } => *client_id = new_client_id,
+            Request::EncryptAesCbc { client_id, .. } => *client_id = new_client_id,
+            Request::EncryptAesCbcExternalKey { client_id, .. } => *client_id = new_client_id,
+            Request::DecryptAesCbc { client_id, .. } => *client_id = new_client_id,
+            Request::DecryptAesCbcExternalKey { client_id, .. } => *client_id = new_client_id,
             Request::Sign { client_id, .. } => *client_id = new_client_id,
             Request::SignExternalKey { client_id, .. } => *client_id = new_client_id,
             Request::Verify { client_id, .. } => *client_id = new_client_id,
@@ -379,6 +492,14 @@ impl<'data> Request<'data> {
             Request::DecryptChaChaPolyExternalKey { request_id, .. } => {
                 *request_id = new_request_id
             }
+            Request::EncryptAesGcm { request_id, .. } => *request_id = new_request_id,
+            Request::EncryptAesGcmExternalKey { request_id, .. } => *request_id = new_request_id,
+            Request::DecryptAesGcm { request_id, .. } => *request_id = new_request_id,
+            Request::DecryptAesGcmExternalKey { request_id, .. } => *request_id = new_request_id,
+            Request::EncryptAesCbc { request_id, .. } => *request_id = new_request_id,
+            Request::EncryptAesCbcExternalKey { request_id, .. } => *request_id = new_request_id,
+            Request::DecryptAesCbc { request_id, .. } => *request_id = new_request_id,
+            Request::DecryptAesCbcExternalKey { request_id, .. } => *request_id = new_request_id,
             Request::Sign { request_id, .. } => *request_id = new_request_id,
             Request::SignExternalKey { request_id, .. } => *request_id = new_request_id,
             Request::Verify { request_id, .. } => *request_id = new_request_id,
@@ -402,6 +523,10 @@ impl<'data> Response<'data> {
             Response::IsKeyAvailable { client_id, .. } => client_id,
             Response::EncryptChaChaPoly { client_id, .. } => client_id,
             Response::DecryptChaChaPoly { client_id, .. } => client_id,
+            Response::EncryptAesGcm { client_id, .. } => client_id,
+            Response::DecryptAesGcm { client_id, .. } => client_id,
+            Response::EncryptAesCbc { client_id, .. } => client_id,
+            Response::DecryptAesCbc { client_id, .. } => client_id,
             Response::Sign { client_id, .. } => client_id,
             Response::Verify { client_id, .. } => client_id,
         }

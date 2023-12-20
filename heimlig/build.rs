@@ -6,7 +6,7 @@ fn main() {
             .with_crate(crate_dir)
             .with_language(cbindgen::Language::Cxx)
             .with_no_includes()
-            .with_namespaces(&["hsm", "internal"])
+            .with_namespaces(&["hsm"])
             .with_include_guard("RAW_JOBS_H")
             .generate()
             .expect("Unable to generate bindings")

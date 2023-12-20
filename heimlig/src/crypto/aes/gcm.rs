@@ -1,57 +1,66 @@
-use crate::crypto::{check_sizes, check_sizes_with_tag, Error};
+use crate::crypto::{check_sizes_with_tag, Error};
 use aes::{cipher::typenum::Same, cipher::Unsigned};
 use aes_gcm::{
-    aead::{
-        consts::{U12, U16},
-        Tag,
-    },
+    aead::consts::{U12, U16},
     AeadInPlace, Aes128Gcm, Aes256Gcm, KeyInit,
 };
+use zeroize::Zeroize;
 
-pub type SupportedNonceSize = U12;
+pub type SupportedIvSize = U12;
 pub type SupportedTagSize = U16;
 
 /// AES-GCM encryption: generic over an underlying AES implementation.
 fn encrypt_in_place_detached<C>(
     key: &[u8],
-    nonce: &[u8],
+    iv: &[u8],
     associated_data: &[u8],
     buffer: &mut [u8],
-) -> Result<Tag<C>, Error>
+    tag: &mut [u8],
+) -> Result<(), Error>
 where
     C: KeyInit + AeadInPlace,
-    C::NonceSize: Same<SupportedNonceSize>,
+    C::NonceSize: Same<SupportedIvSize>,
     C::TagSize: Same<SupportedTagSize>,
 {
-    check_sizes(key, nonce, C::KeySize::USIZE, C::NonceSize::USIZE)?;
-    C::new(key.into())
-        .encrypt_in_place_detached(nonce.into(), associated_data, buffer)
-        .map_err(|_| Error::Encrypt)
+    check_sizes_with_tag(
+        key,
+        iv,
+        tag,
+        C::KeySize::USIZE,
+        C::NonceSize::USIZE,
+        C::TagSize::USIZE,
+    )?;
+    let mut computed_tag = C::new(key.into())
+        .encrypt_in_place_detached(iv.into(), associated_data, buffer)
+        .map_err(|_| Error::Encrypt)?;
+    tag.copy_from_slice(&computed_tag);
+    computed_tag.zeroize();
+    Ok(())
 }
 
 /// AES-GCM decryption: generic over an underlying AES implementation.
 fn decrypt_in_place_detached<C>(
     key: &[u8],
-    nonce: &[u8],
+    iv: &[u8],
     associated_data: &[u8],
     buffer: &mut [u8],
     tag: &[u8],
 ) -> Result<(), Error>
 where
     C: KeyInit + AeadInPlace,
-    C::NonceSize: Same<SupportedNonceSize>,
+    C::NonceSize: Same<SupportedIvSize>,
     C::TagSize: Same<SupportedTagSize>,
 {
     check_sizes_with_tag(
         key,
-        nonce,
+        iv,
         tag,
         C::KeySize::USIZE,
         C::NonceSize::USIZE,
         C::TagSize::USIZE,
     )?;
     C::new(key.into())
-        .decrypt_in_place_detached(nonce.into(), associated_data, buffer, tag.into())
+        .decrypt_in_place_detached(iv.into(), associated_data, buffer, tag.into())
         .map_err(|_| Error::Decrypt)
 }
 
@@ -63,21 +72,22 @@ macro_rules! define_aes_gcm_impl {
     ) => {
         pub fn $encryptor(
             key: &[u8],
-            nonce: &[u8],
+            iv: &[u8],
             aad: &[u8],
             buffer: &mut [u8],
-        ) -> Result<Tag<$core>, Error> {
-            encrypt_in_place_detached::<$core>(key, nonce, aad, buffer)
+            tag: &mut [u8],
+        ) -> Result<(), Error> {
+            encrypt_in_place_detached::<$core>(key, iv, aad, buffer, tag)
         }
 
         pub fn $decryptor(
             key: &[u8],
-            nonce: &[u8],
+            iv: &[u8],
             aad: &[u8],
             buffer: &mut [u8],
             tag: &[u8],
         ) -> Result<(), Error> {
-            decrypt_in_place_detached::<$core>(key, nonce, aad, buffer, tag)
+            decrypt_in_place_detached::<$core>(key, iv, aad, buffer, tag)
         }
     };
 }
@@ -97,13 +107,13 @@ define_aes_gcm_impl!(
 mod test {
     extern crate alloc;
     use super::*;
-    use crate::crypto::aes::{GCM_NONCE_SIZE, GCM_TAG_SIZE, KEY128_SIZE, KEY256_SIZE};
+    use crate::crypto::aes::{GCM_IV_SIZE, GCM_TAG_SIZE, KEY128_SIZE, KEY256_SIZE};
     use alloc::borrow::ToOwned;
     use heapless::Vec;
 
     const KEY128: &[u8; KEY128_SIZE] = b"Open sesame! ...";
     const KEY256: &[u8; KEY256_SIZE] = b"Or was it 'open quinoa' instead?";
-    const NONCE: &[u8; GCM_NONCE_SIZE] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    const IV: &[u8; GCM_IV_SIZE] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
     const PLAINTEXT: &[u8] = b"Hello, World!";
     const AAD: &[u8] = b"Never gonna give you up, Never gonna let you down!";
 
@@ -112,7 +122,7 @@ mod test {
         $test_name:ident,
         $cipher:ty,
         $key:tt,
-        $nonce:tt,
+        $iv:tt,
         $associated_data:expr,
         $plaintext:tt,
         $ciphertext:tt,
@@ -121,18 +131,20 @@ mod test {
             #[test]
             fn $test_name() {
                 let mut buffer = $plaintext.to_owned();
-                let tag = encrypt_in_place_detached::<$cipher>(
+                let mut tag = $tag.to_owned();
+                encrypt_in_place_detached::<$cipher>(
                     $key,
-                    $nonce,
+                    $iv,
                     $associated_data,
                     &mut buffer,
+                    &mut tag,
                 )
                 .expect("encryption error");
                 assert_eq!(buffer, $ciphertext, "ciphertext mismatch");
                 assert_eq!(tag.as_slice(), $tag, "tag mismatch");
                 decrypt_in_place_detached::<$cipher>(
                     $key,
-                    $nonce,
+                    $iv,
                     $associated_data,
                     &mut buffer,
                     &tag,
@@ -147,7 +159,7 @@ mod test {
         test_aes128gcm_no_aad_encrypt_decrypt,
         Aes128Gcm,
         KEY128,
-        NONCE,
+        IV,
         &[],
         PLAINTEXT,
         [
@@ -165,7 +177,7 @@ mod test {
         test_aes256gcm_no_aad_encrypt_decrypt,
         Aes256Gcm,
         KEY256,
-        NONCE,
+        IV,
         &[],
         PLAINTEXT,
         [
@@ -183,7 +195,7 @@ mod test {
         test_aes128gcm_with_aad_encrypt_decrypt,
         Aes128Gcm,
         KEY128,
-        NONCE,
+        IV,
         AAD,
         PLAINTEXT,
         [
@@ -201,7 +213,7 @@ mod test {
         test_aes256gcm_with_aad_encrypt_decrypt,
         Aes256Gcm,
         KEY256,
-        NONCE,
+        IV,
         AAD,
         PLAINTEXT,
         [
@@ -220,7 +232,7 @@ mod test {
         $test_name:ident,
         $cipher:ty,
         $key:tt,
-        $nonce:tt,
+        $iv:tt,
         $plaintext:tt,
         $wrong_key_sizes:tt
     ) => {
@@ -228,17 +240,23 @@ mod test {
             fn $test_name() {
                 for size in $wrong_key_sizes {
                     let mut buffer = $plaintext.to_owned();
+                    let mut tag = [0u8; GCM_TAG_SIZE];
                     let mut wrong_key: Vec<u8, 256> = Vec::new();
                     wrong_key.resize(size, 0).expect("Allocation error");
                     assert_eq!(
-                        encrypt_in_place_detached::<$cipher>(&wrong_key, $nonce, &[], &mut buffer),
+                        encrypt_in_place_detached::<$cipher>(
+                            &wrong_key,
+                            $iv,
+                            &[],
+                            &mut buffer,
+                            &mut tag
+                        ),
                         Err(Error::InvalidSymmetricKeySize)
                     );
-                    let tag = [0u8; GCM_TAG_SIZE];
                     assert_eq!(
                         decrypt_in_place_detached::<$cipher>(
                             &wrong_key,
-                            $nonce,
+                            $iv,
                             &[],
                             &mut buffer,
                             &tag
@@ -249,17 +267,23 @@ mod test {
 
                 for size in [0, 1, 10, 16, 32] {
                     let mut buffer = $plaintext.to_owned();
-                    let mut wrong_nonce: Vec<u8, 32> = Vec::new();
-                    wrong_nonce.resize(size, 0).expect("Allocation error");
+                    let mut tag = [0u8; GCM_TAG_SIZE];
+                    let mut wrong_iv: Vec<u8, 32> = Vec::new();
+                    wrong_iv.resize(size, 0).expect("Allocation error");
                     assert_eq!(
-                        encrypt_in_place_detached::<$cipher>($key, &wrong_nonce, &[], &mut buffer),
+                        encrypt_in_place_detached::<$cipher>(
+                            $key,
+                            &wrong_iv,
+                            &[],
+                            &mut buffer,
+                            &mut tag
+                        ),
                         Err(Error::InvalidIvSize)
                     );
-                    let tag = [0u8; GCM_TAG_SIZE];
                     assert_eq!(
                         decrypt_in_place_detached::<$cipher>(
                             $key,
-                            &wrong_nonce,
+                            &wrong_iv,
                             &[],
                             &mut buffer,
                             &tag
@@ -275,21 +299,35 @@ mod test {
                     assert_eq!(
                         decrypt_in_place_detached::<$cipher>(
                             $key,
-                            $nonce,
+                            $iv,
                             &[],
                             &mut buffer,
                             &short_tag
                         ),
                         Err(Error::InvalidTagSize)
                     );
+                    let mut buffer = $plaintext.to_owned();
+                    let mut short_tag: Vec<u8, { GCM_TAG_SIZE - 1 }> = Vec::new();
+                    short_tag.resize(size, 0).expect("Allocation error");
+                    assert_eq!(
+                        encrypt_in_place_detached::<$cipher>(
+                            $key,
+                            $iv,
+                            &[],
+                            &mut buffer,
+                            &mut short_tag
+                        ),
+                        Err(Error::InvalidTagSize)
+                    );
                 }
 
                 let mut buffer = $plaintext.to_owned();
-                let tag = encrypt_in_place_detached::<$cipher>($key, $nonce, &[], &mut buffer)
+                let mut tag = [0u8; GCM_TAG_SIZE];
+                encrypt_in_place_detached::<$cipher>($key, $iv, &[], &mut buffer, &mut tag)
                     .expect("encryption error");
                 buffer[0] += 1; // Corrupt ciphertext
                 assert_eq!(
-                    decrypt_in_place_detached::<$cipher>($key, $nonce, &[], &mut buffer, &tag),
+                    decrypt_in_place_detached::<$cipher>($key, $iv, &[], &mut buffer, &tag),
                     Err(Error::Decrypt)
                 );
             }
@@ -300,7 +338,7 @@ mod test {
         test_aes128gcm_errors,
         Aes128Gcm,
         KEY128,
-        NONCE,
+        IV,
         PLAINTEXT,
         [0, 1, 8, 24, 32, 128]
     );
@@ -309,7 +347,7 @@ mod test {
         test_aes256gcm_errors,
         Aes256Gcm,
         KEY256,
-        NONCE,
+        IV,
         PLAINTEXT,
         [0, 1, 8, 16, 24, 256]
     );

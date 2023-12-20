@@ -40,12 +40,12 @@ impl<
                         request_id,
                         key_id,
                         nonce,
-                        plaintext,
+                        buffer,
                         aad,
                         tag,
                     } => {
                         self.encrypt_internal_key(
-                            client_id, request_id, key_id, nonce, plaintext, aad, tag,
+                            client_id, request_id, key_id, nonce, buffer, aad, tag,
                         )
                         .await
                     }
@@ -54,23 +54,23 @@ impl<
                         request_id,
                         key,
                         nonce,
-                        plaintext,
+                        buffer,
                         aad,
                         tag,
                     } => self.encrypt_with_external_key(
-                        client_id, request_id, key, nonce, aad, plaintext, tag,
+                        client_id, request_id, key, nonce, aad, buffer, tag,
                     ),
                     Request::DecryptChaChaPoly {
                         client_id,
                         request_id,
                         key_id,
                         nonce,
-                        ciphertext,
+                        buffer,
                         aad,
                         tag,
                     } => {
                         self.decrypt_with_internal_key(
-                            client_id, request_id, key_id, nonce, ciphertext, aad, tag,
+                            client_id, request_id, key_id, nonce, buffer, aad, tag,
                         )
                         .await
                     }
@@ -79,11 +79,11 @@ impl<
                         request_id,
                         key,
                         nonce,
-                        ciphertext,
+                        buffer,
                         aad,
                         tag,
                     } => self.decrypt_with_external_key(
-                        client_id, request_id, key, nonce, aad, ciphertext, tag,
+                        client_id, request_id, key, nonce, aad, buffer, tag,
                     ),
                     _ => Err(Error::UnexpectedRequestType)?,
                 };
@@ -187,26 +187,16 @@ impl<
         key: &[u8],
         nonce: &[u8],
         aad: &[u8],
-        ciphertext: &'data mut [u8],
+        buffer: &'data mut [u8],
         tag: &'data mut [u8],
     ) -> Response<'data> {
-        match crypto::chacha20poly1305::encrypt_in_place_detached(key, nonce, aad, ciphertext) {
-            Ok(computed_tag) => {
-                if computed_tag.len() != tag.len() {
-                    return Response::Error {
-                        client_id,
-                        request_id,
-                        error: Error::Crypto(crypto::Error::InvalidTagSize),
-                    };
-                }
-                tag.copy_from_slice(computed_tag.as_slice());
-                Response::EncryptChaChaPoly {
-                    client_id,
-                    request_id,
-                    ciphertext,
-                    tag,
-                }
-            }
+        match crypto::chacha20poly1305::encrypt_in_place_detached(key, nonce, aad, buffer, tag) {
+            Ok(()) => Response::EncryptChaChaPoly {
+                client_id,
+                request_id,
+                buffer,
+                tag,
+            },
             Err(e) => Response::Error {
                 client_id,
                 request_id,
@@ -223,14 +213,14 @@ impl<
         key: &[u8],
         nonce: &[u8],
         aad: &[u8],
-        plaintext: &'data mut [u8],
+        buffer: &'data mut [u8],
         tag: &[u8],
     ) -> Response<'data> {
-        match crypto::chacha20poly1305::decrypt_in_place_detached(key, nonce, aad, plaintext, tag) {
+        match crypto::chacha20poly1305::decrypt_in_place_detached(key, nonce, aad, buffer, tag) {
             Ok(()) => Response::DecryptChaChaPoly {
                 client_id,
                 request_id,
-                plaintext,
+                buffer,
             },
             Err(e) => Response::Error {
                 client_id,
