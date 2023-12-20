@@ -38,32 +38,28 @@ impl<
     /// Drive the worker to process the next request.
     /// This method is supposed to be called by a system task that owns this worker.
     pub async fn execute(&mut self) -> Result<(), Error> {
-        match self.requests.next().await {
-            None => Ok(()), // Nothing to process
-            Some(request) => {
-                let response = match request {
-                    Request::GetRandom {
-                        client_id,
-                        request_id,
-                        output,
-                    } => self.get_random(client_id, request_id, output).await,
-                    Request::GenerateSymmetricKey {
-                        client_id,
-                        request_id,
-                        key_id,
-                        overwrite,
-                    } => {
-                        self.generate_symmetric_key(client_id, request_id, key_id, overwrite)
-                            .await
-                    }
-                    _ => Err(Error::UnexpectedRequestType)?,
-                };
-                self.responses
-                    .send(response)
+        let request = self.requests.next().await.ok_or(Error::StreamTerminated)?;
+        let response = match request {
+            Request::GetRandom {
+                client_id,
+                request_id,
+                output,
+            } => self.get_random(client_id, request_id, output).await,
+            Request::GenerateSymmetricKey {
+                client_id,
+                request_id,
+                key_id,
+                overwrite,
+            } => {
+                self.generate_symmetric_key(client_id, request_id, key_id, overwrite)
                     .await
-                    .map_err(|_e| Error::Send)
             }
-        }
+            _ => Err(Error::UnexpectedRequestType)?,
+        };
+        self.responses
+            .send(response)
+            .await
+            .map_err(|_e| Error::Send)
     }
 
     async fn get_random(

@@ -15,7 +15,6 @@ blake3 = { version = "1.5.0", default-features = false }
 cbc = { version = "0.1.2", default-features = false, features = ["block-padding", "zeroize"] }
 ccm = { version = "0.5.0", default-features = false }
 chacha20poly1305 = { version = "0.10.1", default-features = false }
-const-default = { version = "1.0.0", default-features = false, features = ["derive"] }
 critical-section = { version = "1.1.2", default-features = false }
 ecdsa = { version = "0.16.8", default-features = false }
 ed25519-dalek = { version = "2.0.0", default-features = false, features = ["zeroize"] }

@@ -1,6 +1,5 @@
 use crate::common::jobs;
 use crate::common::jobs::{ClientId, Request, RequestId, RequestType, Response};
-use crate::crypto::rng::{EntropySource, Rng};
 use crate::hsm::keystore;
 use crate::hsm::keystore::KeyStore;
 use core::future::poll_fn;
@@ -136,16 +135,13 @@ struct WorkerChannel<
 
 pub struct Builder<
     'data,
-    'rng,
     'keystore,
     M: RawMutex, // TODO: Get rid of embassy specific mutex outside of integration code
-    E: EntropySource,
     ReqSrc: Stream<Item = Request<'data>>,
     RespSink: Sink<Response<'data>>,
     ReqSink: Sink<Request<'data>>,
     RespSrc: Stream<Item = Response<'data>>,
 > {
-    rng: Option<&'rng Mutex<M, &'rng mut Rng<E>>>,
     key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
     clients: Vec<ClientChannel<'data, ReqSrc, RespSink, M>, MAX_CLIENTS>,
     workers: Vec<WorkerChannel<'data, ReqSink, RespSrc, M>, MAX_WORKERS>,
@@ -153,15 +149,13 @@ pub struct Builder<
 
 impl<
         'data,
-        'rng,
         'keystore,
         M: RawMutex,
-        E: EntropySource,
         ReqSrc: Stream<Item = Request<'data>> + Unpin,
         RespSink: Sink<Response<'data>> + Unpin,
         ReqSink: Sink<Request<'data>> + Unpin,
         RespSrc: Stream<Item = Response<'data>> + Unpin,
-    > Default for Builder<'data, 'rng, 'keystore, M, E, ReqSrc, RespSink, ReqSink, RespSrc>
+    > Default for Builder<'data, 'keystore, M, ReqSrc, RespSink, ReqSink, RespSrc>
 {
     fn default() -> Self {
         Builder::new()
@@ -170,28 +164,20 @@ impl<
 
 impl<
         'data,
-        'rng,
         'keystore,
         M: RawMutex,
-        E: EntropySource,
         ReqSrc: Stream<Item = Request<'data>> + Unpin,
         RespSink: Sink<Response<'data>> + Unpin,
         ReqSink: Sink<Request<'data>> + Unpin,
         RespSrc: Stream<Item = Response<'data>> + Unpin,
-    > Builder<'data, 'rng, 'keystore, M, E, ReqSrc, RespSink, ReqSink, RespSrc>
+    > Builder<'data, 'keystore, M, ReqSrc, RespSink, ReqSink, RespSrc>
 {
     pub fn new() -> Self {
         Builder {
-            rng: None,
             key_store: None,
             clients: Default::default(),
             workers: Default::default(),
         }
-    }
-
-    pub fn with_rng(mut self, rng: &'rng Mutex<M, &'rng mut Rng<E>>) -> Self {
-        self.rng = Some(rng);
-        self
     }
 
     pub fn with_keystore(
@@ -254,7 +240,6 @@ impl<
 impl<
         'data,
         'keystore,
-        'rng,
         M: RawMutex,
         ReqSrc: Stream<Item = Request<'data>> + Unpin,
         RespSink: Sink<Response<'data>> + Unpin,
@@ -355,29 +340,27 @@ impl<
         client_id: ClientId,
         worker_id: WorkerId,
     ) -> Result<(), Error> {
-        return match self.workers.get(worker_id.idx()) {
-            None => Err(Error::Internal(InternalError::InvalidWorkerId(worker_id))),
-            Some(worker) => {
-                let response = worker
-                    .responses
-                    .lock()
-                    .await
-                    .deref_mut()
-                    .next()
-                    .await
-                    .ok_or(Error::Internal(InternalError::EmptyWorkerResponseQueue(
-                        worker_id,
-                    )))?;
-                // Mismatch of computed and response client IDs
-                if client_id != response.get_client_id() {
-                    return Err(Error::Internal(InternalError::ClientIdMismatch(
-                        client_id,
-                        response.get_client_id(),
-                    )));
-                }
-                self.send_to_client(response).await
-            }
-        };
+        let response = self
+            .workers
+            .get(worker_id.idx())
+            .ok_or(Error::Internal(InternalError::InvalidWorkerId(worker_id)))?
+            .responses
+            .lock()
+            .await
+            .deref_mut()
+            .next()
+            .await
+            .ok_or(Error::Internal(InternalError::EmptyWorkerResponseQueue(
+                worker_id,
+            )))?;
+        if client_id != response.get_client_id() {
+            // Mismatch of computed and response client IDs
+            return Err(Error::Internal(InternalError::ClientIdMismatch(
+                client_id,
+                response.get_client_id(),
+            )));
+        }
+        self.send_to_client(response).await
     }
 
     async fn forward_request(
@@ -385,36 +368,33 @@ impl<
         client_id: ClientId,
         worker_id: WorkerId,
     ) -> Result<(), Error> {
-        return match self.clients.get(client_id.idx()) {
-            None => Err(Error::Internal(InternalError::InvalidClientId(client_id))),
-            Some(client) => {
-                let mut request = client
-                    .requests
-                    .lock()
-                    .await
-                    .deref_mut()
-                    .next()
-                    .await
-                    .ok_or(Error::Internal(InternalError::EmptyClientRequestQueue(
-                        client_id,
-                    )))?;
+        let mut request = self
+            .clients
+            .get(client_id.idx())
+            .ok_or(Error::Internal(InternalError::InvalidClientId(client_id)))?
+            .requests
+            .lock()
+            .await
+            .deref_mut()
+            .next()
+            .await
+            .ok_or(Error::Internal(InternalError::EmptyClientRequestQueue(
+                client_id,
+            )))?;
 
-                // Fill client ID field that will be used to send back the response later
-                request.set_client_id(client_id);
+        // Fill client ID field that will be used to send back the response later
+        request.set_client_id(client_id);
 
-                match self.workers.get(worker_id.idx()) {
-                    None => Err(Error::Internal(InternalError::InvalidWorkerId(worker_id))),
-                    Some(worker) => worker
-                        .requests
-                        .lock()
-                        .await
-                        .deref_mut()
-                        .send(request)
-                        .await
-                        .map_err(|_e| Error::Send),
-                }
-            }
-        };
+        self.workers
+            .get(worker_id.idx())
+            .ok_or(Error::Internal(InternalError::InvalidWorkerId(worker_id)))?
+            .requests
+            .lock()
+            .await
+            .deref_mut()
+            .send(request)
+            .await
+            .map_err(|_e| Error::Send)
     }
 
     async fn process_on_core(&mut self, client_id: ClientId) -> Result<(), Error> {
@@ -591,17 +571,16 @@ impl<
 
     async fn send_to_client(&mut self, response: Response<'data>) -> Result<(), Error> {
         let client_id = response.get_client_id();
-        return match self.clients.get(client_id.idx()) {
-            None => Err(Error::Internal(InternalError::InvalidClientId(client_id))),
-            Some(client) => Ok(client
-                .responses
-                .lock()
-                .await
-                .deref_mut()
-                .send(response)
-                .await
-                .map_err(|_e| Error::Send)?),
-        };
+        self.clients
+            .get(client_id.idx())
+            .ok_or(Error::Internal(InternalError::InvalidClientId(client_id)))?
+            .responses
+            .lock()
+            .await
+            .deref_mut()
+            .send(response)
+            .await
+            .map_err(|_e| Error::Send)
     }
 
     fn no_key_store_response(client_id: ClientId, request_id: RequestId) -> Response<'data> {

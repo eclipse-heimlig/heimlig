@@ -19,10 +19,8 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
     for MemoryKeyStore<STORAGE_SIZE, NUM_KEYS>
 {
     fn get_key_info(&self, id: KeyId) -> Result<KeyInfo, Error> {
-        match self.layout.get(id) {
-            None => Err(Error::InvalidKeyId),
-            Some(key_layout) => Ok(key_layout.info),
-        }
+        let key_layout = self.layout.get(id).ok_or(Error::InvalidKeyId)?;
+        Ok(key_layout.info)
     }
 
     fn import_symmetric_key(
@@ -32,29 +30,25 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         overwrite: bool,
     ) -> Result<(), Error> {
         let key_exists = self.is_key_available(id);
-        match self.layout.get_mut(id) {
-            None => Err(Error::InvalidKeyId),
-            Some(key_layout) => {
-                if !key_layout.info.ty.is_symmetric() {
-                    return Err(Error::InvalidKeyType);
-                }
-                if !key_layout.info.permissions.import {
-                    return Err(Error::NotAllowed);
-                }
-                if key_exists && (!overwrite || !key_layout.info.permissions.overwrite) {
-                    return Err(Error::NotAllowed);
-                }
-                if data.len() != key_layout.info.ty.key_size() {
-                    return Err(Error::InvalidBufferSize);
-                }
-                let offset = key_layout.offset;
-                let size = data.len();
-                let dest = &mut self.storage[offset..(offset + size)];
-                dest.copy_from_slice(data);
-                key_layout.actual_size = data.len();
-                Ok(())
-            }
+        let key_layout = self.layout.get_mut(id).ok_or(Error::InvalidKeyId)?;
+        if !key_layout.info.ty.is_symmetric() {
+            return Err(Error::InvalidKeyType);
         }
+        if !key_layout.info.permissions.import {
+            return Err(Error::NotAllowed);
+        }
+        if key_exists && (!overwrite || !key_layout.info.permissions.overwrite) {
+            return Err(Error::NotAllowed);
+        }
+        if data.len() != key_layout.info.ty.key_size() {
+            return Err(Error::InvalidBufferSize);
+        }
+        let offset = key_layout.offset;
+        let size = data.len();
+        let dest = &mut self.storage[offset..(offset + size)];
+        dest.copy_from_slice(data);
+        key_layout.actual_size = data.len();
+        Ok(())
     }
 
     fn import_key_pair(
@@ -65,41 +59,37 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         overwrite: bool,
     ) -> Result<(), Error> {
         let key_exists = self.is_key_available(id);
-        match self.layout.get_mut(id) {
-            None => Err(Error::InvalidKeyId),
-            Some(key_layout) => {
-                if !key_layout.info.ty.is_asymmetric() {
-                    return Err(Error::InvalidKeyType);
-                }
-                if !key_layout.info.permissions.import {
-                    return Err(Error::NotAllowed);
-                }
-                if key_exists && (!overwrite || !key_layout.info.permissions.overwrite) {
-                    return Err(Error::NotAllowed);
-                }
-                if (public_key.len() != 2 * private_key.len())
-                    || (public_key.len() + private_key.len() != key_layout.info.ty.key_size())
-                {
-                    return Err(Error::InvalidBufferSize);
-                }
-                // Copy public key
-                {
-                    let offset = key_layout.offset;
-                    let size = public_key.len();
-                    let dest = &mut self.storage[offset..(offset + size)];
-                    dest.copy_from_slice(public_key);
-                }
-                // Copy private key
-                {
-                    let offset = key_layout.offset + public_key.len();
-                    let size = private_key.len();
-                    let dest = &mut self.storage[offset..(offset + size)];
-                    dest.copy_from_slice(private_key);
-                }
-                key_layout.actual_size = public_key.len() + private_key.len();
-                Ok(())
-            }
+        let key_layout = self.layout.get_mut(id).ok_or(Error::InvalidKeyId)?;
+        if !key_layout.info.ty.is_asymmetric() {
+            return Err(Error::InvalidKeyType);
         }
+        if !key_layout.info.permissions.import {
+            return Err(Error::NotAllowed);
+        }
+        if key_exists && (!overwrite || !key_layout.info.permissions.overwrite) {
+            return Err(Error::NotAllowed);
+        }
+        if (public_key.len() != 2 * private_key.len())
+            || (public_key.len() + private_key.len() != key_layout.info.ty.key_size())
+        {
+            return Err(Error::InvalidBufferSize);
+        }
+        // Copy public key
+        {
+            let offset = key_layout.offset;
+            let size = public_key.len();
+            let dest = &mut self.storage[offset..(offset + size)];
+            dest.copy_from_slice(public_key);
+        }
+        // Copy private key
+        {
+            let offset = key_layout.offset + public_key.len();
+            let size = private_key.len();
+            let dest = &mut self.storage[offset..(offset + size)];
+            dest.copy_from_slice(private_key);
+        }
+        key_layout.actual_size = public_key.len() + private_key.len();
+        Ok(())
     }
 
     fn export_symmetric_key<'data>(
@@ -107,15 +97,11 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         id: KeyId,
         dest: &'data mut [u8],
     ) -> Result<&'data [u8], Error> {
-        match self.layout.get(id) {
-            None => Err(Error::InvalidKeyId),
-            Some(key_layout) => {
-                if !key_layout.info.permissions.export_private {
-                    return Err(Error::NotAllowed);
-                }
-                self.export_symmetric_key_unchecked(id, dest)
-            }
+        let key_layout = self.layout.get(id).ok_or(Error::InvalidKeyId)?;
+        if !key_layout.info.permissions.export_private {
+            return Err(Error::NotAllowed);
         }
+        self.export_symmetric_key_unchecked(id, dest)
     }
 
     fn export_public_key<'data>(
@@ -123,29 +109,25 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         id: KeyId,
         dest: &'data mut [u8],
     ) -> Result<&'data [u8], Error> {
-        match self.layout.get(id) {
-            None => Err(Error::InvalidKeyId),
-            Some(key_layout) => {
-                if !key_layout.info.ty.is_asymmetric() {
-                    return Err(Error::InvalidKeyType);
-                }
-                if key_layout.actual_size == 0 {
-                    return Err(Error::KeyNotFound);
-                }
-                // When saving a key, we ensure the public key is twice as long as the private key
-                assert_eq!(key_layout.actual_size % 3, 0);
-                let private_key_size = key_layout.actual_size / 3;
-                let public_key_size = 2 * private_key_size;
-                if dest.len() < public_key_size {
-                    return Err(Error::InvalidBufferSize);
-                }
-                let offset = key_layout.offset;
-                let src = &self.storage[offset..(offset + public_key_size)];
-                let dest = &mut dest[..src.len()];
-                dest.copy_from_slice(src);
-                Ok(dest)
-            }
+        let key_layout = self.layout.get(id).ok_or(Error::InvalidKeyId)?;
+        if !key_layout.info.ty.is_asymmetric() {
+            return Err(Error::InvalidKeyType);
         }
+        if key_layout.actual_size == 0 {
+            return Err(Error::KeyNotFound);
+        }
+        // When saving a key, we ensure the public key is twice as long as the private key
+        assert_eq!(key_layout.actual_size % 3, 0);
+        let private_key_size = key_layout.actual_size / 3;
+        let public_key_size = 2 * private_key_size;
+        if dest.len() < public_key_size {
+            return Err(Error::InvalidBufferSize);
+        }
+        let offset = key_layout.offset;
+        let src = &self.storage[offset..(offset + public_key_size)];
+        let dest = &mut dest[..src.len()];
+        dest.copy_from_slice(src);
+        Ok(dest)
     }
 
     fn export_private_key<'data>(
@@ -153,15 +135,11 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         id: KeyId,
         dest: &'data mut [u8],
     ) -> Result<&'data [u8], Error> {
-        match self.layout.get(id) {
-            None => Err(Error::InvalidKeyId),
-            Some(key_layout) => {
-                if !key_layout.info.permissions.export_private {
-                    return Err(Error::NotAllowed);
-                }
-                self.export_private_key_unchecked(id, dest)
-            }
+        let key_layout = self.layout.get(id).ok_or(Error::InvalidKeyId)?;
+        if !key_layout.info.permissions.export_private {
+            return Err(Error::NotAllowed);
         }
+        self.export_private_key_unchecked(id, dest)
     }
 
     fn export_symmetric_key_unchecked<'data>(
@@ -169,26 +147,22 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         id: KeyId,
         dest: &'data mut [u8],
     ) -> Result<&'data [u8], Error> {
-        match self.layout.get(id) {
-            None => Err(Error::InvalidKeyId),
-            Some(key_layout) => {
-                if !key_layout.info.ty.is_symmetric() {
-                    return Err(Error::InvalidKeyType);
-                }
-                if key_layout.actual_size == 0 {
-                    return Err(Error::KeyNotFound);
-                }
-                if dest.len() < key_layout.actual_size {
-                    return Err(Error::InvalidBufferSize);
-                }
-                let offset = key_layout.offset;
-                let size = key_layout.actual_size;
-                let src = &self.storage[offset..(offset + size)];
-                let dest = &mut dest[..src.len()];
-                dest.copy_from_slice(src);
-                Ok(dest)
-            }
+        let key_layout = self.layout.get(id).ok_or(Error::InvalidKeyId)?;
+        if !key_layout.info.ty.is_symmetric() {
+            return Err(Error::InvalidKeyType);
         }
+        if key_layout.actual_size == 0 {
+            return Err(Error::KeyNotFound);
+        }
+        if dest.len() < key_layout.actual_size {
+            return Err(Error::InvalidBufferSize);
+        }
+        let offset = key_layout.offset;
+        let size = key_layout.actual_size;
+        let src = &self.storage[offset..(offset + size)];
+        let dest = &mut dest[..src.len()];
+        dest.copy_from_slice(src);
+        Ok(dest)
     }
 
     fn export_private_key_unchecked<'data>(
@@ -196,49 +170,41 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         id: KeyId,
         dest: &'data mut [u8],
     ) -> Result<&'data [u8], Error> {
-        match self.layout.get(id) {
-            None => Err(Error::InvalidKeyId),
-            Some(key_layout) => {
-                if !key_layout.info.ty.is_asymmetric() {
-                    return Err(Error::InvalidKeyType);
-                }
-                if key_layout.actual_size == 0 {
-                    return Err(Error::KeyNotFound);
-                }
-                // When saving a key, we ensure the public key is twice as long as the private key
-                assert_eq!(key_layout.actual_size % 3, 0);
-                let private_key_size = key_layout.actual_size / 3;
-                let public_key_size = 2 * private_key_size;
-                if dest.len() < private_key_size {
-                    return Err(Error::InvalidBufferSize);
-                }
-                let offset = key_layout.offset + public_key_size;
-                let src = &self.storage[offset..(offset + private_key_size)];
-                let dest = &mut dest[..src.len()];
-                dest.copy_from_slice(src);
-                Ok(dest)
-            }
+        let key_layout = self.layout.get(id).ok_or(Error::InvalidKeyId)?;
+        if !key_layout.info.ty.is_asymmetric() {
+            return Err(Error::InvalidKeyType);
         }
+        if key_layout.actual_size == 0 {
+            return Err(Error::KeyNotFound);
+        }
+        // When saving a key, we ensure the public key is twice as long as the private key
+        assert_eq!(key_layout.actual_size % 3, 0);
+        let private_key_size = key_layout.actual_size / 3;
+        let public_key_size = 2 * private_key_size;
+        if dest.len() < private_key_size {
+            return Err(Error::InvalidBufferSize);
+        }
+        let offset = key_layout.offset + public_key_size;
+        let src = &self.storage[offset..(offset + private_key_size)];
+        let dest = &mut dest[..src.len()];
+        dest.copy_from_slice(src);
+        Ok(dest)
     }
 
     fn delete(&mut self, id: KeyId) -> Result<(), Error> {
-        match self.layout.get_mut(id) {
-            None => Err(Error::InvalidKeyId),
-            Some(key_layout) => {
-                if !key_layout.info.permissions.delete {
-                    return Err(Error::NotAllowed);
-                }
-                if key_layout.actual_size == 0 {
-                    return Err(Error::KeyNotFound);
-                }
-                let offset = key_layout.offset;
-                let size = key_layout.actual_size;
-                let key = &mut self.storage[offset..(offset + size)];
-                key.fill(0);
-                key_layout.actual_size = 0;
-                Ok(())
-            }
+        let key_layout = self.layout.get_mut(id).ok_or(Error::InvalidKeyId)?;
+        if !key_layout.info.permissions.delete {
+            return Err(Error::NotAllowed);
         }
+        if key_layout.actual_size == 0 {
+            return Err(Error::KeyNotFound);
+        }
+        let offset = key_layout.offset;
+        let size = key_layout.actual_size;
+        let key = &mut self.storage[offset..(offset + size)];
+        key.fill(0);
+        key_layout.actual_size = 0;
+        Ok(())
     }
 
     fn is_key_available(&self, id: KeyId) -> bool {
@@ -249,15 +215,11 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
     }
 
     fn size(&self, id: KeyId) -> Result<usize, Error> {
-        match self.layout.get(id) {
-            None => Err(Error::InvalidKeyId),
-            Some(key_layout) => {
-                if key_layout.actual_size == 0 {
-                    return Err(Error::KeyNotFound);
-                }
-                Ok(key_layout.actual_size)
-            }
+        let key_layout = self.layout.get(id).ok_or(Error::InvalidKeyId)?;
+        if key_layout.actual_size == 0 {
+            return Err(Error::KeyNotFound);
         }
+        Ok(key_layout.actual_size)
     }
 }
 

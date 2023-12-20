@@ -31,68 +31,62 @@ impl<
     /// Drive the worker to process the next request.
     /// This method is supposed to be called by a system task that owns this worker.
     pub async fn execute(&mut self) -> Result<(), Error> {
-        match self.requests.next().await {
-            None => Ok(()), // Nothing to process
-            Some(request) => {
-                let response = match request {
-                    Request::EncryptChaChaPoly {
-                        client_id,
-                        request_id,
-                        key_id,
-                        nonce,
-                        buffer,
-                        aad,
-                        tag,
-                    } => {
-                        self.encrypt_internal_key(
-                            client_id, request_id, key_id, nonce, buffer, aad, tag,
-                        )
-                        .await
-                    }
-                    Request::EncryptChaChaPolyExternalKey {
-                        client_id,
-                        request_id,
-                        key,
-                        nonce,
-                        buffer,
-                        aad,
-                        tag,
-                    } => self.encrypt_with_external_key(
-                        client_id, request_id, key, nonce, aad, buffer, tag,
-                    ),
-                    Request::DecryptChaChaPoly {
-                        client_id,
-                        request_id,
-                        key_id,
-                        nonce,
-                        buffer,
-                        aad,
-                        tag,
-                    } => {
-                        self.decrypt_with_internal_key(
-                            client_id, request_id, key_id, nonce, buffer, aad, tag,
-                        )
-                        .await
-                    }
-                    Request::DecryptChaChaPolyExternalKey {
-                        client_id,
-                        request_id,
-                        key,
-                        nonce,
-                        buffer,
-                        aad,
-                        tag,
-                    } => self.decrypt_with_external_key(
-                        client_id, request_id, key, nonce, aad, buffer, tag,
-                    ),
-                    _ => Err(Error::UnexpectedRequestType)?,
-                };
-                self.responses
-                    .send(response)
+        let request = self.requests.next().await.ok_or(Error::StreamTerminated)?;
+        let response = match request {
+            Request::EncryptChaChaPoly {
+                client_id,
+                request_id,
+                key_id,
+                nonce,
+                buffer,
+                aad,
+                tag,
+            } => {
+                self.encrypt_internal_key(client_id, request_id, key_id, nonce, buffer, aad, tag)
                     .await
-                    .map_err(|_e| Error::Send)
             }
-        }
+            Request::EncryptChaChaPolyExternalKey {
+                client_id,
+                request_id,
+                key,
+                nonce,
+                buffer,
+                aad,
+                tag,
+            } => {
+                self.encrypt_with_external_key(client_id, request_id, key, nonce, aad, buffer, tag)
+            }
+            Request::DecryptChaChaPoly {
+                client_id,
+                request_id,
+                key_id,
+                nonce,
+                buffer,
+                aad,
+                tag,
+            } => {
+                self.decrypt_with_internal_key(
+                    client_id, request_id, key_id, nonce, buffer, aad, tag,
+                )
+                .await
+            }
+            Request::DecryptChaChaPolyExternalKey {
+                client_id,
+                request_id,
+                key,
+                nonce,
+                buffer,
+                aad,
+                tag,
+            } => {
+                self.decrypt_with_external_key(client_id, request_id, key, nonce, aad, buffer, tag)
+            }
+            _ => Err(Error::UnexpectedRequestType)?,
+        };
+        self.responses
+            .send(response)
+            .await
+            .map_err(|_e| Error::Send)
     }
 
     #[allow(clippy::too_many_arguments)]

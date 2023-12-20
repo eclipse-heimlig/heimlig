@@ -13,6 +13,8 @@ pub enum Error {
     NoKeyStore,
     /// Failed to send through channel.
     Send,
+    /// Futures Stream was terminated
+    StreamTerminated,
     /// A cryptographic error occurred.
     Crypto(crate::crypto::Error),
     /// A key store error occurred.

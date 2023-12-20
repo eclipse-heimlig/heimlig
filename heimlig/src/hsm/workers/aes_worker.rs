@@ -41,126 +41,111 @@ impl<
     /// Drive the worker to process the next request.
     /// This method is supposed to be called by a system task that owns this worker.
     pub async fn execute(&mut self) -> Result<(), Error> {
-        match self.requests.next().await {
-            None => Ok(()), // Nothing to process
-            Some(request) => {
-                let response = match request {
-                    Request::EncryptAesGcm {
-                        client_id,
-                        request_id,
-                        key_id,
-                        iv,
-                        buffer,
-                        aad,
-                        tag,
-                    } => {
-                        self.encrypt_aes_gcm(client_id, request_id, key_id, iv, buffer, aad, tag)
-                            .await
-                    }
-                    Request::EncryptAesGcmExternalKey {
-                        client_id,
-                        request_id,
-                        key,
-                        iv,
-                        buffer,
-                        aad,
-                        tag,
-                    } => {
-                        self.encrypt_aes_gcm_external_key(
-                            client_id, request_id, key, iv, buffer, aad, tag,
-                        )
-                        .await
-                    }
-                    Request::DecryptAesGcm {
-                        client_id,
-                        request_id,
-                        key_id,
-                        iv,
-                        buffer,
-                        aad,
-                        tag,
-                    } => {
-                        self.decrypt_aes_gcm(client_id, request_id, key_id, iv, buffer, aad, tag)
-                            .await
-                    }
-                    Request::DecryptAesGcmExternalKey {
-                        client_id,
-                        request_id,
-                        key,
-                        iv,
-                        buffer,
-                        aad,
-                        tag,
-                    } => {
-                        self.decrypt_aes_gcm_external_key(
-                            client_id, request_id, key, iv, buffer, aad, tag,
-                        )
-                        .await
-                    }
-                    Request::EncryptAesCbc {
-                        client_id,
-                        request_id,
-                        key_id,
-                        iv,
-                        buffer,
-                        plaintext_size,
-                    } => {
-                        self.encrypt_aes_cbc(
-                            client_id,
-                            request_id,
-                            key_id,
-                            iv,
-                            buffer,
-                            plaintext_size,
-                        )
-                        .await
-                    }
-                    Request::EncryptAesCbcExternalKey {
-                        client_id,
-                        request_id,
-                        key,
-                        iv,
-                        buffer,
-                        plaintext_size,
-                    } => {
-                        self.encrypt_aes_cbc_external_key(
-                            client_id,
-                            request_id,
-                            key,
-                            iv,
-                            buffer,
-                            plaintext_size,
-                        )
-                        .await
-                    }
-                    Request::DecryptAesCbc {
-                        client_id,
-                        request_id,
-                        key_id,
-                        iv,
-                        buffer,
-                    } => {
-                        self.decrypt_aes_cbc(client_id, request_id, key_id, iv, buffer)
-                            .await
-                    }
-                    Request::DecryptAesCbcExternalKey {
-                        client_id,
-                        request_id,
-                        key,
-                        iv,
-                        buffer,
-                    } => {
-                        self.decrypt_aes_cbc_external_key(client_id, request_id, key, iv, buffer)
-                            .await
-                    }
-                    _ => Err(Error::UnexpectedRequestType)?,
-                };
-                self.responses
-                    .send(response)
+        let request = self.requests.next().await.ok_or(Error::StreamTerminated)?;
+        let response = match request {
+            Request::EncryptAesGcm {
+                client_id,
+                request_id,
+                key_id,
+                iv,
+                buffer,
+                aad,
+                tag,
+            } => {
+                self.encrypt_aes_gcm(client_id, request_id, key_id, iv, buffer, aad, tag)
                     .await
-                    .map_err(|_e| Error::Send)
             }
-        }
+            Request::EncryptAesGcmExternalKey {
+                client_id,
+                request_id,
+                key,
+                iv,
+                buffer,
+                aad,
+                tag,
+            } => {
+                self.encrypt_aes_gcm_external_key(client_id, request_id, key, iv, buffer, aad, tag)
+                    .await
+            }
+            Request::DecryptAesGcm {
+                client_id,
+                request_id,
+                key_id,
+                iv,
+                buffer,
+                aad,
+                tag,
+            } => {
+                self.decrypt_aes_gcm(client_id, request_id, key_id, iv, buffer, aad, tag)
+                    .await
+            }
+            Request::DecryptAesGcmExternalKey {
+                client_id,
+                request_id,
+                key,
+                iv,
+                buffer,
+                aad,
+                tag,
+            } => {
+                self.decrypt_aes_gcm_external_key(client_id, request_id, key, iv, buffer, aad, tag)
+                    .await
+            }
+            Request::EncryptAesCbc {
+                client_id,
+                request_id,
+                key_id,
+                iv,
+                buffer,
+                plaintext_size,
+            } => {
+                self.encrypt_aes_cbc(client_id, request_id, key_id, iv, buffer, plaintext_size)
+                    .await
+            }
+            Request::EncryptAesCbcExternalKey {
+                client_id,
+                request_id,
+                key,
+                iv,
+                buffer,
+                plaintext_size,
+            } => {
+                self.encrypt_aes_cbc_external_key(
+                    client_id,
+                    request_id,
+                    key,
+                    iv,
+                    buffer,
+                    plaintext_size,
+                )
+                .await
+            }
+            Request::DecryptAesCbc {
+                client_id,
+                request_id,
+                key_id,
+                iv,
+                buffer,
+            } => {
+                self.decrypt_aes_cbc(client_id, request_id, key_id, iv, buffer)
+                    .await
+            }
+            Request::DecryptAesCbcExternalKey {
+                client_id,
+                request_id,
+                key,
+                iv,
+                buffer,
+            } => {
+                self.decrypt_aes_cbc_external_key(client_id, request_id, key, iv, buffer)
+                    .await
+            }
+            _ => Err(Error::UnexpectedRequestType)?,
+        };
+        self.responses
+            .send(response)
+            .await
+            .map_err(|_e| Error::Send)
     }
 
     #[allow(clippy::too_many_arguments)]
