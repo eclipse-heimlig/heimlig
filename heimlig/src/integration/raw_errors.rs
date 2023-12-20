@@ -16,6 +16,8 @@ pub enum JobErrorRaw {
     NoKeyStore,
     /// Failed to send through channel.
     Send,
+    /// Futures Stream was terminated
+    StreamTerminated,
     /// A cryptographic error occurred.
     Crypto(CryptoErrorRaw),
     /// A key store error occurred.
@@ -77,11 +79,12 @@ impl From<jobs::Error> for JobErrorRaw {
         match value {
             jobs::Error::NoWorkerForRequest => JobErrorRaw::NoWorkerForRequest,
             jobs::Error::UnexpectedRequestType => JobErrorRaw::UnexpectedRequestType,
-            jobs::Error::Crypto(e) => JobErrorRaw::Crypto(e.into()),
             jobs::Error::RequestTooLarge => JobErrorRaw::RequestTooLarge,
             jobs::Error::NoKeyStore => JobErrorRaw::NoKeyStore,
-            jobs::Error::KeyStore(e) => JobErrorRaw::KeyStore(e.into()),
             jobs::Error::Send => JobErrorRaw::Send,
+            jobs::Error::StreamTerminated => JobErrorRaw::StreamTerminated,
+            jobs::Error::Crypto(e) => JobErrorRaw::Crypto(e.into()),
+            jobs::Error::KeyStore(e) => JobErrorRaw::KeyStore(e.into()),
         }
     }
 }

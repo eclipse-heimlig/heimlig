@@ -42,7 +42,7 @@ impl<
     /// This method is supposed to be called by a system task that owns this worker.
     pub async fn execute(&mut self) -> Result<(), Error> {
         match self.requests.next().await {
-            None => Ok(()), // Nothing to process
+            None => Err(Error::StreamTerminated),
             Some(request) => {
                 let response = match request {
                     Request::EncryptAesGcm {
