@@ -188,10 +188,10 @@ impl<
             }
             Ok((key, key_info)) => match key_info.ty {
                 KeyType::Symmetric128Bits => {
-                    aes128gcm_encrypt_in_place_detached(key, iv, aad, buffer)
+                    aes128gcm_encrypt_in_place_detached(key, iv, aad, buffer, tag)
                 }
                 KeyType::Symmetric256Bits => {
-                    aes256gcm_encrypt_in_place_detached(key, iv, aad, buffer)
+                    aes256gcm_encrypt_in_place_detached(key, iv, aad, buffer, tag)
                 }
                 _ => {
                     return Response::Error {
@@ -208,23 +208,12 @@ impl<
                 request_id,
                 error: Error::Crypto(e),
             },
-            Ok(computed_tag) => {
-                if tag.len() < computed_tag.len() {
-                    return Response::Error {
-                        client_id,
-                        request_id,
-                        error: Error::Crypto(crypto::Error::InvalidTagSize),
-                    };
-                }
-                let tag = &mut tag[..computed_tag.len()];
-                tag.copy_from_slice(&computed_tag);
-                Response::EncryptAesGcm {
-                    client_id,
-                    request_id,
-                    buffer,
-                    tag,
-                }
-            }
+            Ok(()) => Response::EncryptAesGcm {
+                client_id,
+                request_id,
+                buffer,
+                tag,
+            },
         }
     }
 
@@ -240,8 +229,8 @@ impl<
         tag: &'data mut [u8],
     ) -> Response<'data> {
         let result = match key.len() {
-            KEY128_SIZE => aes128gcm_encrypt_in_place_detached(key, iv, aad, buffer),
-            KEY256_SIZE => aes256gcm_encrypt_in_place_detached(key, iv, aad, buffer),
+            KEY128_SIZE => aes128gcm_encrypt_in_place_detached(key, iv, aad, buffer, tag),
+            KEY256_SIZE => aes256gcm_encrypt_in_place_detached(key, iv, aad, buffer, tag),
             _ => {
                 return Response::Error {
                     client_id,
@@ -256,23 +245,12 @@ impl<
                 request_id,
                 error: Error::Crypto(e),
             },
-            Ok(computed_tag) => {
-                if tag.len() < computed_tag.len() {
-                    return Response::Error {
-                        client_id,
-                        request_id,
-                        error: Error::Crypto(crypto::Error::InvalidTagSize),
-                    };
-                }
-                let tag = &mut tag[..computed_tag.len()];
-                tag.copy_from_slice(&computed_tag);
-                Response::EncryptAesGcm {
-                    client_id,
-                    request_id,
-                    buffer,
-                    tag,
-                }
-            }
+            Ok(()) => Response::EncryptAesGcm {
+                client_id,
+                request_id,
+                buffer,
+                tag,
+            },
         }
     }
 

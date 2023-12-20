@@ -1,8 +1,9 @@
-use crate::crypto::{check_sizes, check_sizes_with_tag, Error};
+use crate::crypto::{check_sizes_with_tag, Error};
 use chacha20poly1305::{
     aead::{generic_array::typenum::Unsigned, AeadCore},
-    AeadInPlace, ChaCha20Poly1305, KeyInit, KeySizeUser, Tag,
+    AeadInPlace, ChaCha20Poly1305, KeyInit, KeySizeUser,
 };
+use zeroize::Zeroize;
 
 /// Size of the key in bytes for ChaCha20-Poly1305 algorithms
 pub const KEY_SIZE: usize = <ChaCha20Poly1305 as KeySizeUser>::KeySize::USIZE;
@@ -29,11 +30,15 @@ pub fn encrypt_in_place_detached(
     nonce: &[u8],
     associated_data: &[u8],
     buffer: &mut [u8],
-) -> Result<Tag, Error> {
-    check_sizes(key, nonce, KEY_SIZE, NONCE_SIZE)?;
-    ChaCha20Poly1305::new(key.into())
+    tag: &mut [u8],
+) -> Result<(), Error> {
+    check_sizes_with_tag(key, nonce, tag, KEY_SIZE, NONCE_SIZE, TAG_SIZE)?;
+    let mut computed_tag = ChaCha20Poly1305::new(key.into())
         .encrypt_in_place_detached(nonce.into(), associated_data, buffer)
-        .map_err(|_| Error::Encrypt)
+        .map_err(|_| Error::Encrypt)?;
+    tag.copy_from_slice(&computed_tag);
+    computed_tag.zeroize();
+    Ok(())
 }
 
 /// Decrypt data with the ChaCha20Poly1305 stream cipher.
@@ -91,7 +96,8 @@ mod test {
             #[test]
             fn $test_name() {
                 let mut buffer = $plaintext.to_owned();
-                let tag = $encryptor($key, $nonce, $associated_data, &mut buffer)
+                let mut tag = $tag.to_owned();
+                $encryptor($key, $nonce, $associated_data, &mut buffer, &mut tag)
                     .expect("encryption error");
                 assert_eq!(buffer, $ciphertext, "ciphertext mismatch");
                 assert_eq!(tag.as_slice(), $tag, "tag mismatch");
@@ -150,8 +156,9 @@ mod test {
             let mut wrong_key: Vec<u8, 256> = Vec::new();
             wrong_key.resize(size, 0).expect("Allocation error");
             let mut buffer = PLAINTEXT.to_owned();
+            let mut tag = [0u8; TAG_SIZE];
             assert_eq!(
-                encrypt_in_place_detached(&wrong_key, NONCE, &[], &mut buffer),
+                encrypt_in_place_detached(&wrong_key, NONCE, &[], &mut buffer, &mut tag),
                 Err(Error::InvalidSymmetricKeySize)
             );
             let tag = [0u8; TAG_SIZE];
@@ -165,8 +172,9 @@ mod test {
             let mut wrong_nonce: Vec<u8, 32> = Vec::new();
             wrong_nonce.resize(size, 0).expect("Allocation error");
             let mut buffer = PLAINTEXT.to_owned();
+            let mut tag = [0u8; TAG_SIZE];
             assert_eq!(
-                encrypt_in_place_detached(KEY, &wrong_nonce, &[], &mut buffer),
+                encrypt_in_place_detached(KEY, &wrong_nonce, &[], &mut buffer, &mut tag),
                 Err(Error::InvalidIvSize)
             );
             let tag = [0u8; TAG_SIZE];
@@ -188,8 +196,9 @@ mod test {
         }
 
         let mut buffer = PLAINTEXT.to_owned();
-        let tag =
-            encrypt_in_place_detached(KEY, NONCE, &[], &mut buffer).expect("encryption error");
+        let mut tag = [0u8; TAG_SIZE];
+        encrypt_in_place_detached(KEY, NONCE, &[], &mut buffer, &mut tag)
+            .expect("encryption error");
         buffer[0] += 1; // Corrupt ciphertext
         assert_eq!(
             decrypt_in_place_detached(KEY, NONCE, &[], &mut buffer, &tag),

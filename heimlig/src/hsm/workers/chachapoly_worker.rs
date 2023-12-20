@@ -190,23 +190,13 @@ impl<
         buffer: &'data mut [u8],
         tag: &'data mut [u8],
     ) -> Response<'data> {
-        match crypto::chacha20poly1305::encrypt_in_place_detached(key, nonce, aad, buffer) {
-            Ok(computed_tag) => {
-                if computed_tag.len() != tag.len() {
-                    return Response::Error {
-                        client_id,
-                        request_id,
-                        error: Error::Crypto(crypto::Error::InvalidTagSize),
-                    };
-                }
-                tag.copy_from_slice(computed_tag.as_slice());
-                Response::EncryptChaChaPoly {
-                    client_id,
-                    request_id,
-                    buffer,
-                    tag,
-                }
-            }
+        match crypto::chacha20poly1305::encrypt_in_place_detached(key, nonce, aad, buffer, tag) {
+            Ok(()) => Response::EncryptChaChaPoly {
+                client_id,
+                request_id,
+                buffer,
+                tag,
+            },
             Err(e) => Response::Error {
                 client_id,
                 request_id,
