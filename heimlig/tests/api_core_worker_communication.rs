@@ -166,7 +166,6 @@ mod tests {
         };
         let mut core = Builder::<
             NoopRawMutex,
-            TestEntropySource,
             RequestQueueSource<'_, '_, QUEUE_SIZE>,
             ResponseQueueSink<'_, '_, QUEUE_SIZE>,
             RequestQueueSink<'_, '_, QUEUE_SIZE>,
@@ -230,7 +229,6 @@ mod tests {
         };
         let mut core = Builder::<
             NoopRawMutex,
-            TestEntropySource,
             RequestQueueSource<'_, '_, QUEUE_SIZE>,
             ResponseQueueSink<'_, '_, QUEUE_SIZE>,
             RequestQueueSink<'_, '_, QUEUE_SIZE>,
@@ -294,7 +292,6 @@ mod tests {
         };
         let mut core = Builder::<
             NoopRawMutex,
-            TestEntropySource,
             RequestQueueSource<'_, '_, QUEUE_SIZE>,
             ResponseQueueSink<'_, '_, QUEUE_SIZE>,
             RequestQueueSink<'_, '_, QUEUE_SIZE>,
@@ -400,7 +397,6 @@ mod tests {
         };
         let mut core = Builder::<
             NoopRawMutex,
-            TestEntropySource,
             RequestQueueSource<'_, '_, QUEUE_SIZE>,
             ResponseQueueSink<'_, '_, QUEUE_SIZE>,
             RequestQueueSink<'_, '_, QUEUE_SIZE>,
@@ -530,7 +526,6 @@ mod tests {
         };
         let mut core = Builder::<
             NoopRawMutex,
-            TestEntropySource,
             RequestQueueSource<'_, '_, QUEUE_SIZE>,
             ResponseQueueSink<'_, '_, QUEUE_SIZE>,
             RequestQueueSink<'_, '_, QUEUE_SIZE>,
@@ -634,7 +629,6 @@ mod tests {
         };
         let mut core = Builder::<
             NoopRawMutex,
-            TestEntropySource,
             RequestQueueSource<'_, '_, QUEUE_SIZE>,
             ResponseQueueSink<'_, '_, QUEUE_SIZE>,
             RequestQueueSink<'_, '_, QUEUE_SIZE>,
@@ -760,7 +754,6 @@ mod tests {
         };
         let mut core = Builder::<
             NoopRawMutex,
-            TestEntropySource,
             RequestQueueSource<'_, '_, QUEUE_SIZE>,
             ResponseQueueSink<'_, '_, QUEUE_SIZE>,
             RequestQueueSink<'_, '_, QUEUE_SIZE>,
@@ -864,7 +857,6 @@ mod tests {
         };
         let mut core = Builder::<
             NoopRawMutex,
-            TestEntropySource,
             RequestQueueSource<'_, '_, QUEUE_SIZE>,
             ResponseQueueSink<'_, '_, QUEUE_SIZE>,
             RequestQueueSink<'_, '_, QUEUE_SIZE>,
@@ -989,7 +981,6 @@ mod tests {
         };
         let mut core = Builder::<
             NoopRawMutex,
-            TestEntropySource,
             RequestQueueSource<'_, '_, QUEUE_SIZE>,
             ResponseQueueSink<'_, '_, QUEUE_SIZE>,
             RequestQueueSink<'_, '_, QUEUE_SIZE>,
@@ -1100,7 +1091,6 @@ mod tests {
         };
         let mut core = Builder::<
             NoopRawMutex,
-            TestEntropySource,
             RequestQueueSource<'_, '_, QUEUE_SIZE>,
             ResponseQueueSink<'_, '_, QUEUE_SIZE>,
             RequestQueueSink<'_, '_, QUEUE_SIZE>,
@@ -1341,7 +1331,6 @@ mod tests {
         };
         let mut core = Builder::<
             NoopRawMutex,
-            TestEntropySource,
             RequestQueueSource<'_, '_, QUEUE_SIZE>,
             ResponseQueueSink<'_, '_, QUEUE_SIZE>,
             RequestQueueSink<'_, '_, QUEUE_SIZE>,
@@ -1416,7 +1405,6 @@ mod tests {
             split_queues(&mut client_requests, &mut client_responses);
         let mut core = Builder::<
             NoopRawMutex,
-            TestEntropySource,
             RequestQueueSource<'_, '_, QUEUE_SIZE>,
             ResponseQueueSink<'_, '_, QUEUE_SIZE>,
             RequestQueueSink<'_, '_, QUEUE_SIZE>,

@@ -1,6 +1,5 @@
 use crate::common::jobs;
 use crate::common::jobs::{ClientId, Request, RequestId, RequestType, Response};
-use crate::crypto::rng::{EntropySource, Rng};
 use crate::hsm::keystore;
 use crate::hsm::keystore::KeyStore;
 use core::future::poll_fn;
@@ -136,16 +135,13 @@ struct WorkerChannel<
 
 pub struct Builder<
     'data,
-    'rng,
     'keystore,
     M: RawMutex, // TODO: Get rid of embassy specific mutex outside of integration code
-    E: EntropySource,
     ReqSrc: Stream<Item = Request<'data>>,
     RespSink: Sink<Response<'data>>,
     ReqSink: Sink<Request<'data>>,
     RespSrc: Stream<Item = Response<'data>>,
 > {
-    rng: Option<&'rng Mutex<M, &'rng mut Rng<E>>>,
     key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
     clients: Vec<ClientChannel<'data, ReqSrc, RespSink, M>, MAX_CLIENTS>,
     workers: Vec<WorkerChannel<'data, ReqSink, RespSrc, M>, MAX_WORKERS>,
@@ -153,15 +149,13 @@ pub struct Builder<
 
 impl<
         'data,
-        'rng,
         'keystore,
         M: RawMutex,
-        E: EntropySource,
         ReqSrc: Stream<Item = Request<'data>> + Unpin,
         RespSink: Sink<Response<'data>> + Unpin,
         ReqSink: Sink<Request<'data>> + Unpin,
         RespSrc: Stream<Item = Response<'data>> + Unpin,
-    > Default for Builder<'data, 'rng, 'keystore, M, E, ReqSrc, RespSink, ReqSink, RespSrc>
+    > Default for Builder<'data, 'keystore, M, ReqSrc, RespSink, ReqSink, RespSrc>
 {
     fn default() -> Self {
         Builder::new()
@@ -170,28 +164,20 @@ impl<
 
 impl<
         'data,
-        'rng,
         'keystore,
         M: RawMutex,
-        E: EntropySource,
         ReqSrc: Stream<Item = Request<'data>> + Unpin,
         RespSink: Sink<Response<'data>> + Unpin,
         ReqSink: Sink<Request<'data>> + Unpin,
         RespSrc: Stream<Item = Response<'data>> + Unpin,
-    > Builder<'data, 'rng, 'keystore, M, E, ReqSrc, RespSink, ReqSink, RespSrc>
+    > Builder<'data, 'keystore, M, ReqSrc, RespSink, ReqSink, RespSrc>
 {
     pub fn new() -> Self {
         Builder {
-            rng: None,
             key_store: None,
             clients: Default::default(),
             workers: Default::default(),
         }
-    }
-
-    pub fn with_rng(mut self, rng: &'rng Mutex<M, &'rng mut Rng<E>>) -> Self {
-        self.rng = Some(rng);
-        self
     }
 
     pub fn with_keystore(
@@ -254,7 +240,6 @@ impl<
 impl<
         'data,
         'keystore,
-        'rng,
         M: RawMutex,
         ReqSrc: Stream<Item = Request<'data>> + Unpin,
         RespSink: Sink<Response<'data>> + Unpin,

@@ -46,7 +46,6 @@ async fn core_task(
 ) {
     let mut core = Builder::<
         CriticalSectionRawMutex,
-        EntropySource,
         RequestQueueSource<'_, '_, QUEUE_SIZE>,
         ResponseQueueSink<'_, '_, QUEUE_SIZE>,
         RequestQueueSink<'_, '_, QUEUE_SIZE>,

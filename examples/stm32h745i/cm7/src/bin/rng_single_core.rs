@@ -79,7 +79,6 @@ async fn hsm_task(
     };
     let mut core = Builder::<
         NoopRawMutex,
-        EntropySource,
         RequestQueueSource<'_, '_, QUEUE_SIZE>,
         ResponseQueueSink<'_, '_, QUEUE_SIZE>,
         RequestQueueSink<'_, '_, QUEUE_SIZE>,
