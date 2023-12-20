@@ -1,5 +1,3 @@
-use const_default::ConstDefault;
-
 /// Identifier to reference HSM keys
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
 pub struct KeyId(pub u32);
@@ -31,7 +29,7 @@ pub enum KeyType {
     EccKeypairNistP384,
 }
 
-#[derive(ConstDefault, Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct KeyPermissions {
     /// Whether or not the key can be set with outside data.
     pub import: bool,
