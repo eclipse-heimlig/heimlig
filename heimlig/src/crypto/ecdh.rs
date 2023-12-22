@@ -21,14 +21,14 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::crypto::rng;
     use p256::NistP256;
     use p384::NistP384;
+    use rand_chacha::rand_core::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
 
     #[test]
     fn test_p256() {
-        let entropy = rng::test::TestEntropySource::default();
-        let mut rng = rng::Rng::new(entropy, None);
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let (local_public, local_private) = generate_key_pair::<_, NistP256>(&mut rng);
         let (remote_public, remote_private) = generate_key_pair::<_, NistP256>(&mut rng);
         let local_secret = derive_shared_secret(&local_private, &remote_public);
@@ -41,8 +41,7 @@ mod test {
 
     #[test]
     fn test_p384() {
-        let entropy = rng::test::TestEntropySource::default();
-        let mut rng = rng::Rng::new(entropy, None);
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         let (local_public, local_private) = generate_key_pair::<_, NistP384>(&mut rng);
         let (remote_public, remote_private) = generate_key_pair::<_, NistP384>(&mut rng);
         let local_secret = derive_shared_secret(&local_private, &remote_public);

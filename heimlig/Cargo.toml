@@ -25,9 +25,7 @@ futures = { version = "0.3.28", default-features = false }
 heapless = { version = "0.7.16", default-features = false, features = ["cas", "x86-sync-pool"] }
 p256 = { version = "0.13.2", default-features = false, features = ["ecdh", "ecdsa"] }
 p384 = { version = "0.13.0", default-features = false, features = ["ecdh", "ecdsa"] }
-rand = { version = "0.8.5", default-features = false }
 rand_chacha = { version = "0.3.1", default-features = false }
-rand_core = { version = "0.6.4", default-features = false }
 sha2 = { version = "0.10.7", default-features = false }
 sha3 = { version = "0.10.8", default-features = false }
 strum = { version = "0.25.0", default-features = false, features = ["derive"] }

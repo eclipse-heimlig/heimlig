@@ -97,14 +97,15 @@ pub fn ed25519_calculate_public_key(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::crypto::rng::{test::TestEntropySource, Rng};
+    use rand_chacha::rand_core::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
 
     const MESSAGE: &[u8] =
         b"Know thy self, know thy enemy. A thousand battles, a thousand victories.";
 
     #[test]
     fn test_ed25519_sign_verify() {
-        let mut rng = Rng::new(TestEntropySource::default(), None);
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
 
         let signing_key = SigningKey::generate(&mut rng);
         let private_key = signing_key.to_bytes();
@@ -197,7 +198,7 @@ mod test {
 
     #[test]
     fn test_ed25519_invalid_signature() {
-        let mut rng = Rng::new(TestEntropySource::default(), None);
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
 
         let signing_key = SigningKey::generate(&mut rng);
         let private_key = signing_key.to_bytes();

@@ -5,13 +5,13 @@ use crate::crypto::ecdsa::{
     nist_p256_verify_prehashed, nist_p384_generate_key_pair, nist_p384_sign,
     nist_p384_sign_prehashed, nist_p384_verify, nist_p384_verify_prehashed,
 };
-use crate::crypto::rng::{EntropySource, Rng};
 use crate::hsm::keystore;
 use crate::hsm::keystore::{KeyId, KeyInfo, KeyStore, KeyType};
 use core::ops::{Deref, DerefMut};
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
 use futures::{Sink, SinkExt, Stream, StreamExt};
+use rand_chacha::rand_core::{CryptoRng, RngCore};
 use zeroize::{Zeroize, Zeroizing};
 
 pub struct EccWorker<
@@ -19,11 +19,11 @@ pub struct EccWorker<
     'rng,
     'keystore,
     M: RawMutex,
-    E: EntropySource,
+    R: CryptoRng + RngCore,
     ReqSrc: Stream<Item = Request<'data>>,
     RespSink: Sink<Response<'data>>,
 > {
-    pub rng: &'rng Mutex<M, Rng<E>>,
+    pub rng: &'rng Mutex<M, R>,
     pub key_store: &'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>,
     pub requests: ReqSrc,
     pub responses: RespSink,
@@ -34,10 +34,10 @@ impl<
         'rng,
         'keystore,
         M: RawMutex,
-        E: EntropySource,
+        R: CryptoRng + RngCore,
         ReqSrc: Stream<Item = Request<'data>> + Unpin,
         RespSink: Sink<Response<'data>> + Unpin,
-    > EccWorker<'data, 'rng, 'keystore, M, E, ReqSrc, RespSink>
+    > EccWorker<'data, 'rng, 'keystore, M, R, ReqSrc, RespSink>
 {
     /// Drive the worker to process the next request.
     /// This method is supposed to be called by a system task that owns this worker.
