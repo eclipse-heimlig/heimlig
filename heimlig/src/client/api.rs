@@ -381,6 +381,74 @@ impl<
         self.send_request(request).await
     }
 
+    /// Calculate the AES-CMAC of a message using a key stored in the HSM.
+    pub async fn calculate_aes_cmac(
+        &mut self,
+        key_id: KeyId,
+        message: &'data [u8],
+        tag: &'data mut [u8],
+    ) -> Result<RequestId, Error> {
+        let request = Request::CalculateAesCmac {
+            client_id: ClientId::default(),
+            request_id: RequestId::default(),
+            key_id,
+            message,
+            tag,
+        };
+        self.send_request(request).await
+    }
+
+    /// Calculate the AES-CMAC of a message using a caller-provided key.
+    pub async fn calculate_aes_cmac_external_key(
+        &mut self,
+        key: &'data [u8],
+        message: &'data [u8],
+        tag: &'data mut [u8],
+    ) -> Result<RequestId, Error> {
+        let request = Request::CalculateAesCmacExternalKey {
+            client_id: ClientId::default(),
+            request_id: RequestId::default(),
+            key,
+            message,
+            tag,
+        };
+        self.send_request(request).await
+    }
+
+    /// Verify the AES-CMAC of a message using a key stored in the HSM.
+    pub async fn verify_aes_cmac(
+        &mut self,
+        key_id: KeyId,
+        message: &'data [u8],
+        tag: &'data [u8],
+    ) -> Result<RequestId, Error> {
+        let request = Request::VerifyAesCmac {
+            client_id: ClientId::default(),
+            request_id: RequestId::default(),
+            key_id,
+            message,
+            tag,
+        };
+        self.send_request(request).await
+    }
+
+    /// Verify the AES-CMAC of a message using a caller-provided key.
+    pub async fn verify_aes_cmac_external_key(
+        &mut self,
+        key: &'data [u8],
+        message: &'data [u8],
+        tag: &'data [u8],
+    ) -> Result<RequestId, Error> {
+        let request = Request::VerifyAesCmacExternalKey {
+            client_id: ClientId::default(),
+            request_id: RequestId::default(),
+            key,
+            message,
+            tag,
+        };
+        self.send_request(request).await
+    }
+
     /// Sign a prehashed message using a key stored in the HSM
     pub async fn sign(
         &mut self,

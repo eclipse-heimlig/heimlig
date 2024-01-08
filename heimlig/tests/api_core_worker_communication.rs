@@ -1052,6 +1052,178 @@ mod tests {
     }
 
     #[async_std::test]
+    async fn aes_cmac_calculate_verify() {
+        const KEY_INFOS: [KeyInfo; 3] = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
+        let key: [u8; crypto::aes::KEY256_SIZE] = *b"Fortuna Major or Oddsbodikins???";
+        let message: [u8; PLAINTEXT_SIZE] = *b"I solemnly swear I am up to no good!";
+        let mut tag = [0u8; crypto::aes::CMAC_TAG_SIZE];
+        let mut tag_external_key = [0u8; crypto::aes::CMAC_TAG_SIZE];
+        let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut client_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let mut aes_cmac_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut aes_cmac_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let (req_client_rx, req_client_tx, resp_client_rx, resp_client_tx) =
+            split_queues(&mut client_requests, &mut client_responses);
+        let (
+            aes_cmac_requests_rx,
+            aes_cmac_requests_tx,
+            aes_cmac_responses_rx,
+            aes_cmac_responses_tx,
+        ) = split_queues(&mut aes_cmac_requests, &mut aes_cmac_responses);
+        let mut key_store = init_key_store(&KEY_INFOS);
+        let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
+        let mut aes_cmac_worker = AesWorker {
+            key_store: &key_store,
+            requests: aes_cmac_requests_rx,
+            responses: aes_cmac_responses_tx,
+        };
+        let mut core = Builder::<
+            NoopRawMutex,
+            RequestQueueSource<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSink<'_, '_, QUEUE_SIZE>,
+            RequestQueueSink<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSource<'_, '_, QUEUE_SIZE>,
+        >::default()
+        .with_keystore(&key_store)
+        .with_client(req_client_rx, resp_client_tx)
+        .expect("failed to add client")
+        .with_worker(
+            &[
+                RequestType::CalculateAesCmac,
+                RequestType::CalculateAesCmacExternalKey,
+                RequestType::VerifyAesCmac,
+                RequestType::VerifyAesCmacExternalKey,
+            ],
+            aes_cmac_requests_tx,
+            aes_cmac_responses_rx,
+        )
+        .expect("failed to add worker")
+        .build();
+        let mut api = Api::new(req_client_tx, resp_client_rx);
+
+        // Import key.
+        let org_request_id = api
+            .import_symmetric_key(SYM_256_KEY.id, &key, false)
+            .await
+            .expect("failed to send request");
+        core.execute()
+            .await
+            .expect("failed to process next request");
+        let response = api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response");
+        let Response::ImportSymmetricKey {
+            client_id: _client_id,
+            request_id,
+        } = response
+        else {
+            panic!("Unexpected response type")
+        };
+        assert_eq!(org_request_id, request_id);
+
+        // Calculate CMAC tag with imported key.
+        let org_request_id = api
+            .calculate_aes_cmac(SYM_256_KEY.id, &message, &mut tag)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        aes_cmac_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let Response::CalculateAesCmac {
+            client_id: _,
+            request_id,
+            tag,
+        } = api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response")
+        else {
+            panic!("Unexpected response type")
+        };
+        assert_eq!(request_id, org_request_id);
+
+        // Calculate CMAC tag with external key.
+        let org_request_id = api
+            .calculate_aes_cmac_external_key(&key, &message, &mut tag_external_key)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        aes_cmac_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let Response::CalculateAesCmac {
+            client_id: _,
+            request_id,
+            tag: tag_external_key,
+        } = api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response")
+        else {
+            panic!("Unexpected response type")
+        };
+        assert_eq!(request_id, org_request_id);
+
+        assert_eq!(tag, tag_external_key);
+
+        // Verify CMAC tag with imported key.
+        let org_request_id = api
+            .verify_aes_cmac(SYM_256_KEY.id, &message, tag)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        aes_cmac_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let Response::VerifyAesCmac {
+            client_id: _client_id,
+            request_id,
+            verified,
+        } = api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response")
+        else {
+            panic!("Unexpected response type")
+        };
+        assert_eq!(request_id, org_request_id);
+        assert!(verified);
+
+        // Verify CMAC tag with external key.
+        let org_request_id = api
+            .verify_aes_cmac_external_key(&key, &message, tag_external_key)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        aes_cmac_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let Response::VerifyAesCmac {
+            client_id: _client_id,
+            request_id,
+            verified,
+        } = api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response")
+        else {
+            panic!("Unexpected response type")
+        };
+        assert_eq!(request_id, org_request_id);
+        assert!(verified);
+    }
+
+    #[async_std::test]
     async fn sign_verify_nist_p256() {
         const KEY_INFOS: [KeyInfo; 3] = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
         const KEY_INFO: KeyInfo = KEY_INFOS[2];
