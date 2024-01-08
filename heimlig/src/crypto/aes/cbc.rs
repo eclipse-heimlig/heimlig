@@ -102,17 +102,10 @@ define_aes_cbc_impl!(aes256cbc_encrypt, aes256cbc_decrypt, Aes256);
 mod test {
     extern crate alloc;
     use super::*;
-    use crate::crypto::aes::{BLOCK_SIZE, IV_SIZE, KEY128_SIZE, KEY192_SIZE, KEY256_SIZE};
+    use crate::crypto::aes::{test::*, BLOCK_SIZE};
     use aes::cipher::block_padding::{NoPadding, Pkcs7};
     use alloc::borrow::ToOwned;
     use heapless::Vec;
-
-    const KEY128: &[u8; KEY128_SIZE] = b"Open sesame! ...";
-    const KEY192: &[u8; KEY192_SIZE] = b"Open sesame! ... Please!";
-    const KEY256: &[u8; KEY256_SIZE] = b"Or was it 'open quinoa' instead?";
-    const IV: &[u8; IV_SIZE] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
-    const PLAINTEXT_NOT_PADDED: &[u8] = b"Hello, World!";
-    const PLAINTEXT_PADDED: &[u8] = b"Greetings, Rustaceans!!!!!!!!!!!";
 
     #[test]
     fn padding_sizes() {
@@ -166,7 +159,7 @@ mod test {
         Aes128,
         NoPadding,
         KEY128,
-        IV,
+        CBC_IV,
         PLAINTEXT_PADDED,
         [
             0x1b, 0x07, 0xde, 0x3d, 0xf2, 0x24, 0x0b, 0x38, 0x33, 0x42, 0xe4, 0xd4, 0x6b, 0x83,
@@ -180,7 +173,7 @@ mod test {
         Aes192,
         NoPadding,
         KEY192,
-        IV,
+        CBC_IV,
         PLAINTEXT_PADDED,
         [
             0x1c, 0x0c, 0x08, 0xe6, 0x4f, 0x2f, 0x02, 0xd1, 0x61, 0xd2, 0xba, 0xf0, 0x04, 0x27,
@@ -194,7 +187,7 @@ mod test {
         Aes256,
         NoPadding,
         KEY256,
-        IV,
+        CBC_IV,
         PLAINTEXT_PADDED,
         [
             0xd8, 0x4e, 0xbc, 0xf9, 0x1b, 0x4a, 0x10, 0xe8, 0xc9, 0x68, 0xb8, 0x93, 0xe6, 0xa5,
@@ -208,7 +201,7 @@ mod test {
         Aes128,
         Pkcs7,
         KEY128,
-        IV,
+        CBC_IV,
         PLAINTEXT_NOT_PADDED,
         [
             0xd1, 0x04, 0x10, 0xd2, 0xb2, 0xa7, 0x3c, 0x65, 0xcc, 0xc8, 0xc9, 0xa7, 0x8d, 0x01,
@@ -221,7 +214,7 @@ mod test {
         Aes192,
         Pkcs7,
         KEY192,
-        IV,
+        CBC_IV,
         PLAINTEXT_NOT_PADDED,
         [
             0x4f, 0x99, 0xa8, 0x90, 0xfa, 0x4e, 0xe9, 0xfe, 0x94, 0x5d, 0x29, 0x96, 0xb3, 0xee,
@@ -234,7 +227,7 @@ mod test {
         Aes256,
         Pkcs7,
         KEY256,
-        IV,
+        CBC_IV,
         PLAINTEXT_NOT_PADDED,
         [
             0x60, 0x53, 0xee, 0xb8, 0x14, 0xe1, 0x2c, 0x59, 0x7b, 0xf1, 0x1c, 0xad, 0x4d, 0x70,
@@ -281,7 +274,7 @@ mod test {
         test_aes128cbc_wrong_key,
         Aes128,
         NoPadding,
-        IV,
+        CBC_IV,
         PLAINTEXT_PADDED,
         [0, 1, 8, 24, 32, 128]
     );
@@ -290,7 +283,7 @@ mod test {
         test_aes192cbc_wrong_key,
         Aes192,
         NoPadding,
-        IV,
+        CBC_IV,
         PLAINTEXT_PADDED,
         [0, 1, 8, 16, 32, 192]
     );
@@ -299,7 +292,7 @@ mod test {
         test_aes256cbc_wrong_key,
         Aes256,
         NoPadding,
-        IV,
+        CBC_IV,
         PLAINTEXT_PADDED,
         [0, 1, 8, 16, 24, 256]
     );
@@ -320,14 +313,14 @@ mod test {
                     assert_eq!(
                         encrypt_in_place::<$cipher, Pkcs7>(
                             &wrong_key,
-                            IV,
+                            CBC_IV,
                             &mut buffer,
                             PLAINTEXT_PADDED.len()
                         ),
                         Err(Error::InvalidSymmetricKeySize)
                     );
                     assert_eq!(
-                        decrypt_in_place::<$cipher, Pkcs7>(&wrong_key, IV, &mut buffer),
+                        decrypt_in_place::<$cipher, Pkcs7>(&wrong_key, CBC_IV, &mut buffer),
                         Err(Error::InvalidSymmetricKeySize)
                     );
                 }
@@ -357,14 +350,18 @@ mod test {
                     assert_eq!(
                         encrypt_in_place::<$cipher, NoPadding>(
                             $key,
-                            IV,
+                            CBC_IV,
                             &mut not_padded_buffer,
                             size
                         ),
                         Err(Error::InvalidBufferSize)
                     );
                     assert_eq!(
-                        decrypt_in_place::<$cipher, NoPadding>($key, IV, &mut not_padded_buffer),
+                        decrypt_in_place::<$cipher, NoPadding>(
+                            $key,
+                            CBC_IV,
+                            &mut not_padded_buffer
+                        ),
                         Err(Error::InvalidPadding)
                     );
                 }

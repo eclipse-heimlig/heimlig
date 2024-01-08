@@ -107,15 +107,9 @@ define_aes_gcm_impl!(
 mod test {
     extern crate alloc;
     use super::*;
-    use crate::crypto::aes::{GCM_IV_SIZE, GCM_TAG_SIZE, KEY128_SIZE, KEY256_SIZE};
+    use crate::crypto::aes::{test::*, GCM_TAG_SIZE};
     use alloc::borrow::ToOwned;
     use heapless::Vec;
-
-    const KEY128: &[u8; KEY128_SIZE] = b"Open sesame! ...";
-    const KEY256: &[u8; KEY256_SIZE] = b"Or was it 'open quinoa' instead?";
-    const IV: &[u8; GCM_IV_SIZE] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-    const PLAINTEXT: &[u8] = b"Hello, World!";
-    const AAD: &[u8] = b"Never gonna give you up, Never gonna let you down!";
 
     macro_rules! define_aes_gcm_encrypt_decrypt_test {
         (
@@ -159,7 +153,7 @@ mod test {
         test_aes128gcm_no_aad_encrypt_decrypt,
         Aes128Gcm,
         KEY128,
-        IV,
+        GCM_IV,
         &[],
         PLAINTEXT,
         [
@@ -177,7 +171,7 @@ mod test {
         test_aes256gcm_no_aad_encrypt_decrypt,
         Aes256Gcm,
         KEY256,
-        IV,
+        GCM_IV,
         &[],
         PLAINTEXT,
         [
@@ -195,7 +189,7 @@ mod test {
         test_aes128gcm_with_aad_encrypt_decrypt,
         Aes128Gcm,
         KEY128,
-        IV,
+        GCM_IV,
         AAD,
         PLAINTEXT,
         [
@@ -213,7 +207,7 @@ mod test {
         test_aes256gcm_with_aad_encrypt_decrypt,
         Aes256Gcm,
         KEY256,
-        IV,
+        GCM_IV,
         AAD,
         PLAINTEXT,
         [
@@ -338,7 +332,7 @@ mod test {
         test_aes128gcm_errors,
         Aes128Gcm,
         KEY128,
-        IV,
+        GCM_IV,
         PLAINTEXT,
         [0, 1, 8, 24, 32, 128]
     );
@@ -347,7 +341,7 @@ mod test {
         test_aes256gcm_errors,
         Aes256Gcm,
         KEY256,
-        IV,
+        GCM_IV,
         PLAINTEXT,
         [0, 1, 8, 16, 24, 256]
     );

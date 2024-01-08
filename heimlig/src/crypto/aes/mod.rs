@@ -25,3 +25,18 @@ pub const GCM_TAG_SIZE: usize = gcm::SupportedTagSize::USIZE;
 pub const CCM_NONCE_SIZE: usize = ccm::SupportedNonceSize::USIZE;
 /// Size of the supported authentication tag in bytes for AES-CCM algorithms.
 pub const CCM_TAG_SIZE: usize = ccm::SupportedTagSize::USIZE;
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    pub const KEY128: &[u8; KEY128_SIZE] = b"Open sesame! ...";
+    pub const KEY192: &[u8; KEY192_SIZE] = b"Open sesame! ... Please!";
+    pub const KEY256: &[u8; KEY256_SIZE] = b"Or was it 'open quinoa' instead?";
+    pub const CBC_IV: &[u8; IV_SIZE] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+    pub const GCM_IV: &[u8; GCM_IV_SIZE] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    pub const PLAINTEXT: &[u8] = b"Hello, World!";
+    pub const PLAINTEXT_NOT_PADDED: &[u8] = PLAINTEXT;
+    pub const PLAINTEXT_PADDED: &[u8] = b"Greetings, Rustaceans!!!!!!!!!!!";
+    pub const AAD: &[u8] = b"Never gonna give you up, Never gonna let you down!";
+}
