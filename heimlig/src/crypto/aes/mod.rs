@@ -1,5 +1,6 @@
 pub mod cbc;
 pub mod ccm;
+pub mod cmac;
 pub mod gcm;
 
 use aes::{
@@ -25,6 +26,8 @@ pub const GCM_TAG_SIZE: usize = gcm::SupportedTagSize::USIZE;
 pub const CCM_NONCE_SIZE: usize = ccm::SupportedNonceSize::USIZE;
 /// Size of the supported authentication tag in bytes for AES-CCM algorithms.
 pub const CCM_TAG_SIZE: usize = ccm::SupportedTagSize::USIZE;
+/// Size of the supported authentication tag in bytes for AES-CMAC algorithms.
+pub const CMAC_TAG_SIZE: usize = <Aes128 as BlockSizeUser>::BlockSize::USIZE;
 
 #[cfg(test)]
 mod test {
