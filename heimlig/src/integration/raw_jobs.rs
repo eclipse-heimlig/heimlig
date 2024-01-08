@@ -1,16 +1,12 @@
 use crate::common::jobs::{Request, Response};
 use crate::integration::raw_errors::JobErrorRaw;
 use core::slice;
+use strum::EnumCount;
 
 type ClientIdRaw = u32;
 type RequestIdRaw = u32;
 type KeyIdRaw = u32;
 type BoolRaw = u32; // 0 == false, 1 == true
-
-// TODO: replace with core::mem::variant_count::<RequestRaw>(); once it is stable
-// https://github.com/rust-lang/rust/issues/73662
-const REQUEST_RAW_VARIANTS: u8 = 25;
-const RESPONSE_RAW_VARIANTS: u8 = 18;
 
 /// A pair of a raw request and a raw response. This is a convenience type for integrators to
 /// allocate all necessary memory for a request and its response in one go.
@@ -33,7 +29,7 @@ pub struct RequestResponseRawPair {
 /// nested enum member is not allowed as casting an enum from a value outside the enum range causes
 /// UB in Rust even without accessing the resulting enum.
 #[repr(C)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, EnumCount)]
 pub enum RequestRaw {
     GetRandom {
         client_id: ClientIdRaw,
@@ -292,7 +288,7 @@ pub enum RequestRaw {
 /// Raw response as it is written by clients to shared memory. This type is supposed to be synced
 /// with non-Rust (e.g. C++) clients via cbindgen.
 #[repr(C)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, EnumCount)]
 pub enum ResponseRaw {
     Error {
         client_id: ClientIdRaw,
@@ -440,7 +436,7 @@ impl RequestRaw {
         let tag: u8 = unsafe { *ptr };
 
         // Validate tag value. Invalid tag values cause UB when transmuted into an enum.
-        if tag >= REQUEST_RAW_VARIANTS {
+        if tag >= RequestRaw::COUNT as u8 {
             return Err(ValidationError::InvalidTagValue);
         }
 
@@ -1328,7 +1324,7 @@ impl ResponseRaw {
         let tag: u8 = unsafe { *ptr };
 
         // Validate tag value. Invalid tag values cause UB when transmuted into an enum.
-        if tag >= RESPONSE_RAW_VARIANTS {
+        if tag >= ResponseRaw::COUNT as u8 {
             return Err(ValidationError::InvalidTagValue);
         }
 
