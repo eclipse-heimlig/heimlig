@@ -7,7 +7,6 @@ mod tests {
     use heimlig::common::jobs::{Error, Request, RequestType, Response};
     use heimlig::common::limits::MAX_RANDOM_SIZE;
     use heimlig::crypto;
-    use heimlig::crypto::rng::{EntropySource, Rng};
     use heimlig::hsm::core::Builder;
     use heimlig::hsm::keystore::{KeyId, KeyInfo, KeyPermissions, KeyStore, KeyType};
     use heimlig::hsm::workers::aes_worker::AesWorker;
@@ -18,6 +17,8 @@ mod tests {
         AsyncQueue, RequestQueueSink, RequestQueueSource, ResponseQueueSink, ResponseQueueSource,
     };
     use heimlig::integration::memory_key_store::MemoryKeyStore;
+    use rand_chacha::rand_core::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
     use sha2::{Digest, Sha256};
 
     const QUEUE_SIZE: usize = 8;
@@ -60,25 +61,13 @@ mod tests {
         },
     };
 
-    #[derive(Default)]
-    pub struct TestEntropySource {
-        counter: u64,
-    }
-
-    impl EntropySource for TestEntropySource {
-        fn random_seed(&mut self) -> [u8; 32] {
-            let mut dest = [0u8; 32];
-            for byte in &mut dest {
-                *byte = self.counter as u8;
-                self.counter += 1
-            }
-            dest
-        }
-    }
-
     fn init_key_store(key_infos: &[KeyInfo]) -> MemoryKeyStore<{ TOTAL_KEY_SIZE }, { NUM_KEYS }> {
         MemoryKeyStore::<{ TOTAL_KEY_SIZE }, { NUM_KEYS }>::try_new(key_infos)
             .expect("failed to create key store")
+    }
+
+    fn init_rng() -> ChaCha20Rng {
+        ChaCha20Rng::from_seed([0u8; 32])
     }
 
     fn split_queues<'ch, 'data>(
@@ -155,7 +144,7 @@ mod tests {
             split_queues(&mut client_requests, &mut client_responses);
         let (rng_requests_rx, rng_requests_tx, rng_responses_rx, rng_responses_tx) =
             split_queues(&mut rng_requests, &mut rng_responses);
-        let rng = Mutex::new(Rng::new(TestEntropySource::default(), None));
+        let rng = Mutex::new(init_rng());
         let mut key_store = init_key_store(&KEY_INFOS);
         let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
         let mut rng_worker = RngWorker {
@@ -218,7 +207,7 @@ mod tests {
             split_queues(&mut client_requests, &mut client_responses);
         let (rng_requests_rx, rng_requests_tx, rng_responses_rx, rng_responses_tx) =
             split_queues(&mut rng_requests, &mut rng_responses);
-        let rng = Mutex::new(Rng::new(TestEntropySource::default(), None));
+        let rng = Mutex::new(init_rng());
         let mut key_store = init_key_store(&KEY_INFOS);
         let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
         let mut rng_worker = RngWorker {
@@ -281,7 +270,7 @@ mod tests {
             split_queues(&mut client_requests, &mut client_responses);
         let (rng_requests_rx, rng_requests_tx, rng_responses_rx, rng_responses_tx) =
             split_queues(&mut rng_requests, &mut rng_responses);
-        let rng = Mutex::new(Rng::new(TestEntropySource::default(), None));
+        let rng = Mutex::new(init_rng());
         let mut key_store = init_key_store(&KEY_INFOS);
         let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
         let mut rng_worker = RngWorker {
@@ -1080,7 +1069,7 @@ mod tests {
             split_queues(&mut client_requests, &mut client_responses);
         let (ecc_requests_rx, ecc_requests_tx, ecc_responses_rx, ecc_responses_tx) =
             split_queues(&mut ecc_requests, &mut ecc_responses);
-        let rng = Mutex::new(Rng::new(TestEntropySource::default(), None));
+        let rng = Mutex::new(init_rng());
         let mut key_store = init_key_store(&KEY_INFOS);
         let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
         let mut ecc_worker = EccWorker {
@@ -1320,7 +1309,7 @@ mod tests {
             split_queues(&mut client2_requests, &mut client2_responses);
         let (rng_requests_rx, rng_requests_tx, rng_responses_rx, rng_responses_tx) =
             split_queues(&mut rng_requests, &mut rng_responses);
-        let rng = Mutex::new(Rng::new(TestEntropySource::default(), None));
+        let rng = Mutex::new(init_rng());
         let mut key_store = init_key_store(&KEY_INFOS);
         let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
         let mut rng_worker = RngWorker {

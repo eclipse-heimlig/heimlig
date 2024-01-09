@@ -18,7 +18,7 @@ use ecdsa::{
 };
 use p256::NistP256;
 use p384::NistP384;
-use rand::{CryptoRng, RngCore};
+use rand_chacha::rand_core::{CryptoRng, RngCore};
 
 type PrivateKeySize<C> = FieldBytesSize<C>;
 type PrivateKeyBytes<C> = GenericArray<u8, PrivateKeySize<C>>;
@@ -412,7 +412,7 @@ define_nist_impl!(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::crypto::rng;
+    use rand_chacha::rand_core::SeedableRng;
 
     const MESSAGE: &[u8] =
         b"You have to understand the rules in the first place if you're going to break them.";
@@ -431,8 +431,7 @@ mod test {
         ) => {
             #[test]
             fn $test_name() {
-                let entropy = rng::test::TestEntropySource::default();
-                let mut rng = rng::Rng::new(entropy, None);
+                let mut rng = rand_chacha::ChaCha20Rng::from_seed([0u8; 32]);
 
                 let (private_key, public_key) = $generate_key_pair(&mut rng);
 
@@ -504,8 +503,7 @@ mod test {
 
                 let mut signature = [0u8; $signature_size];
 
-                let entropy = rng::test::TestEntropySource::default();
-                let mut rng = rng::Rng::new(entropy, None);
+                let mut rng = rand_chacha::ChaCha20Rng::from_seed([0u8; 32]);
                 let (private_key, public_key) = $generate_key_pair(&mut rng);
 
                 let digest =

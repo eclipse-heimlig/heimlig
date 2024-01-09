@@ -78,11 +78,12 @@ pub fn x25519_calculate_public_key(private_key: &[u8], public_key: &mut [u8]) ->
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::crypto::rng::{test::TestEntropySource, Rng};
+    use rand_chacha::rand_core::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
 
     #[test]
     fn test_x25519_shared_key() {
-        let mut rng = Rng::new(TestEntropySource::default(), None);
+        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
 
         // Alice's keys
         let alice_private_key = StaticSecret::random_from_rng(&mut rng);

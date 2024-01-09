@@ -13,7 +13,6 @@ use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Timer};
 use heimlig::client::api::Api;
 use heimlig::common::jobs::{RequestType, Response};
-use heimlig::crypto::rng;
 use heimlig::hsm::core::Builder;
 use heimlig::hsm::keystore::{KeyInfo, KeyStore};
 use heimlig::hsm::workers::rng_worker::RngWorker;
@@ -22,7 +21,6 @@ use heimlig::integration::embassy::{
     ResponseQueueSource,
 };
 use heimlig::integration::memory_key_store::MemoryKeyStore;
-use rand_core::RngCore;
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -38,19 +36,6 @@ static mut CLIENT_TO_CORE: RequestQueue<QUEUE_SIZE> = RequestQueue::<QUEUE_SIZE>
 static mut CORE_TO_CLIENT: ResponseQueue<QUEUE_SIZE> = ResponseQueue::<QUEUE_SIZE>::new();
 static mut CORE_TO_RNG_WORKER: RequestQueue<QUEUE_SIZE> = RequestQueue::<QUEUE_SIZE>::new();
 static mut RNG_WORKER_TO_CORE: ResponseQueue<QUEUE_SIZE> = ResponseQueue::<QUEUE_SIZE>::new();
-
-struct EntropySource {
-    rng: Rng<'static, RNG>,
-}
-
-impl rng::EntropySource for EntropySource {
-    fn random_seed(&mut self) -> [u8; 32] {
-        let mut buf = [0u8; 32];
-        self.rng.fill_bytes(&mut buf);
-        info!("New random seed (size={}, data={:02x})", buf.len(), buf);
-        buf
-    }
-}
 
 #[embassy_executor::task]
 async fn hsm_task(
@@ -69,7 +54,6 @@ async fn hsm_task(
     let mut key_store = MemoryKeyStore::<{ TOTAL_KEY_SIZE }, { NUM_KEYS }>::try_new(KEY_INFOS)
         .expect("failed to create key store");
     let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
-    let rng = rng::Rng::new(EntropySource { rng }, None);
     let rng: Mutex<NoopRawMutex, _> = Mutex::new(rng);
     let mut rng_worker = RngWorker {
         key_store: &key_store,

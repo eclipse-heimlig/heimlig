@@ -1,24 +1,23 @@
 use crate::common::jobs::{ClientId, Error, Request, RequestId, Response};
 use crate::common::limits::MAX_RANDOM_SIZE;
-use crate::crypto::rng::{EntropySource, Rng};
 use crate::hsm::keystore;
 use crate::hsm::keystore::{KeyId, KeyStore};
 use core::ops::Deref;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
 use futures::{Sink, SinkExt, Stream, StreamExt};
-use rand_core::RngCore;
+use rand_chacha::rand_core::{CryptoRng, RngCore};
 
 pub struct RngWorker<
     'data,
     'rng,
     'keystore,
     M: RawMutex,
-    E: EntropySource,
+    R: CryptoRng + RngCore,
     ReqSrc: Stream<Item = Request<'data>>,
     RespSink: Sink<Response<'data>>,
 > {
-    pub rng: &'rng Mutex<M, Rng<E>>,
+    pub rng: &'rng Mutex<M, R>,
     // TODO: Move sym. key generation to own worker and get rid of key store here?
     pub key_store: &'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>,
     pub requests: ReqSrc,
@@ -30,10 +29,10 @@ impl<
         'rng,
         'keystore,
         M: RawMutex,
-        E: EntropySource,
+        R: CryptoRng + RngCore,
         ReqSrc: Stream<Item = Request<'data>> + Unpin,
         RespSink: Sink<Response<'data>> + Unpin,
-    > RngWorker<'data, 'rng, 'keystore, M, E, ReqSrc, RespSink>
+    > RngWorker<'data, 'rng, 'keystore, M, R, ReqSrc, RespSink>
 {
     /// Drive the worker to process the next request.
     /// This method is supposed to be called by a system task that owns this worker.

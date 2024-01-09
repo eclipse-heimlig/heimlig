@@ -1,5 +1,5 @@
 use elliptic_curve::{Curve, CurveArithmetic, PublicKey, SecretKey};
-use rand::{CryptoRng, RngCore};
+use rand_chacha::rand_core::{CryptoRng, RngCore};
 
 /// Generate an elliptic curve key pair.   
 ///
