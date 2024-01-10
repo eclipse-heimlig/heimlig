@@ -791,6 +791,7 @@ dependencies = [
  "futures",
  "heapless",
  "hex",
+ "hmac",
  "p256",
  "p384",
  "rand_chacha",
