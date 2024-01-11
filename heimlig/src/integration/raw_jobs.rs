@@ -1,4 +1,4 @@
-use crate::common::jobs::{Request, Response};
+use crate::common::jobs::{HashAlgorithm, Request, Response};
 use crate::integration::raw_errors::JobErrorRaw;
 use core::slice;
 use strum::EnumCount;
@@ -7,6 +7,14 @@ type ClientIdRaw = u32;
 type RequestIdRaw = u32;
 type KeyIdRaw = u32;
 type BoolRaw = u32; // 0 == false, 1 == true
+type HashAlgorithmRaw = u32;
+
+pub const SHA2_256: HashAlgorithmRaw = 0;
+pub const SHA2_384: HashAlgorithmRaw = 1;
+pub const SHA2_512: HashAlgorithmRaw = 2;
+pub const SHA3_256: HashAlgorithmRaw = 3;
+pub const SHA3_384: HashAlgorithmRaw = 4;
+pub const SHA3_512: HashAlgorithmRaw = 5;
 
 /// A pair of a raw request and a raw response. This is a convenience type for integrators to
 /// allocate all necessary memory for a request and its response in one go.
@@ -279,6 +287,48 @@ pub enum RequestRaw {
         tag_data: *const u8,
         tag_size: u32,
     },
+    CalculateHmac {
+        client_id: ClientIdRaw,
+        request_id: RequestIdRaw,
+        key_id: KeyIdRaw,
+        hash_algorithm: HashAlgorithmRaw,
+        message_data: *const u8,
+        message_size: u32,
+        tag_data: *mut u8,
+        tag_size: u32,
+    },
+    CalculateHmacExternalKey {
+        client_id: ClientIdRaw,
+        request_id: RequestIdRaw,
+        key_data: *const u8,
+        key_size: u32,
+        hash_algorithm: HashAlgorithmRaw,
+        message_data: *const u8,
+        message_size: u32,
+        tag_data: *mut u8,
+        tag_size: u32,
+    },
+    VerifyHmac {
+        client_id: ClientIdRaw,
+        request_id: RequestIdRaw,
+        key_id: KeyIdRaw,
+        hash_algorithm: HashAlgorithmRaw,
+        message_data: *const u8,
+        message_size: u32,
+        tag_data: *const u8,
+        tag_size: u32,
+    },
+    VerifyHmacExternalKey {
+        client_id: ClientIdRaw,
+        request_id: RequestIdRaw,
+        key_data: *const u8,
+        key_size: u32,
+        hash_algorithm: HashAlgorithmRaw,
+        message_data: *const u8,
+        message_size: u32,
+        tag_data: *const u8,
+        tag_size: u32,
+    },
     Sign {
         client_id: ClientIdRaw,
         request_id: RequestIdRaw,
@@ -429,6 +479,17 @@ pub enum ResponseRaw {
         request_id: RequestIdRaw,
         verified: BoolRaw,
     },
+    CalculateHmac {
+        client_id: ClientIdRaw,
+        request_id: RequestIdRaw,
+        tag_data: *mut u8,
+        tag_size: u32,
+    },
+    VerifyHmac {
+        client_id: ClientIdRaw,
+        request_id: RequestIdRaw,
+        verified: BoolRaw,
+    },
     Sign {
         client_id: ClientIdRaw,
         request_id: RequestIdRaw,
@@ -446,6 +507,7 @@ pub enum ResponseRaw {
 pub enum ValidationError {
     InvalidPointer,
     InvalidTagValue,
+    InvalidValue,
 }
 
 impl RequestResponseRawPair {
@@ -915,6 +977,76 @@ impl RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
                 key: check_pointer_and_size(key_data, key_size, &validator)?,
+                message: check_pointer_and_size(message_data, message_size, &validator)?,
+                tag: check_pointer_and_size(tag_data, tag_size, &validator)?,
+            },
+            RequestRaw::CalculateHmac {
+                client_id,
+                request_id,
+                key_id,
+                hash_algorithm,
+                message_data,
+                message_size,
+                tag_data,
+                tag_size,
+            } => Request::CalculateHmac {
+                client_id: client_id.into(),
+                request_id: request_id.into(),
+                key_id: key_id.into(),
+                hash_algorithm: hash_algorithm.try_into()?,
+                message: check_pointer_and_size(message_data, message_size, &validator)?,
+                tag: check_mut_pointer_and_size(tag_data, tag_size, &validator)?,
+            },
+            RequestRaw::CalculateHmacExternalKey {
+                client_id,
+                request_id,
+                key_data,
+                key_size,
+                hash_algorithm,
+                message_data,
+                message_size,
+                tag_data,
+                tag_size,
+            } => Request::CalculateHmacExternalKey {
+                client_id: client_id.into(),
+                request_id: request_id.into(),
+                key: check_pointer_and_size(key_data, key_size, &validator)?,
+                hash_algorithm: hash_algorithm.try_into()?,
+                message: check_pointer_and_size(message_data, message_size, &validator)?,
+                tag: check_mut_pointer_and_size(tag_data, tag_size, &validator)?,
+            },
+            RequestRaw::VerifyHmac {
+                client_id,
+                request_id,
+                key_id,
+                hash_algorithm,
+                message_data,
+                message_size,
+                tag_data,
+                tag_size,
+            } => Request::VerifyHmac {
+                client_id: client_id.into(),
+                request_id: request_id.into(),
+                key_id: key_id.into(),
+                hash_algorithm: hash_algorithm.try_into()?,
+                message: check_pointer_and_size(message_data, message_size, &validator)?,
+                tag: check_pointer_and_size(tag_data, tag_size, &validator)?,
+            },
+            RequestRaw::VerifyHmacExternalKey {
+                client_id,
+                request_id,
+                key_data,
+                key_size,
+                hash_algorithm,
+                message_data,
+                message_size,
+                tag_data,
+                tag_size,
+            } => Request::VerifyHmacExternalKey {
+                client_id: client_id.into(),
+                request_id: request_id.into(),
+                key: check_pointer_and_size(key_data, key_size, &validator)?,
+                hash_algorithm: hash_algorithm.try_into()?,
                 message: check_pointer_and_size(message_data, message_size, &validator)?,
                 tag: check_pointer_and_size(tag_data, tag_size, &validator)?,
             },
@@ -1405,6 +1537,76 @@ impl From<Request<'_>> for RequestRaw {
                 tag_data: tag.as_ptr(),
                 tag_size: tag.len() as u32,
             },
+            Request::CalculateHmac {
+                client_id,
+                request_id,
+                key_id,
+                hash_algorithm,
+                message,
+                tag,
+            } => RequestRaw::CalculateHmac {
+                client_id: client_id.into(),
+                request_id: request_id.into(),
+                key_id: key_id.into(),
+                hash_algorithm: hash_algorithm.into(),
+                message_data: message.as_ptr(),
+                message_size: message.len() as u32,
+                tag_data: tag.as_mut_ptr(),
+                tag_size: tag.len() as u32,
+            },
+            Request::CalculateHmacExternalKey {
+                client_id,
+                request_id,
+                key,
+                hash_algorithm,
+                message,
+                tag,
+            } => RequestRaw::CalculateHmacExternalKey {
+                client_id: client_id.into(),
+                request_id: request_id.into(),
+                key_data: key.as_ptr(),
+                key_size: key.len() as u32,
+                hash_algorithm: hash_algorithm.into(),
+                message_data: message.as_ptr(),
+                message_size: message.len() as u32,
+                tag_data: tag.as_mut_ptr(),
+                tag_size: tag.len() as u32,
+            },
+            Request::VerifyHmac {
+                client_id,
+                request_id,
+                key_id,
+                hash_algorithm,
+                message,
+                tag,
+            } => RequestRaw::VerifyHmac {
+                client_id: client_id.into(),
+                request_id: request_id.into(),
+                key_id: key_id.into(),
+                hash_algorithm: hash_algorithm.into(),
+                message_data: message.as_ptr(),
+                message_size: message.len() as u32,
+                tag_data: tag.as_ptr(),
+                tag_size: tag.len() as u32,
+            },
+            Request::VerifyHmacExternalKey {
+                client_id,
+                request_id,
+                key,
+                hash_algorithm,
+                message,
+                tag,
+            } => RequestRaw::VerifyHmacExternalKey {
+                client_id: client_id.into(),
+                request_id: request_id.into(),
+                key_data: key.as_ptr(),
+                key_size: key.len() as u32,
+                hash_algorithm: hash_algorithm.into(),
+                message_data: message.as_ptr(),
+                message_size: message.len() as u32,
+                tag_data: tag.as_ptr(),
+                tag_size: tag.len() as u32,
+            },
             Request::Sign {
                 client_id,
                 request_id,
@@ -1680,6 +1882,25 @@ impl From<Response<'_>> for ResponseRaw {
                 request_id: request_id.into(),
                 verified: verified.into(),
             },
+            Response::CalculateHmac {
+                client_id,
+                request_id,
+                tag,
+            } => ResponseRaw::CalculateHmac {
+                client_id: client_id.into(),
+                request_id: request_id.into(),
+                tag_data: tag.as_mut_ptr(),
+                tag_size: tag.len() as u32,
+            },
+            Response::VerifyHmac {
+                client_id,
+                request_id,
+                verified,
+            } => ResponseRaw::VerifyHmac {
+                client_id: client_id.into(),
+                request_id: request_id.into(),
+                verified: verified.into(),
+            },
             Response::Sign {
                 client_id,
                 request_id,
@@ -1699,6 +1920,35 @@ impl From<Response<'_>> for ResponseRaw {
                 request_id: request_id.into(),
                 verified: verified.into(),
             },
+        }
+    }
+}
+
+impl TryFrom<HashAlgorithmRaw> for HashAlgorithm {
+    type Error = ValidationError;
+
+    fn try_from(value: HashAlgorithmRaw) -> Result<Self, Self::Error> {
+        match value {
+            SHA2_256 => Ok(Self::Sha2_256),
+            SHA2_384 => Ok(Self::Sha2_384),
+            SHA2_512 => Ok(Self::Sha2_512),
+            SHA3_256 => Ok(Self::Sha3_256),
+            SHA3_384 => Ok(Self::Sha3_384),
+            SHA3_512 => Ok(Self::Sha3_512),
+            _ => Err(ValidationError::InvalidValue),
+        }
+    }
+}
+
+impl From<HashAlgorithm> for HashAlgorithmRaw {
+    fn from(value: HashAlgorithm) -> Self {
+        match value {
+            HashAlgorithm::Sha2_256 => SHA2_256,
+            HashAlgorithm::Sha2_384 => SHA2_384,
+            HashAlgorithm::Sha2_512 => SHA2_512,
+            HashAlgorithm::Sha3_256 => SHA3_256,
+            HashAlgorithm::Sha3_384 => SHA3_384,
+            HashAlgorithm::Sha3_512 => SHA3_512,
         }
     }
 }

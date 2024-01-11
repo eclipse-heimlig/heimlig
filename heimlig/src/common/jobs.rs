@@ -72,6 +72,16 @@ impl RequestId {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum HashAlgorithm {
+    Sha2_256,
+    Sha2_384,
+    Sha2_512,
+    Sha3_256,
+    Sha3_384,
+    Sha3_512,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum RequestType {
     GetRandom,
     GenerateSymmetricKey,
@@ -98,6 +108,10 @@ pub enum RequestType {
     VerifyAesCmac,
     CalculateAesCmacExternalKey,
     VerifyAesCmacExternalKey,
+    CalculateHmac,
+    CalculateHmacExternalKey,
+    VerifyHmac,
+    VerifyHmacExternalKey,
     Sign,
     SignExternalKey,
     Verify,
@@ -292,6 +306,38 @@ pub enum Request<'data> {
         message: &'data [u8],
         tag: &'data [u8],
     },
+    CalculateHmac {
+        client_id: ClientId,
+        request_id: RequestId,
+        key_id: KeyId,
+        hash_algorithm: HashAlgorithm,
+        message: &'data [u8],
+        tag: &'data mut [u8],
+    },
+    CalculateHmacExternalKey {
+        client_id: ClientId,
+        request_id: RequestId,
+        key: &'data [u8],
+        hash_algorithm: HashAlgorithm,
+        message: &'data [u8],
+        tag: &'data mut [u8],
+    },
+    VerifyHmac {
+        client_id: ClientId,
+        request_id: RequestId,
+        key_id: KeyId,
+        hash_algorithm: HashAlgorithm,
+        message: &'data [u8],
+        tag: &'data [u8],
+    },
+    VerifyHmacExternalKey {
+        client_id: ClientId,
+        request_id: RequestId,
+        key: &'data [u8],
+        hash_algorithm: HashAlgorithm,
+        message: &'data [u8],
+        tag: &'data [u8],
+    },
     Sign {
         client_id: ClientId,
         request_id: RequestId,
@@ -440,6 +486,16 @@ pub enum Response<'data> {
         request_id: RequestId,
         verified: bool,
     },
+    CalculateHmac {
+        client_id: ClientId,
+        request_id: RequestId,
+        tag: &'data mut [u8],
+    },
+    VerifyHmac {
+        client_id: ClientId,
+        request_id: RequestId,
+        verified: bool,
+    },
     Sign {
         client_id: ClientId,
         request_id: RequestId,
@@ -484,6 +540,10 @@ impl<'data> Request<'data> {
             Request::CalculateAesCmacExternalKey { .. } => RequestType::CalculateAesCmacExternalKey,
             Request::VerifyAesCmac { .. } => RequestType::VerifyAesCmac,
             Request::VerifyAesCmacExternalKey { .. } => RequestType::VerifyAesCmacExternalKey,
+            Request::CalculateHmac { .. } => RequestType::CalculateHmac,
+            Request::CalculateHmacExternalKey { .. } => RequestType::CalculateHmacExternalKey,
+            Request::VerifyHmac { .. } => RequestType::VerifyHmac,
+            Request::VerifyHmacExternalKey { .. } => RequestType::VerifyHmacExternalKey,
             Request::Sign { .. } => RequestType::Sign,
             Request::SignExternalKey { .. } => RequestType::SignExternalKey,
             Request::Verify { .. } => RequestType::Verify,
@@ -518,6 +578,10 @@ impl<'data> Request<'data> {
             Request::VerifyAesCmac { client_id, .. } => *client_id = new_client_id,
             Request::CalculateAesCmacExternalKey { client_id, .. } => *client_id = new_client_id,
             Request::VerifyAesCmacExternalKey { client_id, .. } => *client_id = new_client_id,
+            Request::CalculateHmac { client_id, .. } => *client_id = new_client_id,
+            Request::CalculateHmacExternalKey { client_id, .. } => *client_id = new_client_id,
+            Request::VerifyHmac { client_id, .. } => *client_id = new_client_id,
+            Request::VerifyHmacExternalKey { client_id, .. } => *client_id = new_client_id,
             Request::Sign { client_id, .. } => *client_id = new_client_id,
             Request::SignExternalKey { client_id, .. } => *client_id = new_client_id,
             Request::Verify { client_id, .. } => *client_id = new_client_id,
@@ -556,6 +620,10 @@ impl<'data> Request<'data> {
             Request::VerifyAesCmac { request_id, .. } => *request_id = new_request_id,
             Request::CalculateAesCmacExternalKey { request_id, .. } => *request_id = new_request_id,
             Request::VerifyAesCmacExternalKey { request_id, .. } => *request_id = new_request_id,
+            Request::CalculateHmac { request_id, .. } => *request_id = new_request_id,
+            Request::CalculateHmacExternalKey { request_id, .. } => *request_id = new_request_id,
+            Request::VerifyHmac { request_id, .. } => *request_id = new_request_id,
+            Request::VerifyHmacExternalKey { request_id, .. } => *request_id = new_request_id,
             Request::Sign { request_id, .. } => *request_id = new_request_id,
             Request::SignExternalKey { request_id, .. } => *request_id = new_request_id,
             Request::Verify { request_id, .. } => *request_id = new_request_id,
@@ -585,6 +653,8 @@ impl<'data> Response<'data> {
             Response::DecryptAesCbc { client_id, .. } => client_id,
             Response::CalculateAesCmac { client_id, .. } => client_id,
             Response::VerifyAesCmac { client_id, .. } => client_id,
+            Response::CalculateHmac { client_id, .. } => client_id,
+            Response::VerifyHmac { client_id, .. } => client_id,
             Response::Sign { client_id, .. } => client_id,
             Response::Verify { client_id, .. } => client_id,
         }
