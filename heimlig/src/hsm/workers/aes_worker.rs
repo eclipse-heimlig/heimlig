@@ -1,19 +1,27 @@
-use crate::common::jobs::{ClientId, Error, Request, RequestId, Response};
-use crate::crypto;
-use crate::crypto::aes::cbc::{
-    aes128cbc_decrypt, aes128cbc_encrypt, aes192cbc_decrypt, aes192cbc_encrypt, aes256cbc_decrypt,
-    aes256cbc_encrypt,
+use crate::{
+    common::jobs::{ClientId, Error, Request, RequestId, Response},
+    crypto::{
+        self,
+        aes::{
+            cbc::{
+                aes128cbc_decrypt, aes128cbc_encrypt, aes192cbc_decrypt, aes192cbc_encrypt,
+                aes256cbc_decrypt, aes256cbc_encrypt,
+            },
+            cmac::{
+                aes128_cmac_calculate, aes128_cmac_verify, aes192_cmac_calculate,
+                aes192_cmac_verify, aes256_cmac_calculate, aes256_cmac_verify,
+            },
+            gcm::{
+                aes128gcm_decrypt_in_place_detached, aes128gcm_encrypt_in_place_detached,
+                aes256gcm_decrypt_in_place_detached, aes256gcm_encrypt_in_place_detached,
+            },
+            KEY128_SIZE, KEY192_SIZE, KEY256_SIZE,
+        },
+    },
+    hsm::keystore::{self, KeyId, KeyInfo, KeyStore, KeyType},
 };
-use crate::crypto::aes::gcm::{
-    aes128gcm_decrypt_in_place_detached, aes128gcm_encrypt_in_place_detached,
-    aes256gcm_decrypt_in_place_detached, aes256gcm_encrypt_in_place_detached,
-};
-use crate::crypto::aes::{KEY128_SIZE, KEY192_SIZE, KEY256_SIZE};
-use crate::hsm::keystore;
-use crate::hsm::keystore::{KeyId, KeyInfo, KeyStore, KeyType};
 use cbc::cipher::block_padding::Pkcs7;
-use embassy_sync::blocking_mutex::raw::RawMutex;
-use embassy_sync::mutex::Mutex;
+use embassy_sync::{blocking_mutex::raw::RawMutex, mutex::Mutex};
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use zeroize::Zeroizing;
 
@@ -138,6 +146,46 @@ impl<
                 buffer,
             } => {
                 self.decrypt_aes_cbc_external_key(client_id, request_id, key, iv, buffer)
+                    .await
+            }
+            Request::CalculateAesCmac {
+                client_id,
+                request_id,
+                key_id,
+                message,
+                tag,
+            } => {
+                self.calculate_aes_cmac(client_id, request_id, key_id, message, tag)
+                    .await
+            }
+            Request::CalculateAesCmacExternalKey {
+                client_id,
+                request_id,
+                key,
+                message,
+                tag,
+            } => {
+                self.calculate_aes_cmac_external_key(client_id, request_id, key, message, tag)
+                    .await
+            }
+            Request::VerifyAesCmac {
+                client_id,
+                request_id,
+                key_id,
+                message,
+                tag,
+            } => {
+                self.verify_aes_cmac(client_id, request_id, key_id, message, tag)
+                    .await
+            }
+            Request::VerifyAesCmacExternalKey {
+                client_id,
+                request_id,
+                key,
+                message,
+                tag,
+            } => {
+                self.verify_aes_cmac_external_key(client_id, request_id, key, message, tag)
                     .await
             }
             _ => Err(Error::UnexpectedRequestType)?,
@@ -507,6 +555,168 @@ impl<
                     plaintext: &mut buffer[..plaintext_len],
                 }
             }
+        }
+    }
+
+    async fn calculate_aes_cmac(
+        &mut self,
+        client_id: ClientId,
+        request_id: RequestId,
+        key_id: KeyId,
+        message: &[u8],
+        tag: &'data mut [u8],
+    ) -> Response<'data> {
+        let mut key_buffer = Zeroizing::new([0u8; KeyType::MAX_SYMMETRIC_KEY_SIZE]);
+        let key_and_info = self
+            .export_key_and_key_info(key_id, key_buffer.as_mut_slice())
+            .await;
+        let result = match key_and_info {
+            Err(e) => {
+                return Response::Error {
+                    client_id,
+                    request_id,
+                    error: Error::KeyStore(e),
+                }
+            }
+            Ok((key, key_info)) => match key_info.ty {
+                KeyType::Symmetric128Bits => aes128_cmac_calculate(key, message, tag),
+                KeyType::Symmetric192Bits => aes192_cmac_calculate(key, message, tag),
+                KeyType::Symmetric256Bits => aes256_cmac_calculate(key, message, tag),
+                _ => {
+                    return Response::Error {
+                        client_id,
+                        request_id,
+                        error: Error::KeyStore(keystore::Error::InvalidKeyType),
+                    }
+                }
+            },
+        };
+        match result {
+            Err(e) => Response::Error {
+                client_id,
+                request_id,
+                error: Error::Crypto(e),
+            },
+            Ok(()) => Response::CalculateAesCmac {
+                client_id,
+                request_id,
+                tag,
+            },
+        }
+    }
+
+    async fn calculate_aes_cmac_external_key(
+        &mut self,
+        client_id: ClientId,
+        request_id: RequestId,
+        key: &[u8],
+        message: &[u8],
+        tag: &'data mut [u8],
+    ) -> Response<'data> {
+        let result = match key.len() {
+            KEY128_SIZE => aes128_cmac_calculate(key, message, tag),
+            KEY192_SIZE => aes192_cmac_calculate(key, message, tag),
+            KEY256_SIZE => aes256_cmac_calculate(key, message, tag),
+            _ => {
+                return Response::Error {
+                    client_id,
+                    request_id,
+                    error: Error::Crypto(crypto::Error::InvalidSymmetricKeySize),
+                }
+            }
+        };
+        match result {
+            Err(e) => Response::Error {
+                client_id,
+                request_id,
+                error: Error::Crypto(e),
+            },
+            Ok(()) => Response::CalculateAesCmac {
+                client_id,
+                request_id,
+                tag,
+            },
+        }
+    }
+
+    async fn verify_aes_cmac(
+        &mut self,
+        client_id: ClientId,
+        request_id: RequestId,
+        key_id: KeyId,
+        message: &[u8],
+        tag: &[u8],
+    ) -> Response<'data> {
+        let mut key_buffer = Zeroizing::new([0u8; KeyType::MAX_SYMMETRIC_KEY_SIZE]);
+        let key_and_info = self
+            .export_key_and_key_info(key_id, key_buffer.as_mut_slice())
+            .await;
+        let result = match key_and_info {
+            Err(e) => {
+                return Response::Error {
+                    client_id,
+                    request_id,
+                    error: Error::KeyStore(e),
+                }
+            }
+            Ok((key, key_info)) => match key_info.ty {
+                KeyType::Symmetric128Bits => aes128_cmac_verify(key, message, tag),
+                KeyType::Symmetric192Bits => aes192_cmac_verify(key, message, tag),
+                KeyType::Symmetric256Bits => aes256_cmac_verify(key, message, tag),
+                _ => {
+                    return Response::Error {
+                        client_id,
+                        request_id,
+                        error: Error::KeyStore(keystore::Error::InvalidKeyType),
+                    }
+                }
+            },
+        };
+        match result {
+            Err(e) => Response::Error {
+                client_id,
+                request_id,
+                error: Error::Crypto(e),
+            },
+            Ok(verified) => Response::VerifyAesCmac {
+                client_id,
+                request_id,
+                verified,
+            },
+        }
+    }
+
+    async fn verify_aes_cmac_external_key(
+        &mut self,
+        client_id: ClientId,
+        request_id: RequestId,
+        key: &[u8],
+        message: &[u8],
+        tag: &[u8],
+    ) -> Response<'data> {
+        let result = match key.len() {
+            KEY128_SIZE => aes128_cmac_verify(key, message, tag),
+            KEY192_SIZE => aes192_cmac_verify(key, message, tag),
+            KEY256_SIZE => aes256_cmac_verify(key, message, tag),
+            _ => {
+                return Response::Error {
+                    client_id,
+                    request_id,
+                    error: Error::Crypto(crypto::Error::InvalidSymmetricKeySize),
+                }
+            }
+        };
+        match result {
+            Err(e) => Response::Error {
+                client_id,
+                request_id,
+                error: Error::Crypto(e),
+            },
+            Ok(verified) => Response::VerifyAesCmac {
+                client_id,
+                request_id,
+                verified,
+            },
         }
     }
 

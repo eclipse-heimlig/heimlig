@@ -104,16 +104,11 @@ define_aes_ccm_impl!(
 mod test {
     extern crate alloc;
     use super::*;
-    use crate::crypto::aes::{CCM_NONCE_SIZE, CCM_TAG_SIZE, KEY128_SIZE, KEY192_SIZE, KEY256_SIZE};
+    use crate::crypto::aes::{test::*, CCM_NONCE_SIZE, CCM_TAG_SIZE};
     use alloc::borrow::ToOwned;
     use heapless::Vec;
 
-    const KEY128: &[u8; KEY128_SIZE] = b"Open sesame! ...";
-    const KEY192: &[u8; KEY192_SIZE] = b"Open sesame! ... Please!";
-    const KEY256: &[u8; KEY256_SIZE] = b"Or was it 'open quinoa' instead?";
-    const NONCE: &[u8; CCM_NONCE_SIZE] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
-    const PLAINTEXT: &[u8] = b"Hello, World!";
-    const AAD: &[u8] = b"Never gonna give you up, Never gonna let you down!";
+    pub const NONCE: &[u8; CCM_NONCE_SIZE] = &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
 
     macro_rules! define_aes_ccm_encrypt_decrypt_test {
         (
