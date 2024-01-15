@@ -1,4 +1,4 @@
-use crate::common::jobs::{ClientId, Request, RequestId, Response};
+use crate::common::jobs::{ClientId, HashAlgorithm, Request, RequestId, Response};
 use crate::hsm::keystore::KeyId;
 use futures::{Sink, SinkExt, Stream, StreamExt};
 
@@ -443,6 +443,78 @@ impl<
             client_id: ClientId::default(),
             request_id: RequestId::default(),
             key,
+            message,
+            tag,
+        };
+        self.send_request(request).await
+    }
+
+    pub async fn calculate_hmac(
+        &mut self,
+        key_id: KeyId,
+        hash_algorithm: HashAlgorithm,
+        message: &'data [u8],
+        tag: &'data mut [u8],
+    ) -> Result<RequestId, Error> {
+        let request = Request::CalculateHmac {
+            client_id: ClientId::default(),
+            request_id: RequestId::default(),
+            key_id,
+            hash_algorithm,
+            message,
+            tag,
+        };
+        self.send_request(request).await
+    }
+
+    pub async fn calculate_hmac_external_key(
+        &mut self,
+        key: &'data [u8],
+        hash_algorithm: HashAlgorithm,
+        message: &'data [u8],
+        tag: &'data mut [u8],
+    ) -> Result<RequestId, Error> {
+        let request = Request::CalculateHmacExternalKey {
+            client_id: ClientId::default(),
+            request_id: RequestId::default(),
+            key,
+            hash_algorithm,
+            message,
+            tag,
+        };
+        self.send_request(request).await
+    }
+
+    pub async fn verify_hmac(
+        &mut self,
+        key_id: KeyId,
+        hash_algorithm: HashAlgorithm,
+        message: &'data [u8],
+        tag: &'data [u8],
+    ) -> Result<RequestId, Error> {
+        let request = Request::VerifyHmac {
+            client_id: ClientId::default(),
+            request_id: RequestId::default(),
+            key_id,
+            hash_algorithm,
+            message,
+            tag,
+        };
+        self.send_request(request).await
+    }
+
+    pub async fn verify_hmac_external_key(
+        &mut self,
+        key: &'data [u8],
+        hash_algorithm: HashAlgorithm,
+        message: &'data [u8],
+        tag: &'data [u8],
+    ) -> Result<RequestId, Error> {
+        let request = Request::VerifyHmacExternalKey {
+            client_id: ClientId::default(),
+            request_id: RequestId::default(),
+            key,
+            hash_algorithm,
             message,
             tag,
         };

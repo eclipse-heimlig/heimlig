@@ -4,7 +4,7 @@ mod tests {
     use futures::future::join;
     use heimlig::client::api::Api;
     use heimlig::client::api::SymmetricAlgorithm::{AesCbc, AesGcm, ChaCha20Poly1305};
-    use heimlig::common::jobs::{Error, Request, RequestType, Response};
+    use heimlig::common::jobs::{Error, HashAlgorithm, Request, RequestType, Response};
     use heimlig::common::limits::MAX_RANDOM_SIZE;
     use heimlig::crypto;
     use heimlig::hsm::core::Builder;
@@ -12,6 +12,7 @@ mod tests {
     use heimlig::hsm::workers::aes_worker::AesWorker;
     use heimlig::hsm::workers::chachapoly_worker::ChaChaPolyWorker;
     use heimlig::hsm::workers::ecc_worker::EccWorker;
+    use heimlig::hsm::workers::hmac_worker::HmacWorker;
     use heimlig::hsm::workers::rng_worker::RngWorker;
     use heimlig::integration::embassy::{
         AsyncQueue, RequestQueueSink, RequestQueueSource, ResponseQueueSink, ResponseQueueSource,
@@ -1457,6 +1458,176 @@ mod tests {
         } = response
         else {
             panic!("Unexpected response type {:?}", response)
+        };
+        assert_eq!(request_id, org_request_id);
+        assert!(verified);
+    }
+
+    #[async_std::test]
+    async fn calculate_verify_hmac_sha3_512() {
+        const KEY_INFOS: [KeyInfo; 3] = [SYM_128_KEY, SYM_256_KEY, ASYM_NIST_P256_KEY];
+        let key: [u8; crypto::aes::KEY256_SIZE] = *b"Guardian of the Third Age Istar.";
+        let message: &[u8] = b"You Shall Not Pass!";
+        let mut tag = [0u8; crypto::hmac::HMAC_SHA3_512_SIZE];
+        let mut tag_external_key = [0u8; crypto::hmac::HMAC_SHA3_512_SIZE];
+        let mut client_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut client_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let mut hmac_requests = AsyncQueue::<Request, QUEUE_SIZE>::new();
+        let mut hmac_responses = AsyncQueue::<Response, QUEUE_SIZE>::new();
+        let (req_client_rx, req_client_tx, resp_client_rx, resp_client_tx) =
+            split_queues(&mut client_requests, &mut client_responses);
+        let (hmac_requests_rx, hmac_requests_tx, hmac_responses_rx, hmac_responses_tx) =
+            split_queues(&mut hmac_requests, &mut hmac_responses);
+        let mut key_store = init_key_store(&KEY_INFOS);
+        let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
+        let mut hmac_worker = HmacWorker {
+            key_store: &key_store,
+            requests: hmac_requests_rx,
+            responses: hmac_responses_tx,
+        };
+        let mut core = Builder::<
+            NoopRawMutex,
+            RequestQueueSource<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSink<'_, '_, QUEUE_SIZE>,
+            RequestQueueSink<'_, '_, QUEUE_SIZE>,
+            ResponseQueueSource<'_, '_, QUEUE_SIZE>,
+        >::default()
+        .with_keystore(&key_store)
+        .with_client(req_client_rx, resp_client_tx)
+        .expect("failed to add client")
+        .with_worker(
+            &[
+                RequestType::CalculateHmac,
+                RequestType::CalculateHmacExternalKey,
+                RequestType::VerifyHmac,
+                RequestType::VerifyHmacExternalKey,
+            ],
+            hmac_requests_tx,
+            hmac_responses_rx,
+        )
+        .expect("failed to add worker")
+        .build();
+        let mut api = Api::new(req_client_tx, resp_client_rx);
+
+        // Import key
+        let org_request_id = api
+            .import_symmetric_key(SYM_256_KEY.id, &key, false)
+            .await
+            .expect("failed to send request");
+        core.execute()
+            .await
+            .expect("failed to process next request");
+        let response = api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response");
+        let Response::ImportSymmetricKey {
+            client_id: _client_id,
+            request_id,
+        } = response
+        else {
+            panic!("Unexpected response type")
+        };
+        assert_eq!(org_request_id, request_id);
+
+        let hash_algorithm = HashAlgorithm::Sha3_512;
+
+        // Calculate HMAC tag with imported key
+        let org_request_id = api
+            .calculate_hmac(SYM_256_KEY.id, hash_algorithm, &message, &mut tag)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        hmac_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let Response::CalculateHmac {
+            client_id: _,
+            request_id,
+            tag,
+        } = api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response")
+        else {
+            panic!("Unexpected response type")
+        };
+        assert_eq!(request_id, org_request_id);
+
+        // Calculate HMAC tag with external key
+        let org_request_id = api
+            .calculate_hmac_external_key(&key, hash_algorithm, &message, &mut tag_external_key)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        hmac_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let Response::CalculateHmac {
+            client_id: _,
+            request_id,
+            tag: tag_external_key,
+        } = api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response")
+        else {
+            panic!("Unexpected response type")
+        };
+        assert_eq!(request_id, org_request_id);
+
+        assert_eq!(tag, tag_external_key);
+
+        // Verify HMAC tag with imported key
+        let org_request_id = api
+            .verify_hmac(SYM_256_KEY.id, hash_algorithm, &message, tag)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        hmac_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let Response::VerifyHmac {
+            client_id: _client_id,
+            request_id,
+            verified,
+        } = api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response")
+        else {
+            panic!("Unexpected response type")
+        };
+        assert_eq!(request_id, org_request_id);
+        assert!(verified);
+
+        // Verify HMAC tag with external key
+        let org_request_id = api
+            .verify_hmac_external_key(&key, hash_algorithm, &message, tag_external_key)
+            .await
+            .expect("failed to send request");
+        core.execute().await.expect("failed to forward request");
+        hmac_worker
+            .execute()
+            .await
+            .expect("failed to process request");
+        core.execute().await.expect("failed to forward response");
+        let Response::VerifyHmac {
+            client_id: _client_id,
+            request_id,
+            verified,
+        } = api
+            .recv_response()
+            .await
+            .expect("Failed to receive expected response")
+        else {
+            panic!("Unexpected response type")
         };
         assert_eq!(request_id, org_request_id);
         assert!(verified);
