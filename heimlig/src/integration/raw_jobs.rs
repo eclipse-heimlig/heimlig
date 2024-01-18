@@ -543,7 +543,7 @@ impl RequestRaw {
     /// valid `RequestRaw` instance.  
     ///
     pub unsafe fn from_raw(ptr: *const u8) -> Result<Self, ValidationError> {
-        // Unsafe: Pointer and size must be checked by integrator
+        // SAFETY: Pointer and size must be checked by integrator
         let tag: u8 = unsafe { *ptr };
 
         // Validate tag value. Invalid tag values cause UB when transmuted into an enum.
@@ -551,7 +551,7 @@ impl RequestRaw {
             return Err(ValidationError::InvalidTagValue);
         }
 
-        // Safety: All members of RequestRaw are valid for all possible values found in memory
+        // SAFETY: All members of RequestRaw are valid for all possible values found in memory
         Ok(*ptr.cast::<RequestRaw>())
     }
 
@@ -1695,7 +1695,7 @@ impl ResponseRaw {
     /// valid `ResponseRaw` instance.  
     ///
     pub unsafe fn from_raw(ptr: *const u8) -> Result<Self, ValidationError> {
-        // Unsafe: Pointer and size must be checked by integrator
+        // SAFETY: Pointer and size must be checked by integrator
         let tag: u8 = unsafe { *ptr };
 
         // Validate tag value. Invalid tag values cause UB when transmuted into an enum.
@@ -1703,7 +1703,7 @@ impl ResponseRaw {
             return Err(ValidationError::InvalidTagValue);
         }
 
-        // Safety: All members of RequestRaw are valid for all possible values found in memory
+        // SAFETY: All members of RequestRaw are valid for all possible values found in memory
         Ok(*ptr.cast::<ResponseRaw>())
     }
 }
@@ -1965,6 +1965,7 @@ fn check_pointer_and_size<'a>(
     if !validator(data, size) {
         return Err(ValidationError::InvalidPointer);
     }
+    // SAFETY: Checked by integrator-provided validator
     Ok(unsafe { slice::from_raw_parts(data, size as usize) })
 }
 
@@ -1980,6 +1981,7 @@ fn check_mut_pointer_and_size<'a>(
     if !validator(data, size) {
         return Err(ValidationError::InvalidPointer);
     }
+    // SAFETY: Checked by integrator-provided validator
     Ok(unsafe { slice::from_raw_parts_mut(data, size as usize) })
 }
 
