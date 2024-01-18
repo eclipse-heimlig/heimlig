@@ -6,7 +6,6 @@ pub mod ecdsa;
 pub mod ed25519;
 pub mod hash;
 pub mod hmac;
-pub mod rng;
 pub mod x25519;
 
 /// Common errors.
