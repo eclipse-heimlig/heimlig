@@ -589,6 +589,44 @@ impl<'data> Request<'data> {
         }
     }
 
+    pub fn get_request_id(&self) -> RequestId {
+        *match self {
+            Request::GetRandom { request_id, .. } => request_id,
+            Request::GenerateSymmetricKey { request_id, .. } => request_id,
+            Request::GenerateKeyPair { request_id, .. } => request_id,
+            Request::ImportSymmetricKey { request_id, .. } => request_id,
+            Request::ImportKeyPair { request_id, .. } => request_id,
+            Request::ExportSymmetricKey { request_id, .. } => request_id,
+            Request::ExportPublicKey { request_id, .. } => request_id,
+            Request::ExportPrivateKey { request_id, .. } => request_id,
+            Request::IsKeyAvailable { request_id, .. } => request_id,
+            Request::EncryptChaChaPoly { request_id, .. } => request_id,
+            Request::EncryptChaChaPolyExternalKey { request_id, .. } => request_id,
+            Request::DecryptChaChaPoly { request_id, .. } => request_id,
+            Request::DecryptChaChaPolyExternalKey { request_id, .. } => request_id,
+            Request::EncryptAesGcm { request_id, .. } => request_id,
+            Request::EncryptAesGcmExternalKey { request_id, .. } => request_id,
+            Request::DecryptAesGcm { request_id, .. } => request_id,
+            Request::DecryptAesGcmExternalKey { request_id, .. } => request_id,
+            Request::EncryptAesCbc { request_id, .. } => request_id,
+            Request::EncryptAesCbcExternalKey { request_id, .. } => request_id,
+            Request::DecryptAesCbc { request_id, .. } => request_id,
+            Request::DecryptAesCbcExternalKey { request_id, .. } => request_id,
+            Request::CalculateAesCmac { request_id, .. } => request_id,
+            Request::CalculateAesCmacExternalKey { request_id, .. } => request_id,
+            Request::VerifyAesCmac { request_id, .. } => request_id,
+            Request::VerifyAesCmacExternalKey { request_id, .. } => request_id,
+            Request::CalculateHmac { request_id, .. } => request_id,
+            Request::CalculateHmacExternalKey { request_id, .. } => request_id,
+            Request::VerifyHmac { request_id, .. } => request_id,
+            Request::VerifyHmacExternalKey { request_id, .. } => request_id,
+            Request::Sign { request_id, .. } => request_id,
+            Request::SignExternalKey { request_id, .. } => request_id,
+            Request::Verify { request_id, .. } => request_id,
+            Request::VerifyExternalKey { request_id, .. } => request_id,
+        }
+    }
+
     pub fn set_request_id(&mut self, new_request_id: RequestId) {
         match self {
             Request::GetRandom { request_id, .. } => *request_id = new_request_id,
@@ -657,6 +695,33 @@ impl<'data> Response<'data> {
             Response::VerifyHmac { client_id, .. } => client_id,
             Response::Sign { client_id, .. } => client_id,
             Response::Verify { client_id, .. } => client_id,
+        }
+    }
+
+    pub fn get_request_id(&self) -> RequestId {
+        *match self {
+            Response::Error { request_id, .. } => request_id,
+            Response::GetRandom { request_id, .. } => request_id,
+            Response::GenerateSymmetricKey { request_id, .. } => request_id,
+            Response::GenerateKeyPair { request_id, .. } => request_id,
+            Response::ImportSymmetricKey { request_id, .. } => request_id,
+            Response::ImportKeyPair { request_id, .. } => request_id,
+            Response::ExportSymmetricKey { request_id, .. } => request_id,
+            Response::ExportPublicKey { request_id, .. } => request_id,
+            Response::ExportPrivateKey { request_id, .. } => request_id,
+            Response::IsKeyAvailable { request_id, .. } => request_id,
+            Response::EncryptChaChaPoly { request_id, .. } => request_id,
+            Response::DecryptChaChaPoly { request_id, .. } => request_id,
+            Response::EncryptAesGcm { request_id, .. } => request_id,
+            Response::DecryptAesGcm { request_id, .. } => request_id,
+            Response::EncryptAesCbc { request_id, .. } => request_id,
+            Response::DecryptAesCbc { request_id, .. } => request_id,
+            Response::CalculateAesCmac { request_id, .. } => request_id,
+            Response::VerifyAesCmac { request_id, .. } => request_id,
+            Response::CalculateHmac { request_id, .. } => request_id,
+            Response::VerifyHmac { request_id, .. } => request_id,
+            Response::Sign { request_id, .. } => request_id,
+            Response::Verify { request_id, .. } => request_id,
         }
     }
 }
