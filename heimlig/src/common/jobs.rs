@@ -21,6 +21,18 @@ pub enum Error {
     KeyStore(keystore::Error),
 }
 
+impl From<keystore::Error> for Error {
+    fn from(value: keystore::Error) -> Self {
+        Self::KeyStore(value)
+    }
+}
+
+impl From<crate::crypto::Error> for Error {
+    fn from(value: crate::crypto::Error) -> Self {
+        Self::Crypto(value)
+    }
+}
+
 /// Used to distinguish multiple clients
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ClientId(pub u32);
