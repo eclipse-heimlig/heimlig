@@ -16,6 +16,10 @@ pub enum Error {
     Encrypt,
     /// Error during decryption.
     Decrypt,
+    /// Error during signing.
+    Sign,
+    /// Error during signature verification.
+    Verify,
     /// Invalid size of the symmetric key.
     InvalidSymmetricKeySize,
     /// Invalid size of the nonce or the initialization vector.

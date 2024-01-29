@@ -32,6 +32,10 @@ pub enum CryptoErrorRaw {
     Encrypt,
     /// Error during decryption.
     Decrypt,
+    /// Error during signing.
+    Sign,
+    /// Error during signature verification.
+    Verify,
     /// Invalid size of the symmetric key.
     InvalidSymmetricKeySize,
     /// Invalid size of the nonce or the initialization vector.
@@ -94,6 +98,8 @@ impl From<crypto::Error> for CryptoErrorRaw {
         match value {
             crypto::Error::Encrypt => CryptoErrorRaw::Encrypt,
             crypto::Error::Decrypt => CryptoErrorRaw::Decrypt,
+            crypto::Error::Sign => CryptoErrorRaw::Sign,
+            crypto::Error::Verify => CryptoErrorRaw::Verify,
             crypto::Error::InvalidSymmetricKeySize => CryptoErrorRaw::InvalidSymmetricKeySize,
             crypto::Error::InvalidIvSize => CryptoErrorRaw::InvalidIvSize,
             crypto::Error::InvalidTagSize => CryptoErrorRaw::InvalidTagSize,
