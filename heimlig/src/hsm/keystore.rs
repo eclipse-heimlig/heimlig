@@ -127,6 +127,25 @@ pub trait KeyStore {
         overwrite: bool,
     ) -> Result<(), Error>;
 
+    /// Write symmetric key to storage.
+    ///
+    /// Unlike `import_symmetric_key()`, this function imports keys even if their permissions do not
+    /// allow to do so. It is supposed to be used by workers and is not reachable from outside
+    /// Heimlig. Workers operate inside Heimlig and are trusted.
+    fn import_symmetric_key_unchecked(&mut self, id: KeyId, data: &[u8]) -> Result<(), Error>;
+
+    /// Write asymmetric key pair to storage.
+    ///
+    /// Unlike `import_key_pair()`, this function imports keys even if their permissions do not
+    /// allow to do so. It is supposed to be used by workers and is not reachable from outside
+    /// Heimlig. Workers operate inside Heimlig and are trusted.
+    fn import_key_pair_unchecked(
+        &mut self,
+        id: KeyId,
+        public_key: &[u8],
+        private_key: &[u8],
+    ) -> Result<(), Error>;
+
     /// Read symmetric key from storage.
     ///
     /// returns: The number of bytes written to `dest` or and error.
@@ -156,9 +175,9 @@ pub trait KeyStore {
 
     /// Read symmetric key from storage.
     ///
-    /// Unlike `export()`, this function exports keys even if their permissions do not allow so.
-    /// It is supposed to be used by workers who need to use to do their work and is not reachable
-    /// from outside Heimlig. Workers operate inside Heimlig and are trusted.  
+    /// Unlike `export_symmetric_key()`, this function exports keys even if their permissions do not
+    /// allow to do so. It is supposed to be used by workers and is not reachable from outside
+    /// Heimlig. Workers operate inside Heimlig and are trusted.
     ///
     /// returns: The number of bytes written to `dest` or and error.
     fn export_symmetric_key_unchecked<'data>(
@@ -169,9 +188,9 @@ pub trait KeyStore {
 
     /// Read asymmetric private key from storage.
     ///
-    /// Unlike `export()`, this function exports keys even if their permissions do not allow so.
-    /// It is supposed to be used by workers who need to use to do their work and is not reachable
-    /// from outside Heimlig. Workers operate inside Heimlig and are trusted.  
+    /// Unlike `export_private_key()`, this function exports keys even if their permissions do not
+    /// allow to do so. It is supposed to be used by workers and is not reachable from outside
+    /// Heimlig. Workers operate inside Heimlig and are trusted.
     ///
     /// returns: The number of bytes written to `dest` or and error.
     fn export_private_key_unchecked<'data>(

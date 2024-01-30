@@ -219,6 +219,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmac"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8543454e3c3f5126effff9cd44d562af4e31fb8ce1cc0d3dcd8f084515dbc1aa"
+dependencies = [
+ "cipher",
+ "dbl",
+ "digest",
+]
+
+[[package]]
 name = "colored"
 version = "2.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -348,6 +359,15 @@ dependencies = [
  "darling_core",
  "quote",
  "syn 2.0.38",
+]
+
+[[package]]
+name = "dbl"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd2735a791158376708f9347fe8faba9667589d82427ef3aed6794a8981de3d9"
+dependencies = [
+ "generic-array",
 ]
 
 [[package]]
@@ -707,7 +727,9 @@ dependencies = [
  "cbindgen",
  "ccm",
  "chacha20poly1305",
+ "cmac",
  "critical-section",
+ "dbl",
  "ecdsa",
  "ed25519-dalek",
  "elliptic-curve",
@@ -715,6 +737,7 @@ dependencies = [
  "embassy-sync",
  "futures",
  "heapless",
+ "hmac",
  "p256",
  "p384",
  "rand_chacha",

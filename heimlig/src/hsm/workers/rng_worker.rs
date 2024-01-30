@@ -101,12 +101,20 @@ impl<
                 let mut key = [0u8; keystore::KeyType::MAX_SYMMETRIC_KEY_SIZE];
                 let key = &mut key[0..key_info.ty.key_size()];
                 self.rng.lock().await.fill_bytes(key);
-                match self
-                    .key_store
-                    .lock()
-                    .await
-                    .import_symmetric_key(key_id, key, overwrite)
+                let mut locked_key_store = self.key_store.lock().await;
+
+                // Check overwrite permission
+                if locked_key_store.is_key_available(key_id)
+                    && (!overwrite || !key_info.permissions.overwrite)
                 {
+                    return Response::Error {
+                        client_id,
+                        request_id,
+                        error: Error::KeyStore(keystore::Error::NotAllowed),
+                    };
+                }
+
+                match locked_key_store.import_symmetric_key_unchecked(key_id, key) {
                     Ok(_) => Response::GenerateSymmetricKey {
                         client_id,
                         request_id,
