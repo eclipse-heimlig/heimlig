@@ -171,7 +171,18 @@ impl<
             },
         };
 
-        match locked_key_store.import_key_pair(key_info.id, public_key, private_key, overwrite) {
+        // Check overwrite permission
+        if locked_key_store.is_key_available(key_id)
+            && (!overwrite || !key_info.permissions.overwrite)
+        {
+            return Response::Error {
+                client_id,
+                request_id,
+                error: Error::KeyStore(keystore::Error::NotAllowed),
+            };
+        }
+
+        match locked_key_store.import_key_pair_unchecked(key_info.id, public_key, private_key) {
             Ok(()) => Response::GenerateKeyPair {
                 client_id,
                 request_id,
