@@ -182,7 +182,7 @@ impl<
             };
         }
 
-        match locked_key_store.import_key_pair_unchecked(key_info.id, public_key, private_key) {
+        match locked_key_store.import_key_pair_insecure(key_info.id, public_key, private_key) {
             Ok(()) => Response::GenerateKeyPair {
                 client_id,
                 request_id,
@@ -430,7 +430,7 @@ impl<
         let locked_key_store = self.key_store.lock().await;
 
         Ok((
-            locked_key_store.export_private_key_unchecked(key_id, key_buffer)?,
+            locked_key_store.export_private_key_insecure(key_id, key_buffer)?,
             locked_key_store.get_key_info(key_id)?,
         ))
     }

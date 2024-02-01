@@ -728,7 +728,7 @@ impl<
         // Lock keystore only once
         let locked_key_store = self.key_store.lock().await;
         Ok((
-            locked_key_store.export_symmetric_key_unchecked(key_id, key_buffer)?,
+            locked_key_store.export_symmetric_key_insecure(key_id, key_buffer)?,
             locked_key_store.get_key_info(key_id)?,
         ))
     }
