@@ -132,14 +132,14 @@ pub trait KeyStore {
     /// Unlike `import_symmetric_key()`, this function imports keys even if their permissions do not
     /// allow to do so. It is supposed to be used by workers and is not reachable from outside
     /// Heimlig. Workers operate inside Heimlig and are trusted.
-    fn import_symmetric_key_unchecked(&mut self, id: KeyId, data: &[u8]) -> Result<(), Error>;
+    fn import_symmetric_key_insecure(&mut self, id: KeyId, data: &[u8]) -> Result<(), Error>;
 
     /// Write asymmetric key pair to storage.
     ///
     /// Unlike `import_key_pair()`, this function imports keys even if their permissions do not
     /// allow to do so. It is supposed to be used by workers and is not reachable from outside
     /// Heimlig. Workers operate inside Heimlig and are trusted.
-    fn import_key_pair_unchecked(
+    fn import_key_pair_insecure(
         &mut self,
         id: KeyId,
         public_key: &[u8],
@@ -180,7 +180,7 @@ pub trait KeyStore {
     /// Heimlig. Workers operate inside Heimlig and are trusted.
     ///
     /// returns: The number of bytes written to `dest` or and error.
-    fn export_symmetric_key_unchecked<'data>(
+    fn export_symmetric_key_insecure<'data>(
         &self,
         id: KeyId,
         dest: &'data mut [u8],
@@ -193,7 +193,7 @@ pub trait KeyStore {
     /// Heimlig. Workers operate inside Heimlig and are trusted.
     ///
     /// returns: The number of bytes written to `dest` or and error.
-    fn export_private_key_unchecked<'data>(
+    fn export_private_key_insecure<'data>(
         &self,
         id: KeyId,
         dest: &'data mut [u8],

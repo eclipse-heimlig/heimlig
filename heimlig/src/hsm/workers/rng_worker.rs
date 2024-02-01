@@ -114,7 +114,7 @@ impl<
                     };
                 }
 
-                match locked_key_store.import_symmetric_key_unchecked(key_id, key) {
+                match locked_key_store.import_symmetric_key_insecure(key_id, key) {
                     Ok(_) => Response::GenerateSymmetricKey {
                         client_id,
                         request_id,

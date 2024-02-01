@@ -37,7 +37,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         if key_exists && (!overwrite || !key_layout.info.permissions.overwrite) {
             return Err(Error::NotAllowed);
         }
-        self.import_symmetric_key_unchecked(id, data)
+        self.import_symmetric_key_insecure(id, data)
     }
 
     fn import_key_pair(
@@ -55,10 +55,10 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         if key_exists && (!overwrite || !key_layout.info.permissions.overwrite) {
             return Err(Error::NotAllowed);
         }
-        self.import_key_pair_unchecked(id, public_key, private_key)
+        self.import_key_pair_insecure(id, public_key, private_key)
     }
 
-    fn import_symmetric_key_unchecked(&mut self, id: KeyId, data: &[u8]) -> Result<(), Error> {
+    fn import_symmetric_key_insecure(&mut self, id: KeyId, data: &[u8]) -> Result<(), Error> {
         let key_layout = self.layout.get_mut(id).ok_or(Error::InvalidKeyId)?;
         if !key_layout.info.ty.is_symmetric() {
             return Err(Error::InvalidKeyType);
@@ -74,7 +74,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         Ok(())
     }
 
-    fn import_key_pair_unchecked(
+    fn import_key_pair_insecure(
         &mut self,
         id: KeyId,
         public_key: &[u8],
@@ -116,7 +116,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         if !key_layout.info.permissions.export_private {
             return Err(Error::NotAllowed);
         }
-        self.export_symmetric_key_unchecked(id, dest)
+        self.export_symmetric_key_insecure(id, dest)
     }
 
     fn export_public_key<'data>(
@@ -154,10 +154,10 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         if !key_layout.info.permissions.export_private {
             return Err(Error::NotAllowed);
         }
-        self.export_private_key_unchecked(id, dest)
+        self.export_private_key_insecure(id, dest)
     }
 
-    fn export_symmetric_key_unchecked<'data>(
+    fn export_symmetric_key_insecure<'data>(
         &self,
         id: KeyId,
         dest: &'data mut [u8],
@@ -180,7 +180,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         Ok(dest)
     }
 
-    fn export_private_key_unchecked<'data>(
+    fn export_private_key_insecure<'data>(
         &self,
         id: KeyId,
         dest: &'data mut [u8],
@@ -455,7 +455,7 @@ pub(crate) mod test {
             Err(e) => assert_eq!(e, Error::NotAllowed),
         }
         assert!(key_store
-            .import_symmetric_key_unchecked(NOTHING_ALLOWED_KEY.id, &src_buffer)
+            .import_symmetric_key_insecure(NOTHING_ALLOWED_KEY.id, &src_buffer)
             .is_ok());
         match key_store.delete(NOTHING_ALLOWED_KEY.id) {
             Ok(_) => panic!("Operation should have failed"),
@@ -466,7 +466,7 @@ pub(crate) mod test {
             Err(e) => assert_eq!(e, Error::NotAllowed),
         }
         assert!(key_store
-            .export_symmetric_key_unchecked(NOTHING_ALLOWED_KEY.id, &mut dest_buffer)
+            .export_symmetric_key_insecure(NOTHING_ALLOWED_KEY.id, &mut dest_buffer)
             .is_ok());
     }
 
