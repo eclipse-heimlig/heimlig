@@ -1,4 +1,4 @@
-use crate::hsm::keystore::{Error, KeyId, KeyInfo, KeyStore};
+use crate::hsm::keystore::{Error, InsecureKeyStore, KeyId, KeyInfo};
 use heapless::Vec;
 
 pub struct MemoryKeyStore<const STORAGE_SIZE: usize, const MAX_KEYS: usize> {
@@ -15,7 +15,7 @@ impl<const STORAGE_SIZE: usize, const MAX_KEYS: usize> MemoryKeyStore<STORAGE_SI
     }
 }
 
-impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
+impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> InsecureKeyStore
     for MemoryKeyStore<STORAGE_SIZE, NUM_KEYS>
 {
     fn get_key_info(&self, id: KeyId) -> Result<KeyInfo, Error> {
@@ -23,46 +23,8 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         Ok(key_layout.info)
     }
 
-    fn import_symmetric_key(
-        &mut self,
-        id: KeyId,
-        data: &[u8],
-        overwrite: bool,
-    ) -> Result<(), Error> {
-        let key_exists = self.is_key_available(id);
-        let key_layout = self.layout.get_mut(id).ok_or(Error::InvalidKeyId)?;
-        if !key_layout.info.permissions.import {
-            return Err(Error::NotAllowed);
-        }
-        if key_exists && (!overwrite || !key_layout.info.permissions.overwrite) {
-            return Err(Error::NotAllowed);
-        }
-        self.import_symmetric_key_insecure(id, data)
-    }
-
-    fn import_key_pair(
-        &mut self,
-        id: KeyId,
-        public_key: &[u8],
-        private_key: &[u8],
-        overwrite: bool,
-    ) -> Result<(), Error> {
-        let key_exists = self.is_key_available(id);
-        let key_layout = self.layout.get_mut(id).ok_or(Error::InvalidKeyId)?;
-        if !key_layout.info.permissions.import {
-            return Err(Error::NotAllowed);
-        }
-        if key_exists && (!overwrite || !key_layout.info.permissions.overwrite) {
-            return Err(Error::NotAllowed);
-        }
-        self.import_key_pair_insecure(id, public_key, private_key)
-    }
-
     fn import_symmetric_key_insecure(&mut self, id: KeyId, data: &[u8]) -> Result<(), Error> {
         let key_layout = self.layout.get_mut(id).ok_or(Error::InvalidKeyId)?;
-        if !key_layout.info.ty.is_symmetric() {
-            return Err(Error::InvalidKeyType);
-        }
         if data.len() != key_layout.info.ty.key_size() {
             return Err(Error::InvalidBufferSize);
         }
@@ -81,9 +43,6 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         private_key: &[u8],
     ) -> Result<(), Error> {
         let key_layout = self.layout.get_mut(id).ok_or(Error::InvalidKeyId)?;
-        if !key_layout.info.ty.is_asymmetric() {
-            return Err(Error::InvalidKeyType);
-        }
         if (public_key.len() != 2 * private_key.len())
             || (public_key.len() + private_key.len() != key_layout.info.ty.key_size())
         {
@@ -107,27 +66,12 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         Ok(())
     }
 
-    fn export_symmetric_key<'data>(
+    fn export_public_key_insecure<'data>(
         &self,
         id: KeyId,
         dest: &'data mut [u8],
     ) -> Result<&'data [u8], Error> {
         let key_layout = self.layout.get(id).ok_or(Error::InvalidKeyId)?;
-        if !key_layout.info.permissions.export_private {
-            return Err(Error::NotAllowed);
-        }
-        self.export_symmetric_key_insecure(id, dest)
-    }
-
-    fn export_public_key<'data>(
-        &self,
-        id: KeyId,
-        dest: &'data mut [u8],
-    ) -> Result<&'data [u8], Error> {
-        let key_layout = self.layout.get(id).ok_or(Error::InvalidKeyId)?;
-        if !key_layout.info.ty.is_asymmetric() {
-            return Err(Error::InvalidKeyType);
-        }
         if key_layout.actual_size == 0 {
             return Err(Error::KeyNotFound);
         }
@@ -145,27 +89,12 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         Ok(dest)
     }
 
-    fn export_private_key<'data>(
-        &self,
-        id: KeyId,
-        dest: &'data mut [u8],
-    ) -> Result<&'data [u8], Error> {
-        let key_layout = self.layout.get(id).ok_or(Error::InvalidKeyId)?;
-        if !key_layout.info.permissions.export_private {
-            return Err(Error::NotAllowed);
-        }
-        self.export_private_key_insecure(id, dest)
-    }
-
     fn export_symmetric_key_insecure<'data>(
         &self,
         id: KeyId,
         dest: &'data mut [u8],
     ) -> Result<&'data [u8], Error> {
         let key_layout = self.layout.get(id).ok_or(Error::InvalidKeyId)?;
-        if !key_layout.info.ty.is_symmetric() {
-            return Err(Error::InvalidKeyType);
-        }
         if key_layout.actual_size == 0 {
             return Err(Error::KeyNotFound);
         }
@@ -186,9 +115,6 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         dest: &'data mut [u8],
     ) -> Result<&'data [u8], Error> {
         let key_layout = self.layout.get(id).ok_or(Error::InvalidKeyId)?;
-        if !key_layout.info.ty.is_asymmetric() {
-            return Err(Error::InvalidKeyType);
-        }
         if key_layout.actual_size == 0 {
             return Err(Error::KeyNotFound);
         }
@@ -208,9 +134,6 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
 
     fn delete(&mut self, id: KeyId) -> Result<(), Error> {
         let key_layout = self.layout.get_mut(id).ok_or(Error::InvalidKeyId)?;
-        if !key_layout.info.permissions.delete {
-            return Err(Error::NotAllowed);
-        }
         if key_layout.actual_size == 0 {
             return Err(Error::KeyNotFound);
         }
@@ -354,6 +277,7 @@ pub(crate) mod test {
         let mut dest_buffer = [0u8; KEY2_INFO.ty.key_size()];
         let mut key_store = MemoryKeyStore::<{ TOTAL_KEY_SIZE }, 2>::try_new(&key_infos)
             .expect("failed to create key store");
+        let key_store = &mut key_store as &mut dyn KeyStore;
         for key_id in 0..10 {
             let key_id: KeyId = key_id.into();
             assert!(!key_store.is_key_available(key_id));
@@ -450,6 +374,7 @@ pub(crate) mod test {
         let mut dest_buffer = [0u8; NOTHING_ALLOWED_KEY.ty.key_size()];
         let mut key_store = MemoryKeyStore::<{ TOTAL_KEY_SIZE }, 2>::try_new(&key_infos)
             .expect("failed to create key store");
+        let key_store = &mut key_store as &mut dyn KeyStore;
         match key_store.import_symmetric_key(NOTHING_ALLOWED_KEY.id, &src_buffer, false) {
             Ok(_) => panic!("Operation should have failed"),
             Err(e) => assert_eq!(e, Error::NotAllowed),
