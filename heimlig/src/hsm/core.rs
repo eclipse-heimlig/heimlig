@@ -1,7 +1,6 @@
 use crate::common::jobs;
 use crate::common::jobs::{ClientId, Request, RequestId, RequestType, Response};
 use crate::hsm::keystore;
-use crate::hsm::keystore::KeyStore;
 use core::future::poll_fn;
 use core::ops::DerefMut;
 use core::pin::Pin;
@@ -101,8 +100,9 @@ pub struct Core<
     RespSink: Sink<Response<'data>>,
     ReqSink: Sink<Request<'data>>,
     RespSrc: Stream<Item = Response<'data>>,
+    KeyStore: keystore::KeyStore,
 > {
-    key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
+    key_store: Option<&'keystore Mutex<M, &'keystore mut KeyStore>>,
     clients: Vec<ClientChannel<'data, ReqSrc, RespSink, M>, MAX_CLIENTS>,
     workers: Vec<WorkerChannel<'data, ReqSink, RespSrc, M>, MAX_WORKERS>,
     last_client_id: usize,
@@ -141,8 +141,9 @@ pub struct Builder<
     RespSink: Sink<Response<'data>>,
     ReqSink: Sink<Request<'data>>,
     RespSrc: Stream<Item = Response<'data>>,
+    KeyStore: keystore::KeyStore,
 > {
-    key_store: Option<&'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>>,
+    key_store: Option<&'keystore Mutex<M, &'keystore mut KeyStore>>,
     clients: Vec<ClientChannel<'data, ReqSrc, RespSink, M>, MAX_CLIENTS>,
     workers: Vec<WorkerChannel<'data, ReqSink, RespSrc, M>, MAX_WORKERS>,
 }
@@ -155,7 +156,8 @@ impl<
         RespSink: Sink<Response<'data>> + Unpin,
         ReqSink: Sink<Request<'data>> + Unpin,
         RespSrc: Stream<Item = Response<'data>> + Unpin,
-    > Default for Builder<'data, 'keystore, M, ReqSrc, RespSink, ReqSink, RespSrc>
+        KeyStore: keystore::KeyStore,
+    > Default for Builder<'data, 'keystore, M, ReqSrc, RespSink, ReqSink, RespSrc, KeyStore>
 {
     fn default() -> Self {
         Builder::new()
@@ -170,7 +172,8 @@ impl<
         RespSink: Sink<Response<'data>> + Unpin,
         ReqSink: Sink<Request<'data>> + Unpin,
         RespSrc: Stream<Item = Response<'data>> + Unpin,
-    > Builder<'data, 'keystore, M, ReqSrc, RespSink, ReqSink, RespSrc>
+        KeyStore: keystore::KeyStore,
+    > Builder<'data, 'keystore, M, ReqSrc, RespSink, ReqSink, RespSrc, KeyStore>
 {
     pub fn new() -> Self {
         Builder {
@@ -182,7 +185,7 @@ impl<
 
     pub fn with_keystore(
         mut self,
-        key_store: &'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>,
+        key_store: &'keystore Mutex<M, &'keystore mut KeyStore>,
     ) -> Self {
         self.key_store = Some(key_store);
         self
@@ -226,7 +229,7 @@ impl<
         Ok(self)
     }
 
-    pub fn build(self) -> Core<'data, 'keystore, M, ReqSrc, RespSink, ReqSink, RespSrc> {
+    pub fn build(self) -> Core<'data, 'keystore, M, ReqSrc, RespSink, ReqSink, RespSrc, KeyStore> {
         Core {
             key_store: self.key_store,
             clients: self.clients,
@@ -245,7 +248,8 @@ impl<
         RespSink: Sink<Response<'data>> + Unpin,
         ReqSink: Sink<Request<'data>> + Unpin,
         RespSrc: Stream<Item = Response<'data>> + Unpin,
-    > Core<'data, 'keystore, M, ReqSrc, RespSink, ReqSink, RespSrc>
+        KeyStore: keystore::KeyStore,
+    > Core<'data, 'keystore, M, ReqSrc, RespSink, ReqSink, RespSrc, KeyStore>
 {
     /// Drive the core to process the next client request or forward the next worker response.
     /// This method is supposed to be called by a system task that owns the core.

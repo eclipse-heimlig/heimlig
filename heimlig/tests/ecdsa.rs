@@ -5,7 +5,7 @@ pub use common::*;
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, mutex::Mutex};
 use heimlig::{
     common::jobs::{RequestType, Response},
-    hsm::{keystore::KeyStore, workers::ecc_worker::EccWorker},
+    hsm::workers::ecc_worker::EccWorker,
 };
 use sha2::{Digest, Sha256};
 
@@ -21,7 +21,7 @@ async fn sign_verify_nist_p256() {
     let (mut client_requests, mut client_responses) = allocate_channel();
     let (mut worker_requests, mut worker_responses) = allocate_channel();
     let mut key_store = init_key_store(&KEY_INFOS);
-    let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
+    let key_store: Mutex<NoopRawMutex, _> = Mutex::new(&mut key_store);
     let (mut api, mut core, req_worker_rx, resp_worker_tx) = init_core(
         &[
             RequestType::GenerateKeyPair,

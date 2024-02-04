@@ -3,8 +3,8 @@ use heimlig::{
     client::api::Api,
     common::jobs::{Request, RequestType, Response},
     hsm::{
-        core::{Builder, Core},
-        keystore::{KeyId, KeyInfo, KeyPermissions, KeyStore, KeyType},
+        core::{self, Builder},
+        keystore::{KeyId, KeyInfo, KeyPermissions, KeyType},
     },
     integration::{
         embassy::{
@@ -88,21 +88,24 @@ macro_rules! get_response_from_worker {
     }};
 }
 
+type Core<'data, 'keystore, 'ch> = core::Core<
+    'data,
+    'keystore,
+    NoopRawMutex,
+    RequestQueueSource<'ch, 'data, QUEUE_SIZE>,
+    ResponseQueueSink<'ch, 'data, QUEUE_SIZE>,
+    RequestQueueSink<'ch, 'data, QUEUE_SIZE>,
+    ResponseQueueSource<'ch, 'data, QUEUE_SIZE>,
+    MemoryKeyStore<{ TOTAL_KEY_SIZE }, { NUM_KEYS }>,
+>;
+
 pub async fn get_response_from_core<'data>(
     api: &mut Api<
         'data,
         RequestQueueSink<'_, 'data, QUEUE_SIZE>,
         ResponseQueueSource<'_, 'data, QUEUE_SIZE>,
     >,
-    core: &mut Core<
-        'data,
-        '_,
-        NoopRawMutex,
-        RequestQueueSource<'_, 'data, QUEUE_SIZE>,
-        ResponseQueueSink<'_, 'data, QUEUE_SIZE>,
-        RequestQueueSink<'_, 'data, QUEUE_SIZE>,
-        ResponseQueueSource<'_, 'data, QUEUE_SIZE>,
-    >,
+    core: &mut Core<'data, '_, '_>,
 ) -> Response<'data> {
     core.execute().await.expect("failed to process request");
     let Some(response) = api.recv_response().await else {
@@ -118,15 +121,7 @@ pub async fn check_key_availability<'data>(
         RequestQueueSink<'_, 'data, QUEUE_SIZE>,
         ResponseQueueSource<'_, 'data, QUEUE_SIZE>,
     >,
-    core: &mut Core<
-        'data,
-        '_,
-        NoopRawMutex,
-        RequestQueueSource<'_, 'data, QUEUE_SIZE>,
-        ResponseQueueSink<'_, 'data, QUEUE_SIZE>,
-        RequestQueueSink<'_, 'data, QUEUE_SIZE>,
-        ResponseQueueSource<'_, 'data, QUEUE_SIZE>,
-    >,
+    core: &mut Core<'data, '_, '_>,
     key_id: KeyId,
 ) {
     let org_request_id = api
@@ -151,15 +146,7 @@ pub async fn import_symmetric_key<'data>(
         RequestQueueSink<'_, 'data, QUEUE_SIZE>,
         ResponseQueueSource<'_, 'data, QUEUE_SIZE>,
     >,
-    core: &mut Core<
-        'data,
-        '_,
-        NoopRawMutex,
-        RequestQueueSource<'_, 'data, QUEUE_SIZE>,
-        ResponseQueueSink<'_, 'data, QUEUE_SIZE>,
-        RequestQueueSink<'_, 'data, QUEUE_SIZE>,
-        ResponseQueueSource<'_, 'data, QUEUE_SIZE>,
-    >,
+    core: &mut Core<'data, '_, '_>,
     key_id: KeyId,
     key: &'data [u8],
 ) {
@@ -193,22 +180,19 @@ pub fn init_core<'data, 'ch, 'keystore>(
     client_responses: &'ch mut AsyncQueue<Response<'data>, QUEUE_SIZE>,
     worker_requests: &'ch mut AsyncQueue<Request<'data>, QUEUE_SIZE>,
     worker_responses: &'ch mut AsyncQueue<Response<'data>, QUEUE_SIZE>,
-    key_store: Option<&'keystore Mutex<NoopRawMutex, &'keystore mut (dyn KeyStore + Send)>>,
+    key_store: Option<
+        &'keystore Mutex<
+            NoopRawMutex,
+            &'keystore mut MemoryKeyStore<{ TOTAL_KEY_SIZE }, { NUM_KEYS }>,
+        >,
+    >,
 ) -> (
     Api<
         'data,
         RequestQueueSink<'ch, 'data, QUEUE_SIZE>,
         ResponseQueueSource<'ch, 'data, QUEUE_SIZE>,
     >,
-    Core<
-        'data,
-        'keystore,
-        NoopRawMutex,
-        RequestQueueSource<'ch, 'data, QUEUE_SIZE>,
-        ResponseQueueSink<'ch, 'data, QUEUE_SIZE>,
-        RequestQueueSink<'ch, 'data, QUEUE_SIZE>,
-        ResponseQueueSource<'ch, 'data, QUEUE_SIZE>,
-    >,
+    Core<'data, 'keystore, 'ch>,
     RequestQueueSource<'ch, 'data, QUEUE_SIZE>,
     ResponseQueueSink<'ch, 'data, QUEUE_SIZE>,
 ) {
@@ -222,6 +206,7 @@ pub fn init_core<'data, 'ch, 'keystore>(
         ResponseQueueSink<'_, '_, QUEUE_SIZE>,
         RequestQueueSink<'_, '_, QUEUE_SIZE>,
         ResponseQueueSource<'_, '_, QUEUE_SIZE>,
+        MemoryKeyStore<{ TOTAL_KEY_SIZE }, { NUM_KEYS }>,
     >::default();
 
     let core_builder = if let Some(key_store) = key_store {

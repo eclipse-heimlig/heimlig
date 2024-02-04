@@ -18,7 +18,7 @@ use crate::{
             KEY128_SIZE, KEY192_SIZE, KEY256_SIZE,
         },
     },
-    hsm::keystore::{self, KeyId, KeyInfo, KeyStore, KeyType},
+    hsm::keystore::{self, KeyId, KeyInfo, KeyType},
 };
 use cbc::cipher::block_padding::Pkcs7;
 use embassy_sync::{blocking_mutex::raw::RawMutex, mutex::Mutex};
@@ -31,8 +31,9 @@ pub struct AesWorker<
     M: RawMutex,
     ReqSrc: Stream<Item = Request<'data>>,
     RespSink: Sink<Response<'data>>,
+    KeyStore: keystore::KeyStore + keystore::InsecureKeyStore + Send,
 > {
-    pub key_store: &'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>,
+    pub key_store: &'keystore Mutex<M, &'keystore mut KeyStore>,
     pub requests: ReqSrc,
     pub responses: RespSink,
 }
@@ -44,7 +45,8 @@ impl<
         M: RawMutex,
         ReqSrc: Stream<Item = Request<'data>> + Unpin,
         RespSink: Sink<Response<'data>> + Unpin,
-    > AesWorker<'data, 'keystore, M, ReqSrc, RespSink>
+        KeyStore: keystore::KeyStore + keystore::InsecureKeyStore + Send,
+    > AesWorker<'data, 'keystore, M, ReqSrc, RespSink, KeyStore>
 {
     /// Drive the worker to process the next request.
     /// This method is supposed to be called by a system task that owns this worker.
@@ -729,7 +731,7 @@ impl<
         let locked_key_store = self.key_store.lock().await;
         Ok((
             locked_key_store.export_symmetric_key_insecure(key_id, key_buffer)?,
-            locked_key_store.get_key_info(key_id)?,
+            keystore::KeyStore::get_key_info(*locked_key_store, key_id)?,
         ))
     }
 }

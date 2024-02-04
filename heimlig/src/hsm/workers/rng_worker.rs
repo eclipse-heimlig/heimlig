@@ -1,8 +1,6 @@
 use crate::common::jobs::{ClientId, Error, Request, RequestId, Response};
 use crate::common::limits::MAX_RANDOM_SIZE;
-use crate::hsm::keystore;
-use crate::hsm::keystore::{KeyId, KeyStore};
-use core::ops::Deref;
+use crate::hsm::keystore::{self, KeyId};
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
 use futures::{Sink, SinkExt, Stream, StreamExt};
@@ -16,10 +14,11 @@ pub struct RngWorker<
     R: CryptoRng + RngCore,
     ReqSrc: Stream<Item = Request<'data>>,
     RespSink: Sink<Response<'data>>,
+    KeyStore: keystore::KeyStore + keystore::InsecureKeyStore + Send,
 > {
     pub rng: &'rng Mutex<M, R>,
     // TODO: Move sym. key generation to own worker and get rid of key store here?
-    pub key_store: &'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>,
+    pub key_store: &'keystore Mutex<M, &'keystore mut KeyStore>,
     pub requests: ReqSrc,
     pub responses: RespSink,
 }
@@ -32,7 +31,8 @@ impl<
         R: CryptoRng + RngCore,
         ReqSrc: Stream<Item = Request<'data>> + Unpin,
         RespSink: Sink<Response<'data>> + Unpin,
-    > RngWorker<'data, 'rng, 'keystore, M, R, ReqSrc, RespSink>
+        KeyStore: keystore::KeyStore + keystore::InsecureKeyStore + Send,
+    > RngWorker<'data, 'rng, 'keystore, M, R, ReqSrc, RespSink, KeyStore>
 {
     /// Drive the worker to process the next request.
     /// This method is supposed to be called by a system task that owns this worker.
@@ -90,7 +90,7 @@ impl<
         overwrite: bool,
     ) -> Response<'data> {
         // Own variable needed to break mutex lock immediately
-        let key_info = self.key_store.lock().await.deref().get_key_info(key_id);
+        let key_info = keystore::KeyStore::get_key_info(*self.key_store.lock().await, key_id);
         match key_info {
             Err(e) => Response::Error {
                 client_id,
@@ -104,7 +104,7 @@ impl<
                 let mut locked_key_store = self.key_store.lock().await;
 
                 // Check overwrite permission
-                if locked_key_store.is_key_available(key_id)
+                if keystore::KeyStore::is_key_available(*locked_key_store, key_id)
                     && (!overwrite || !key_info.permissions.overwrite)
                 {
                     return Response::Error {

@@ -6,7 +6,7 @@ use crate::{
         hmac_sha3_256_calculate, hmac_sha3_256_verify, hmac_sha3_384_calculate,
         hmac_sha3_384_verify, hmac_sha3_512_calculate, hmac_sha3_512_verify,
     },
-    hsm::keystore::{self, KeyId, KeyInfo, KeyStore, KeyType},
+    hsm::keystore::{self, KeyId, KeyInfo, KeyType},
 };
 use embassy_sync::{blocking_mutex::raw::RawMutex, mutex::Mutex};
 use futures::{Sink, SinkExt, Stream, StreamExt};
@@ -18,8 +18,9 @@ pub struct HmacWorker<
     M: RawMutex,
     ReqSrc: Stream<Item = Request<'data>>,
     RespSink: Sink<Response<'data>>,
+    KeyStore: keystore::KeyStore + keystore::InsecureKeyStore + Send,
 > {
-    pub key_store: &'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>,
+    pub key_store: &'keystore Mutex<M, &'keystore mut KeyStore>,
     pub requests: ReqSrc,
     pub responses: RespSink,
 }
@@ -31,7 +32,8 @@ impl<
         M: RawMutex,
         ReqSrc: Stream<Item = Request<'data>> + Unpin,
         RespSink: Sink<Response<'data>> + Unpin,
-    > HmacWorker<'data, 'keystore, M, ReqSrc, RespSink>
+        KeyStore: keystore::KeyStore + keystore::InsecureKeyStore + Send,
+    > HmacWorker<'data, 'keystore, M, ReqSrc, RespSink, KeyStore>
 {
     /// Drive the worker to process the next request.
     /// This method is supposed to be called by a system task that owns this worker.
@@ -278,7 +280,7 @@ impl<
         let locked_key_store = self.key_store.lock().await;
         Ok((
             locked_key_store.export_symmetric_key_insecure(key_id, key_buffer)?,
-            locked_key_store.get_key_info(key_id)?,
+            keystore::KeyStore::get_key_info(*locked_key_store, key_id)?,
         ))
     }
 }

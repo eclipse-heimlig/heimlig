@@ -1,8 +1,7 @@
 use crate::common::jobs::{ClientId, Error, Request, RequestId, Response};
 use crate::crypto;
 use crate::crypto::chacha20poly1305::KEY_SIZE;
-use crate::hsm::keystore::{KeyId, KeyStore};
-use core::ops::DerefMut;
+use crate::hsm::keystore::{self, KeyId};
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
 use futures::{Sink, SinkExt, Stream, StreamExt};
@@ -14,8 +13,9 @@ pub struct ChaChaPolyWorker<
     M: RawMutex,
     ReqSrc: Stream<Item = Request<'data>>,
     RespSink: Sink<Response<'data>>,
+    KeyStore: keystore::KeyStore + keystore::InsecureKeyStore + Send,
 > {
-    pub key_store: &'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>,
+    pub key_store: &'keystore Mutex<M, &'keystore mut KeyStore>,
     pub requests: ReqSrc,
     pub responses: RespSink,
 }
@@ -26,7 +26,8 @@ impl<
         M: RawMutex,
         ReqSrc: Stream<Item = Request<'data>> + Unpin,
         RespSink: Sink<Response<'data>> + Unpin,
-    > ChaChaPolyWorker<'data, 'keystore, M, ReqSrc, RespSink>
+        KeyStore: keystore::KeyStore + keystore::InsecureKeyStore + Send,
+    > ChaChaPolyWorker<'data, 'keystore, M, ReqSrc, RespSink, KeyStore>
 {
     /// Drive the worker to process the next request.
     /// This method is supposed to be called by a system task that owns this worker.
@@ -105,7 +106,6 @@ impl<
             .key_store
             .lock()
             .await
-            .deref_mut()
             .export_symmetric_key_insecure(key_id, key_buffer.as_mut_slice());
         match export {
             Ok(key) => self.encrypt(client_id, request_id, key, nonce, aad, plaintext, tag),
@@ -133,7 +133,6 @@ impl<
             .key_store
             .lock()
             .await
-            .deref_mut()
             .export_symmetric_key_insecure(key_id, key_buffer.as_mut_slice());
         match export {
             Ok(key) => self.decrypt(client_id, request_id, key, nonce, aad, ciphertext, tag),
