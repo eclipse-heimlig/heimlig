@@ -332,7 +332,7 @@ impl<T: InsecureKeyStore> KeyStore for T {
         }
         self.delete_insecure(id)
     }
-        fn is_key_available(&self, id: KeyId) -> bool {
+    fn is_key_available(&self, id: KeyId) -> bool {
         self.is_key_available(id)
     }
 

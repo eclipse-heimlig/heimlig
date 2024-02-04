@@ -362,10 +362,16 @@ pub(crate) mod test {
         assert_eq!(key_store.delete(UNKNOWN_KEY_ID), Err(Error::InvalidKeyId));
         assert!(key_store.delete(KEY1_INFO.id).is_ok());
         assert!(!KeyStore::is_key_available(&key_store, KEY1_INFO.id));
-        assert!(!InsecureKeyStore::is_key_available(&key_store, KEY1_INFO.id));
+        assert!(!InsecureKeyStore::is_key_available(
+            &key_store,
+            KEY1_INFO.id
+        ));
         assert!(key_store.delete(KEY2_INFO.id).is_ok());
         assert!(!KeyStore::is_key_available(&key_store, KEY2_INFO.id));
-        assert!(!InsecureKeyStore::is_key_available(&key_store, KEY2_INFO.id));
+        assert!(!InsecureKeyStore::is_key_available(
+            &key_store,
+            KEY2_INFO.id
+        ));
     }
 
     #[test]
