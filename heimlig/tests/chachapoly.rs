@@ -7,7 +7,7 @@ use heimlig::{
     client::api::SymmetricAlgorithm::ChaCha20Poly1305,
     common::jobs::{RequestType, Response},
     crypto,
-    hsm::{keystore::KeyStore, workers::chachapoly_worker::ChaChaPolyWorker},
+    hsm::workers::chachapoly_worker::ChaChaPolyWorker,
 };
 
 #[async_std::test]
@@ -24,7 +24,7 @@ async fn chachapoly_encrypt_in_place() {
     let (mut client_requests, mut client_responses) = allocate_channel();
     let (mut worker_requests, mut worker_responses) = allocate_channel();
     let mut key_store = init_key_store(&KEY_INFOS);
-    let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
+    let key_store: Mutex<NoopRawMutex, _> = Mutex::new(&mut key_store);
     let (mut api, mut core, req_worker_rx, resp_worker_tx) = init_core(
         &[
             RequestType::EncryptChaChaPoly,

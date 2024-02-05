@@ -1,4 +1,4 @@
-use crate::hsm::keystore::{Error, KeyId, KeyInfo, KeyStore};
+use crate::hsm::keystore::{Error, InsecureKeyStore, KeyId, KeyInfo};
 use heapless::Vec;
 
 pub struct MemoryKeyStore<const STORAGE_SIZE: usize, const MAX_KEYS: usize> {
@@ -15,7 +15,7 @@ impl<const STORAGE_SIZE: usize, const MAX_KEYS: usize> MemoryKeyStore<STORAGE_SI
     }
 }
 
-impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
+impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> InsecureKeyStore
     for MemoryKeyStore<STORAGE_SIZE, NUM_KEYS>
 {
     fn get_key_info(&self, id: KeyId) -> Result<KeyInfo, Error> {
@@ -23,46 +23,9 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         Ok(key_layout.info)
     }
 
-    fn import_symmetric_key(
-        &mut self,
-        id: KeyId,
-        data: &[u8],
-        overwrite: bool,
-    ) -> Result<(), Error> {
-        let key_exists = self.is_key_available(id);
-        let key_layout = self.layout.get_mut(id).ok_or(Error::InvalidKeyId)?;
-        if !key_layout.info.permissions.import {
-            return Err(Error::NotAllowed);
-        }
-        if key_exists && (!overwrite || !key_layout.info.permissions.overwrite) {
-            return Err(Error::NotAllowed);
-        }
-        self.import_symmetric_key_insecure(id, data)
-    }
-
-    fn import_key_pair(
-        &mut self,
-        id: KeyId,
-        public_key: &[u8],
-        private_key: &[u8],
-        overwrite: bool,
-    ) -> Result<(), Error> {
-        let key_exists = self.is_key_available(id);
-        let key_layout = self.layout.get_mut(id).ok_or(Error::InvalidKeyId)?;
-        if !key_layout.info.permissions.import {
-            return Err(Error::NotAllowed);
-        }
-        if key_exists && (!overwrite || !key_layout.info.permissions.overwrite) {
-            return Err(Error::NotAllowed);
-        }
-        self.import_key_pair_insecure(id, public_key, private_key)
-    }
-
     fn import_symmetric_key_insecure(&mut self, id: KeyId, data: &[u8]) -> Result<(), Error> {
         let key_layout = self.layout.get_mut(id).ok_or(Error::InvalidKeyId)?;
-        if !key_layout.info.ty.is_symmetric() {
-            return Err(Error::InvalidKeyType);
-        }
+        assert!(key_layout.info.ty.is_symmetric());
         if data.len() != key_layout.info.ty.key_size() {
             return Err(Error::InvalidBufferSize);
         }
@@ -81,9 +44,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         private_key: &[u8],
     ) -> Result<(), Error> {
         let key_layout = self.layout.get_mut(id).ok_or(Error::InvalidKeyId)?;
-        if !key_layout.info.ty.is_asymmetric() {
-            return Err(Error::InvalidKeyType);
-        }
+        assert!(key_layout.info.ty.is_asymmetric());
         if (public_key.len() != 2 * private_key.len())
             || (public_key.len() + private_key.len() != key_layout.info.ty.key_size())
         {
@@ -107,27 +68,13 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         Ok(())
     }
 
-    fn export_symmetric_key<'data>(
+    fn export_public_key_insecure<'data>(
         &self,
         id: KeyId,
         dest: &'data mut [u8],
     ) -> Result<&'data [u8], Error> {
         let key_layout = self.layout.get(id).ok_or(Error::InvalidKeyId)?;
-        if !key_layout.info.permissions.export_private {
-            return Err(Error::NotAllowed);
-        }
-        self.export_symmetric_key_insecure(id, dest)
-    }
-
-    fn export_public_key<'data>(
-        &self,
-        id: KeyId,
-        dest: &'data mut [u8],
-    ) -> Result<&'data [u8], Error> {
-        let key_layout = self.layout.get(id).ok_or(Error::InvalidKeyId)?;
-        if !key_layout.info.ty.is_asymmetric() {
-            return Err(Error::InvalidKeyType);
-        }
+        assert!(key_layout.info.ty.is_asymmetric());
         if key_layout.actual_size == 0 {
             return Err(Error::KeyNotFound);
         }
@@ -145,27 +92,13 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         Ok(dest)
     }
 
-    fn export_private_key<'data>(
-        &self,
-        id: KeyId,
-        dest: &'data mut [u8],
-    ) -> Result<&'data [u8], Error> {
-        let key_layout = self.layout.get(id).ok_or(Error::InvalidKeyId)?;
-        if !key_layout.info.permissions.export_private {
-            return Err(Error::NotAllowed);
-        }
-        self.export_private_key_insecure(id, dest)
-    }
-
     fn export_symmetric_key_insecure<'data>(
         &self,
         id: KeyId,
         dest: &'data mut [u8],
     ) -> Result<&'data [u8], Error> {
         let key_layout = self.layout.get(id).ok_or(Error::InvalidKeyId)?;
-        if !key_layout.info.ty.is_symmetric() {
-            return Err(Error::InvalidKeyType);
-        }
+        assert!(key_layout.info.ty.is_symmetric());
         if key_layout.actual_size == 0 {
             return Err(Error::KeyNotFound);
         }
@@ -186,9 +119,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         dest: &'data mut [u8],
     ) -> Result<&'data [u8], Error> {
         let key_layout = self.layout.get(id).ok_or(Error::InvalidKeyId)?;
-        if !key_layout.info.ty.is_asymmetric() {
-            return Err(Error::InvalidKeyType);
-        }
+        assert!(key_layout.info.ty.is_asymmetric());
         if key_layout.actual_size == 0 {
             return Err(Error::KeyNotFound);
         }
@@ -206,11 +137,8 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> KeyStore
         Ok(dest)
     }
 
-    fn delete(&mut self, id: KeyId) -> Result<(), Error> {
+    fn delete_insecure(&mut self, id: KeyId) -> Result<(), Error> {
         let key_layout = self.layout.get_mut(id).ok_or(Error::InvalidKeyId)?;
-        if !key_layout.info.permissions.delete {
-            return Err(Error::NotAllowed);
-        }
         if key_layout.actual_size == 0 {
             return Err(Error::KeyNotFound);
         }
@@ -356,8 +284,10 @@ pub(crate) mod test {
             .expect("failed to create key store");
         for key_id in 0..10 {
             let key_id: KeyId = key_id.into();
-            assert!(!key_store.is_key_available(key_id));
-            assert!(key_store.size(key_id).is_err());
+            assert!(!KeyStore::is_key_available(&key_store, key_id));
+            assert!(!InsecureKeyStore::is_key_available(&key_store, key_id));
+            assert!(KeyStore::size(&key_store, key_id).is_err());
+            assert!(InsecureKeyStore::size(&key_store, key_id).is_err());
             assert!(key_store
                 .export_public_key(key_id, &mut dest_buffer)
                 .is_err());
@@ -371,7 +301,8 @@ pub(crate) mod test {
         assert!(key_store
             .import_symmetric_key(KEY1_INFO.id, &src_buffer[0..KEY1_INFO.ty.key_size()], false)
             .is_ok());
-        assert!(key_store.is_key_available(KEY1_INFO.id));
+        assert!(KeyStore::is_key_available(&key_store, KEY1_INFO.id));
+        assert!(InsecureKeyStore::is_key_available(&key_store, KEY1_INFO.id));
         assert_eq!(
             key_store
                 .export_symmetric_key(KEY1_INFO.id, &mut dest_buffer)
@@ -396,8 +327,10 @@ pub(crate) mod test {
                 false
             )
             .is_ok());
-        assert!(key_store.is_key_available(KEY2_INFO.id));
-        assert!(key_store.is_key_available(KEY1_INFO.id));
+        assert!(KeyStore::is_key_available(&key_store, KEY2_INFO.id));
+        assert!(InsecureKeyStore::is_key_available(&key_store, KEY1_INFO.id));
+        assert!(KeyStore::is_key_available(&key_store, KEY1_INFO.id));
+        assert!(InsecureKeyStore::is_key_available(&key_store, KEY1_INFO.id));
         assert_eq!(
             key_store
                 .export_public_key(
@@ -428,9 +361,17 @@ pub(crate) mod test {
         // Delete keys
         assert_eq!(key_store.delete(UNKNOWN_KEY_ID), Err(Error::InvalidKeyId));
         assert!(key_store.delete(KEY1_INFO.id).is_ok());
-        assert!(!key_store.is_key_available(KEY1_INFO.id));
+        assert!(!KeyStore::is_key_available(&key_store, KEY1_INFO.id));
+        assert!(!InsecureKeyStore::is_key_available(
+            &key_store,
+            KEY1_INFO.id
+        ));
         assert!(key_store.delete(KEY2_INFO.id).is_ok());
-        assert!(!key_store.is_key_available(KEY2_INFO.id));
+        assert!(!KeyStore::is_key_available(&key_store, KEY2_INFO.id));
+        assert!(!InsecureKeyStore::is_key_available(
+            &key_store,
+            KEY2_INFO.id
+        ));
     }
 
     #[test]

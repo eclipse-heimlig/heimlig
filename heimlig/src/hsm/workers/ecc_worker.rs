@@ -6,8 +6,8 @@ use crate::crypto::ecdsa::{
     nist_p384_sign_prehashed, nist_p384_verify, nist_p384_verify_prehashed,
 };
 use crate::hsm::keystore;
-use crate::hsm::keystore::{KeyId, KeyInfo, KeyStore, KeyType};
-use core::ops::{Deref, DerefMut};
+use crate::hsm::keystore::{KeyId, KeyInfo, KeyType};
+use core::ops::DerefMut;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
 use futures::{Sink, SinkExt, Stream, StreamExt};
@@ -22,9 +22,10 @@ pub struct EccWorker<
     R: CryptoRng + RngCore,
     ReqSrc: Stream<Item = Request<'data>>,
     RespSink: Sink<Response<'data>>,
+    KeyStore: keystore::KeyStore + keystore::InsecureKeyStore + Send,
 > {
     pub rng: &'rng Mutex<M, R>,
-    pub key_store: &'keystore Mutex<M, &'keystore mut (dyn KeyStore + Send)>,
+    pub key_store: &'keystore Mutex<M, &'keystore mut KeyStore>,
     pub requests: ReqSrc,
     pub responses: RespSink,
 }
@@ -37,7 +38,8 @@ impl<
         R: CryptoRng + RngCore,
         ReqSrc: Stream<Item = Request<'data>> + Unpin,
         RespSink: Sink<Response<'data>> + Unpin,
-    > EccWorker<'data, 'rng, 'keystore, M, R, ReqSrc, RespSink>
+        KeyStore: keystore::KeyStore + keystore::InsecureKeyStore + Send,
+    > EccWorker<'data, 'rng, 'keystore, M, R, ReqSrc, RespSink, KeyStore>
 {
     /// Drive the worker to process the next request.
     /// This method is supposed to be called by a system task that owns this worker.
@@ -122,7 +124,7 @@ impl<
         overwrite: bool,
     ) -> Response<'data> {
         let mut locked_key_store = self.key_store.lock().await;
-        let key_info = locked_key_store.deref().get_key_info(key_id);
+        let key_info = keystore::KeyStore::get_key_info(*locked_key_store, key_id);
         let mut private_key_bytes = Zeroizing::new([0u8; KeyType::MAX_PRIVATE_KEY_SIZE]);
         let mut public_key_bytes = Zeroizing::new([0u8; KeyType::MAX_PUBLIC_KEY_SIZE]);
 
@@ -172,7 +174,7 @@ impl<
         };
 
         // Check overwrite permission
-        if locked_key_store.is_key_available(key_id)
+        if keystore::KeyStore::is_key_available(*locked_key_store, key_id)
             && (!overwrite || !key_info.permissions.overwrite)
         {
             return Response::Error {
@@ -431,7 +433,7 @@ impl<
 
         Ok((
             locked_key_store.export_private_key_insecure(key_id, key_buffer)?,
-            locked_key_store.get_key_info(key_id)?,
+            keystore::KeyStore::get_key_info(*locked_key_store, key_id)?,
         ))
     }
 
@@ -445,7 +447,7 @@ impl<
 
         Ok((
             locked_key_store.export_public_key(key_id, key_buffer)?,
-            locked_key_store.get_key_info(key_id)?,
+            keystore::KeyStore::get_key_info(*locked_key_store, key_id)?,
         ))
     }
 }

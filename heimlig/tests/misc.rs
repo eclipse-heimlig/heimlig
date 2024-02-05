@@ -7,9 +7,10 @@ use heimlig::{
     client::api::Api,
     common::jobs::{Error, RequestType, Response},
     hsm::core::Builder,
-    hsm::{keystore::KeyStore, workers::rng_worker::RngWorker},
-    integration::embassy::{
-        RequestQueueSink, RequestQueueSource, ResponseQueueSink, ResponseQueueSource,
+    hsm::workers::rng_worker::RngWorker,
+    integration::{
+        embassy::{RequestQueueSink, RequestQueueSource, ResponseQueueSink, ResponseQueueSource},
+        memory_key_store::MemoryKeyStore,
     },
 };
 
@@ -20,7 +21,7 @@ async fn generate_symmetric_key() {
     let (mut client_requests, mut client_responses) = allocate_channel();
     let (mut worker_requests, mut worker_responses) = allocate_channel();
     let mut key_store = init_key_store(&KEY_INFOS);
-    let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
+    let key_store: Mutex<NoopRawMutex, _> = Mutex::new(&mut key_store);
     let (mut api, mut core, req_worker_rx, resp_worker_tx) = init_core(
         &[RequestType::GetRandom, RequestType::GenerateSymmetricKey],
         &mut client_requests,
@@ -89,7 +90,7 @@ async fn multiple_clients() {
         split_queues(&mut worker_requests, &mut worker_responses);
     let rng = init_rng();
     let mut key_store = init_key_store(&KEY_INFOS);
-    let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
+    let key_store: Mutex<NoopRawMutex, _> = Mutex::new(&mut key_store);
     let mut rng_worker = RngWorker {
         rng: &rng,
         key_store: &key_store,
@@ -102,6 +103,7 @@ async fn multiple_clients() {
         ResponseQueueSink<'_, '_, QUEUE_SIZE>,
         RequestQueueSink<'_, '_, QUEUE_SIZE>,
         ResponseQueueSource<'_, '_, QUEUE_SIZE>,
+        MemoryKeyStore<{ TOTAL_KEY_SIZE }, { NUM_KEYS }>,
     >::default()
     .with_client(req_client1_rx, resp_client1_tx)
     .expect("failed to add client 1")
@@ -177,6 +179,7 @@ async fn no_worker_for_request() {
         ResponseQueueSink<'_, '_, QUEUE_SIZE>,
         RequestQueueSink<'_, '_, QUEUE_SIZE>,
         ResponseQueueSource<'_, '_, QUEUE_SIZE>,
+        MemoryKeyStore<{ TOTAL_KEY_SIZE }, { NUM_KEYS }>,
     >::default()
     .with_client(req_client_rx, resp_client_tx)
     .expect("failed to add client")

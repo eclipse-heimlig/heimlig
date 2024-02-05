@@ -8,7 +8,7 @@ use heimlig::{
         jobs::{Error, RequestType, Response},
         limits::MAX_RANDOM_SIZE,
     },
-    hsm::{keystore::KeyStore, workers::rng_worker::RngWorker},
+    hsm::workers::rng_worker::RngWorker,
 };
 
 #[async_std::test]
@@ -28,7 +28,7 @@ async fn get_random() {
     );
     let rng = init_rng();
     let mut key_store = init_key_store(&KEY_INFOS);
-    let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
+    let key_store: Mutex<NoopRawMutex, _> = Mutex::new(&mut key_store);
     let mut rng_worker = RngWorker {
         rng: &rng,
         key_store: &key_store,
@@ -69,7 +69,7 @@ async fn get_random_request_too_large() {
     );
     let rng = init_rng();
     let mut key_store = init_key_store(&KEY_INFOS);
-    let key_store: Mutex<NoopRawMutex, &mut (dyn KeyStore + Send)> = Mutex::new(&mut key_store);
+    let key_store: Mutex<NoopRawMutex, _> = Mutex::new(&mut key_store);
     let mut worker = RngWorker {
         rng: &rng,
         key_store: &key_store,

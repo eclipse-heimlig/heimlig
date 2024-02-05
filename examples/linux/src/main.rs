@@ -8,7 +8,7 @@ use embassy_time::Timer;
 use heimlig::client::api::Api;
 use heimlig::common::jobs::{RequestType, Response};
 use heimlig::hsm::core::Builder;
-use heimlig::hsm::keystore::{KeyInfo, KeyStore};
+use heimlig::hsm::keystore::KeyInfo;
 use heimlig::hsm::workers::rng_worker::RngWorker;
 use heimlig::integration::embassy::{
     RequestQueue, RequestQueueSink, RequestQueueSource, ResponseQueue, ResponseQueueSink,
@@ -25,6 +25,11 @@ static mut CORE_TO_CLIENT: ResponseQueue<QUEUE_SIZE> = ResponseQueue::<QUEUE_SIZ
 static mut CORE_TO_RNG_WORKER: RequestQueue<QUEUE_SIZE> = RequestQueue::<QUEUE_SIZE>::new();
 static mut RNG_WORKER_TO_CORE: ResponseQueue<QUEUE_SIZE> = ResponseQueue::<QUEUE_SIZE>::new();
 
+// Key store info
+const NUM_KEYS: usize = 0;
+const TOTAL_KEY_SIZE: usize = 0;
+const KEY_INFOS: &[KeyInfo] = &[];
+
 #[embassy_executor::task]
 async fn core_task(
     core_req_rx: RequestQueueSource<'static, 'static, QUEUE_SIZE>,
@@ -38,6 +43,7 @@ async fn core_task(
         ResponseQueueSink<'_, '_, QUEUE_SIZE>,
         RequestQueueSink<'_, '_, QUEUE_SIZE>,
         ResponseQueueSource<'_, '_, QUEUE_SIZE>,
+        MemoryKeyStore<{ TOTAL_KEY_SIZE }, { NUM_KEYS }>,
     >::new()
     .with_client(core_req_rx, core_resp_tx)
     .expect("failed to add client")
@@ -56,13 +62,9 @@ async fn worker_task(
     rng_req_rx: RequestQueueSource<'static, 'static, QUEUE_SIZE>,
     rng_resp_tx: ResponseQueueSink<'static, 'static, QUEUE_SIZE>,
 ) {
-    const NUM_KEYS: usize = 0;
-    const TOTAL_KEY_SIZE: usize = 0;
-    const KEY_INFOS: &[KeyInfo] = &[];
     let mut key_store = MemoryKeyStore::<{ TOTAL_KEY_SIZE }, { NUM_KEYS }>::try_new(KEY_INFOS)
         .expect("failed to create key store");
-    let key_store: Mutex<CriticalSectionRawMutex, &mut (dyn KeyStore + Send)> =
-        Mutex::new(&mut key_store);
+    let key_store: Mutex<CriticalSectionRawMutex, _> = Mutex::new(&mut key_store);
     let rng: Mutex<CriticalSectionRawMutex, _> =
         Mutex::new(rand_chacha::ChaCha20Rng::from_seed([0u8; 32]));
     let mut rng_worker = RngWorker {
