@@ -111,7 +111,6 @@ pub async fn get_response_from_core<'data>(
     let Some(response) = api.recv_response().await else {
         panic!("Failed to receive expected response")
     };
-
     response
 }
 

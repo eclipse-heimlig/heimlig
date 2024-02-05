@@ -170,9 +170,21 @@ async fn no_worker_for_request() {
     let mut random_output = [0u8; REQUEST_SIZE];
 
     let (mut client_requests, mut client_responses) = allocate_channel();
+    let (mut worker_requests, mut worker_responses) = allocate_channel();
 
     let (req_client_rx, req_client_tx, resp_client_rx, resp_client_tx) =
         split_queues(&mut client_requests, &mut client_responses);
+    let (rng_requests_rx, rng_requests_tx, rng_responses_rx, rng_responses_tx) =
+        split_queues(&mut worker_requests, &mut worker_responses);
+    let rng = init_rng();
+    let mut key_store = init_key_store(&KEY_INFOS);
+    let key_store: Mutex<NoopRawMutex, _> = Mutex::new(&mut key_store);
+    let mut rng_worker = RngWorker {
+        rng: &rng,
+        key_store: &key_store,
+        requests: rng_requests_rx,
+        responses: rng_responses_tx,
+    };
     let mut core = Builder::<
         NoopRawMutex,
         RequestQueueSource<'_, '_, QUEUE_SIZE>,
@@ -183,11 +195,17 @@ async fn no_worker_for_request() {
     >::default()
     .with_client(req_client_rx, resp_client_tx)
     .expect("failed to add client")
+    .with_worker(
+        &[RequestType::GetRandom], // No RequestType::GenerateSymmetricKey here
+        rng_requests_tx,
+        rng_responses_rx,
+    )
+    .expect("failed to add worker")
     .build();
     let mut api = Api::new(req_client_tx, resp_client_rx);
 
     let org_request_id = api
-        .get_random(&mut random_output)
+        .generate_symmetric_key(SYM_256_KEY.id, false)
         .await
         .expect("failed to send request");
     let Response::Error {
@@ -200,4 +218,20 @@ async fn no_worker_for_request() {
     };
     assert_eq!(request_id, org_request_id);
     assert_eq!(error, Error::NoWorkerForRequest);
+
+    // Try supported request to prove queues are empty after previous exchange
+    let org_request_id = api
+        .get_random(&mut random_output)
+        .await
+        .expect("failed to send request");
+    let Response::GetRandom {
+        client_id: _client_id,
+        request_id,
+        data,
+    } = get_response_from_worker!(api, core, rng_worker)
+    else {
+        panic!("Unexpected response type")
+    };
+    assert_eq!(request_id, org_request_id);
+    assert_eq!(data.len(), REQUEST_SIZE);
 }
