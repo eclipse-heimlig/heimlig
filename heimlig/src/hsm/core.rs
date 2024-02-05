@@ -304,11 +304,11 @@ impl<
         let process_requests = clients.iter().map(|client| async {
             // Check for incoming requests from client channels
             let mut requests = client.requests.lock().await;
-            let requests = Pin::new(requests.deref_mut())
+            let request = Pin::new(requests.deref_mut())
                 .peek()
                 .await
                 .ok_or(Error::StreamTerminated)?;
-            let request_type = requests.get_type();
+            let request_type = request.get_type();
             if request_type.is_handled_by_core() {
                 return Ok(Job::ProcessOnCore(client.id));
             }
@@ -565,9 +565,23 @@ impl<
     }
 
     async fn respond_no_worker_for_request(&mut self, client_id: ClientId) -> Result<(), Error> {
+        let Some(client) = self.clients.get(client_id.idx()) else {
+            return Err(Error::Internal(InternalError::InvalidClientId(client_id)));
+        };
+        // Remove request from queue even tough we cannot handle it
+        let request = client
+            .requests
+            .lock()
+            .await
+            .deref_mut()
+            .next()
+            .await
+            .ok_or(Error::Internal(InternalError::EmptyClientRequestQueue(
+                client_id,
+            )))?;
         let response = Response::Error {
             client_id,
-            request_id: RequestId::default(),
+            request_id: request.get_request_id(),
             error: jobs::Error::NoWorkerForRequest,
         };
         self.send_to_client(response).await
