@@ -89,7 +89,7 @@ pub const MAX_WORKERS: usize = 16;
 // TODO: Can be made configurable once `core::mem::variant_count` is stable
 // https://github.com/rust-lang/rust/issues/73662
 /// Maximum number of different request types handles by a worker
-const MAX_REQUEST_TYPES: usize = 8;
+const MAX_REQUEST_TYPES: usize = 16;
 
 /// HSM core that waits for [Request]s from clients and send [Response]s once they are ready.   
 pub struct Core<
