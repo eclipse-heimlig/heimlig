@@ -128,6 +128,8 @@ pub enum RequestType {
     SignExternalKey,
     Verify,
     VerifyExternalKey,
+    Ecdh,
+    EcdhExternalPrivateKey,
 }
 
 /// A request for the HSM to perform a cryptographic task.
@@ -382,6 +384,20 @@ pub enum Request<'data> {
         prehashed: bool,
         signature: &'data [u8],
     },
+    Ecdh {
+        client_id: ClientId,
+        request_id: RequestId,
+        public_key: &'data [u8],
+        private_key_id: KeyId,
+        shared_secret: &'data mut [u8],
+    },
+    EcdhExternalPrivateKey {
+        client_id: ClientId,
+        request_id: RequestId,
+        public_key: &'data [u8],
+        private_key: &'data [u8],
+        shared_secret: &'data mut [u8],
+    },
 }
 
 impl RequestType {
@@ -518,6 +534,11 @@ pub enum Response<'data> {
         request_id: RequestId,
         verified: bool,
     },
+    Ecdh {
+        client_id: ClientId,
+        request_id: RequestId,
+        shared_secret: &'data mut [u8],
+    },
 }
 
 impl<'data> Request<'data> {
@@ -560,6 +581,8 @@ impl<'data> Request<'data> {
             Request::SignExternalKey { .. } => RequestType::SignExternalKey,
             Request::Verify { .. } => RequestType::Verify,
             Request::VerifyExternalKey { .. } => RequestType::VerifyExternalKey,
+            Request::Ecdh { .. } => RequestType::Ecdh,
+            Request::EcdhExternalPrivateKey { .. } => RequestType::EcdhExternalPrivateKey,
         }
     }
 
@@ -598,6 +621,8 @@ impl<'data> Request<'data> {
             Request::SignExternalKey { client_id, .. } => client_id,
             Request::Verify { client_id, .. } => client_id,
             Request::VerifyExternalKey { client_id, .. } => client_id,
+            Request::Ecdh { client_id, .. } => client_id,
+            Request::EcdhExternalPrivateKey { client_id, .. } => client_id,
         }
     }
 
@@ -636,6 +661,8 @@ impl<'data> Request<'data> {
             Request::SignExternalKey { request_id, .. } => request_id,
             Request::Verify { request_id, .. } => request_id,
             Request::VerifyExternalKey { request_id, .. } => request_id,
+            Request::Ecdh { request_id, .. } => request_id,
+            Request::EcdhExternalPrivateKey { request_id, .. } => request_id,
         }
     }
 
@@ -674,6 +701,8 @@ impl<'data> Request<'data> {
             Request::SignExternalKey { client_id, .. } => *client_id = new_client_id,
             Request::Verify { client_id, .. } => *client_id = new_client_id,
             Request::VerifyExternalKey { client_id, .. } => *client_id = new_client_id,
+            Request::Ecdh { client_id, .. } => *client_id = new_client_id,
+            Request::EcdhExternalPrivateKey { client_id, .. } => *client_id = new_client_id,
         }
     }
 
@@ -716,6 +745,8 @@ impl<'data> Request<'data> {
             Request::SignExternalKey { request_id, .. } => *request_id = new_request_id,
             Request::Verify { request_id, .. } => *request_id = new_request_id,
             Request::VerifyExternalKey { request_id, .. } => *request_id = new_request_id,
+            Request::Ecdh { request_id, .. } => *request_id = new_request_id,
+            Request::EcdhExternalPrivateKey { request_id, .. } => *request_id = new_request_id,
         }
     }
 }
@@ -745,6 +776,7 @@ impl<'data> Response<'data> {
             Response::VerifyHmac { client_id, .. } => client_id,
             Response::Sign { client_id, .. } => client_id,
             Response::Verify { client_id, .. } => client_id,
+            Response::Ecdh { client_id, .. } => client_id,
         }
     }
 
@@ -772,6 +804,7 @@ impl<'data> Response<'data> {
             Response::VerifyHmac { request_id, .. } => request_id,
             Response::Sign { request_id, .. } => request_id,
             Response::Verify { request_id, .. } => request_id,
+            Response::Ecdh { request_id, .. } => request_id,
         }
     }
 }

@@ -371,6 +371,25 @@ pub enum RequestRaw {
         signature_data: *const u8,
         signature_size: u32,
     },
+    Ecdh {
+        client_id: ClientIdRaw,
+        request_id: RequestIdRaw,
+        public_key_data: *const u8,
+        public_key_size: u32,
+        private_key_id: KeyIdRaw,
+        shared_secret_data: *mut u8,
+        shared_secret_size: u32,
+    },
+    EcdhExternalPrivateKey {
+        client_id: ClientIdRaw,
+        request_id: RequestIdRaw,
+        public_key_data: *const u8,
+        public_key_size: u32,
+        private_key_data: *const u8,
+        private_key_size: u32,
+        shared_secret_data: *mut u8,
+        shared_secret_size: u32,
+    },
 }
 
 /// Raw response as it is written by clients to shared memory. This type is supposed to be synced
@@ -500,6 +519,12 @@ pub enum ResponseRaw {
         client_id: ClientIdRaw,
         request_id: RequestIdRaw,
         verified: BoolRaw,
+    },
+    Ecdh {
+        client_id: ClientIdRaw,
+        request_id: RequestIdRaw,
+        shared_secret_data: *mut u8,
+        shared_secret_size: u32,
     },
 }
 
@@ -1120,6 +1145,49 @@ impl RequestRaw {
                 prehashed: bool_raw_to_bool(prehashed),
                 signature: check_pointer_and_size(signature_data, signature_size, &validator)?,
             },
+            RequestRaw::Ecdh {
+                client_id,
+                request_id,
+                public_key_data,
+                public_key_size,
+                private_key_id,
+                shared_secret_data,
+                shared_secret_size,
+            } => Request::Ecdh {
+                client_id: client_id.into(),
+                request_id: request_id.into(),
+                public_key: check_pointer_and_size(public_key_data, public_key_size, &validator)?,
+                private_key_id: private_key_id.into(),
+                shared_secret: check_mut_pointer_and_size(
+                    shared_secret_data,
+                    shared_secret_size,
+                    &validator,
+                )?,
+            },
+            RequestRaw::EcdhExternalPrivateKey {
+                client_id,
+                request_id,
+                public_key_data,
+                public_key_size,
+                private_key_data,
+                private_key_size,
+                shared_secret_data,
+                shared_secret_size,
+            } => Request::EcdhExternalPrivateKey {
+                client_id: client_id.into(),
+                request_id: request_id.into(),
+                public_key: check_pointer_and_size(public_key_data, public_key_size, &validator)?,
+                private_key: check_pointer_and_size(
+                    private_key_data,
+                    private_key_size,
+                    &validator,
+                )?,
+                shared_secret: check_mut_pointer_and_size(
+                    shared_secret_data,
+                    shared_secret_size,
+                    &validator,
+                )?,
+            },
         };
         Ok(request)
     }
@@ -1677,6 +1745,37 @@ impl From<Request<'_>> for RequestRaw {
                 signature_data: signature.as_ptr(),
                 signature_size: signature.len() as u32,
             },
+            Request::Ecdh {
+                client_id,
+                request_id,
+                public_key,
+                private_key_id,
+                shared_secret,
+            } => RequestRaw::Ecdh {
+                client_id: client_id.into(),
+                request_id: request_id.into(),
+                public_key_data: public_key.as_ptr(),
+                public_key_size: public_key.len() as u32,
+                private_key_id: private_key_id.into(),
+                shared_secret_data: shared_secret.as_mut_ptr(),
+                shared_secret_size: shared_secret.len() as u32,
+            },
+            Request::EcdhExternalPrivateKey {
+                client_id,
+                request_id,
+                public_key,
+                private_key,
+                shared_secret,
+            } => RequestRaw::EcdhExternalPrivateKey {
+                client_id: client_id.into(),
+                request_id: request_id.into(),
+                public_key_data: public_key.as_ptr(),
+                public_key_size: public_key.len() as u32,
+                private_key_data: private_key.as_ptr(),
+                private_key_size: private_key.len() as u32,
+                shared_secret_data: shared_secret.as_mut_ptr(),
+                shared_secret_size: shared_secret.len() as u32,
+            },
         }
     }
 }
@@ -1919,6 +2018,16 @@ impl From<Response<'_>> for ResponseRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
                 verified: verified.into(),
+            },
+            Response::Ecdh {
+                client_id,
+                request_id,
+                shared_secret,
+            } => ResponseRaw::Ecdh {
+                client_id: client_id.into(),
+                request_id: request_id.into(),
+                shared_secret_data: shared_secret.as_mut_ptr(),
+                shared_secret_size: shared_secret.len() as u32,
             },
         }
     }
