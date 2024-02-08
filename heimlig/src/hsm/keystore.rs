@@ -1,3 +1,8 @@
+use crate::integration::raw_jobs::{
+    ValidationError, ECC_KEYPAIR_NIST_P256, ECC_KEYPAIR_NIST_P384, SYMMETRIC_128_BITS,
+    SYMMETRIC_192_BITS, SYMMETRIC_256_BITS,
+};
+
 /// Identifier to reference HSM keys
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
 pub struct KeyId(pub u32);
@@ -58,6 +63,27 @@ impl From<KeyId> for u32 {
 impl From<u32> for KeyId {
     fn from(value: u32) -> Self {
         KeyId(value)
+    }
+}
+
+impl From<KeyType> for u32 {
+    fn from(value: KeyType) -> Self {
+        value as u32
+    }
+}
+
+impl TryFrom<u32> for KeyType {
+    type Error = ValidationError;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            SYMMETRIC_128_BITS => Ok(Self::Symmetric128Bits),
+            SYMMETRIC_192_BITS => Ok(Self::Symmetric192Bits),
+            SYMMETRIC_256_BITS => Ok(Self::Symmetric256Bits),
+            ECC_KEYPAIR_NIST_P256 => Ok(Self::EccKeypairNistP256),
+            ECC_KEYPAIR_NIST_P384 => Ok(Self::EccKeypairNistP384),
+            _ => Err(ValidationError::InvalidValue),
+        }
     }
 }
 

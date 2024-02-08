@@ -6,9 +6,18 @@ use strum::EnumCount;
 type ClientIdRaw = u32;
 type RequestIdRaw = u32;
 type KeyIdRaw = u32;
+type KeyTypeRaw = u32;
 type BoolRaw = u32; // 0 == false, 1 == true
 type HashAlgorithmRaw = u32;
 
+// Must be kept in sync with heimlig::hsm::keystore::KeyType
+pub const SYMMETRIC_128_BITS: KeyTypeRaw = 0;
+pub const SYMMETRIC_192_BITS: KeyTypeRaw = 1;
+pub const SYMMETRIC_256_BITS: KeyTypeRaw = 2;
+pub const ECC_KEYPAIR_NIST_P256: KeyTypeRaw = 3;
+pub const ECC_KEYPAIR_NIST_P384: KeyTypeRaw = 4;
+
+// Must be kept in sync with heimlig::common::jobs::HashAlgorithm
 pub const SHA2_256: HashAlgorithmRaw = 0;
 pub const SHA2_384: HashAlgorithmRaw = 1;
 pub const SHA2_512: HashAlgorithmRaw = 2;
@@ -383,6 +392,7 @@ pub enum RequestRaw {
     EcdhExternalPrivateKey {
         client_id: ClientIdRaw,
         request_id: RequestIdRaw,
+        key_type: KeyTypeRaw,
         public_key_data: *const u8,
         public_key_size: u32,
         private_key_data: *const u8,
@@ -1167,6 +1177,7 @@ impl RequestRaw {
             RequestRaw::EcdhExternalPrivateKey {
                 client_id,
                 request_id,
+                key_type,
                 public_key_data,
                 public_key_size,
                 private_key_data,
@@ -1176,6 +1187,7 @@ impl RequestRaw {
             } => Request::EcdhExternalPrivateKey {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
+                key_type: key_type.try_into()?,
                 public_key: check_pointer_and_size(public_key_data, public_key_size, &validator)?,
                 private_key: check_pointer_and_size(
                     private_key_data,
@@ -1763,12 +1775,14 @@ impl From<Request<'_>> for RequestRaw {
             Request::EcdhExternalPrivateKey {
                 client_id,
                 request_id,
+                key_type,
                 public_key,
                 private_key,
                 shared_secret,
             } => RequestRaw::EcdhExternalPrivateKey {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
+                key_type: key_type.into(),
                 public_key_data: public_key.as_ptr(),
                 public_key_size: public_key.len() as u32,
                 private_key_data: private_key.as_ptr(),
