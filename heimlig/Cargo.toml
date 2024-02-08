@@ -19,7 +19,7 @@ cmac = { version = "0.7.2", default-features = false }
 critical-section = { version = "1.1.2", default-features = false }
 dbl = { version = "0.3.2", default-features = false }
 ecdsa = { version = "0.16.8", default-features = false }
-ed25519-dalek = { version = "2.0.0", default-features = false, features = ["zeroize"] }
+ed25519-dalek = { version = "2.1.1", default-features = false, features = ["zeroize"] }
 elliptic-curve = { version = "0.13.5", default-features = false }
 embassy-futures = { version = "0.1.0", default-features = false }
 embassy-sync = { version = "0.3.0", default-features = false }
@@ -32,7 +32,7 @@ rand_chacha = { version = "0.3.1", default-features = false }
 sha2 = { version = "0.10.7", default-features = false }
 sha3 = { version = "0.10.8", default-features = false }
 strum = { version = "0.25.0", default-features = false, features = ["derive"] }
-x25519-dalek = { version = "2.0.0", default-features = false, features = ["static_secrets", "zeroize"] }
+x25519-dalek = { version = "2.0.1", default-features = false, features = ["static_secrets", "zeroize"] }
 zeroize = { version = "1.6.0", default-features = false }
 
 [dev-dependencies]
@@ -40,7 +40,7 @@ async-std = { version = "1.12.0", features = ["attributes"] }
 critical-section = { version = "1.1.2", default-features = false, features = ["std"] }
 heapless = { version = "0.7.16", default-features = false }
 hex = { version = "0.4.3", default-features = false, features = ["alloc"] }
-ed25519-dalek = { version = "2.0.0", default-features = false, features = ["zeroize", "rand_core"] }
+ed25519-dalek = { version = "2.1.1", default-features = false, features = ["zeroize", "rand_core"] }
 
 [build-dependencies]
 cbindgen = { version = "0.26.0", default-features = false }
