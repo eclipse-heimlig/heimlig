@@ -1,4 +1,5 @@
 use crate::common::jobs::{HashAlgorithm, Request, Response};
+use crate::hsm::keystore::{Curve, KeyId};
 use crate::integration::raw_errors::JobErrorRaw;
 use core::slice;
 use strum::EnumCount;
@@ -7,14 +8,12 @@ type ClientIdRaw = u32;
 type RequestIdRaw = u32;
 type KeyIdRaw = u32;
 type CurveRaw = u32;
-type BoolRaw = u32; // 0 == false, 1 == true
 type HashAlgorithmRaw = u32;
+type BoolRaw = u32; // 0 == false, 1 == true
 
-// Must be kept in sync with heimlig::hsm::keystore::KeyType
 pub const NIST_P256: CurveRaw = 0;
 pub const NIST_P384: CurveRaw = 1;
 
-// Must be kept in sync with heimlig::common::jobs::HashAlgorithm
 pub const SHA2_256: HashAlgorithmRaw = 0;
 pub const SHA2_384: HashAlgorithmRaw = 1;
 pub const SHA2_512: HashAlgorithmRaw = 2;
@@ -2044,17 +2043,34 @@ impl From<Response<'_>> for ResponseRaw {
     }
 }
 
-impl TryFrom<HashAlgorithmRaw> for HashAlgorithm {
+impl From<KeyId> for KeyIdRaw {
+    fn from(value: KeyId) -> Self {
+        value.0
+    }
+}
+
+impl From<KeyIdRaw> for KeyId {
+    fn from(value: KeyIdRaw) -> Self {
+        KeyId(value)
+    }
+}
+
+impl From<Curve> for CurveRaw {
+    fn from(value: Curve) -> Self {
+        match value {
+            Curve::NistP256 => NIST_P256,
+            Curve::NistP384 => NIST_P384,
+        }
+    }
+}
+
+impl TryFrom<CurveRaw> for Curve {
     type Error = ValidationError;
 
-    fn try_from(value: HashAlgorithmRaw) -> Result<Self, Self::Error> {
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
         match value {
-            SHA2_256 => Ok(Self::Sha2_256),
-            SHA2_384 => Ok(Self::Sha2_384),
-            SHA2_512 => Ok(Self::Sha2_512),
-            SHA3_256 => Ok(Self::Sha3_256),
-            SHA3_384 => Ok(Self::Sha3_384),
-            SHA3_512 => Ok(Self::Sha3_512),
+            NIST_P256 => Ok(Self::NistP256),
+            NIST_P384 => Ok(Self::NistP384),
             _ => Err(ValidationError::InvalidValue),
         }
     }
@@ -2069,6 +2085,22 @@ impl From<HashAlgorithm> for HashAlgorithmRaw {
             HashAlgorithm::Sha3_256 => SHA3_256,
             HashAlgorithm::Sha3_384 => SHA3_384,
             HashAlgorithm::Sha3_512 => SHA3_512,
+        }
+    }
+}
+
+impl TryFrom<HashAlgorithmRaw> for HashAlgorithm {
+    type Error = ValidationError;
+
+    fn try_from(value: HashAlgorithmRaw) -> Result<Self, Self::Error> {
+        match value {
+            SHA2_256 => Ok(Self::Sha2_256),
+            SHA2_384 => Ok(Self::Sha2_384),
+            SHA2_512 => Ok(Self::Sha2_512),
+            SHA3_256 => Ok(Self::Sha3_256),
+            SHA3_384 => Ok(Self::Sha3_384),
+            SHA3_512 => Ok(Self::Sha3_512),
+            _ => Err(ValidationError::InvalidValue),
         }
     }
 }

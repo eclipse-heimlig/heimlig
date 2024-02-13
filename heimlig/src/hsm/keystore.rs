@@ -1,6 +1,3 @@
-use crate::hsm::keystore::Curve::{NistP256, NistP384};
-use crate::integration::raw_jobs::ValidationError;
-
 /// Identifier to reference HSM keys
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
 pub struct KeyId(pub u32);
@@ -19,7 +16,7 @@ pub enum Error {
     InvalidKeyId,
     /// The type of the key (symmetric/asymmetric) does not match.
     InvalidKeyType,
-    /// The Size of the provided buffer is invalid.
+    /// The size of the provided buffer is invalid.
     InvalidBufferSize,
 }
 
@@ -44,7 +41,7 @@ pub struct KeyPermissions {
     pub export_private: bool,
     /// Whether the key can be overwritten (either through import or generation).
     pub overwrite: bool,
-    /// Whether the key can be deleted
+    /// Whether the key can be deleted.
     pub delete: bool,
 }
 
@@ -55,49 +52,19 @@ pub struct KeyInfo {
     pub permissions: KeyPermissions,
 }
 
-impl From<KeyId> for u32 {
-    fn from(value: KeyId) -> Self {
-        value.0
-    }
-}
-
-impl From<u32> for KeyId {
-    fn from(value: u32) -> Self {
-        KeyId(value)
-    }
-}
-
-impl From<Curve> for u32 {
-    fn from(value: Curve) -> Self {
-        value as u32
-    }
-}
-
-impl TryFrom<u32> for Curve {
-    type Error = ValidationError;
-
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
-        match value {
-            crate::integration::raw_jobs::NIST_P256 => Ok(NistP256),
-            crate::integration::raw_jobs::NIST_P384 => Ok(NistP384),
-            _ => Err(ValidationError::InvalidValue),
-        }
-    }
-}
-
 impl Curve {
     pub const fn size(&self) -> usize {
         match self {
-            NistP256 => 32,
-            NistP384 => 48,
+            Self::NistP256 => 32,
+            Self::NistP384 => 48,
         }
     }
 }
 
 impl KeyType {
     pub const MAX_SYMMETRIC_KEY_SIZE: usize = 32;
-    pub const MAX_PUBLIC_KEY_SIZE: usize = KeyType::Asymmetric(NistP384).public_key_size();
-    pub const MAX_PRIVATE_KEY_SIZE: usize = KeyType::Asymmetric(NistP384).private_key_size();
+    pub const MAX_PUBLIC_KEY_SIZE: usize = KeyType::Asymmetric(Curve::NistP384).public_key_size();
+    pub const MAX_PRIVATE_KEY_SIZE: usize = KeyType::Asymmetric(Curve::NistP384).private_key_size();
 
     pub const fn is_symmetric(&self) -> bool {
         matches!(self, KeyType::Symmetric(_))
@@ -109,14 +76,18 @@ impl KeyType {
 
     pub const fn public_key_size(&self) -> usize {
         match self {
-            KeyType::Asymmetric(c) => 2 * c.size(),
+            KeyType::Asymmetric(c) => match c {
+                Curve::NistP256 | Curve::NistP384 => 2 * c.size(),
+            },
             _ => 0,
         }
     }
 
     pub const fn private_key_size(&self) -> usize {
         match self {
-            KeyType::Asymmetric(c) => c.size(),
+            KeyType::Asymmetric(c) => match c {
+                Curve::NistP256 | Curve::NistP384 => c.size(),
+            },
             _ => 0,
         }
     }
@@ -130,7 +101,11 @@ impl KeyType {
 
     pub const fn signature_size(&self) -> usize {
         match self {
-            KeyType::Asymmetric(c) => 2 * c.size(), // ECDSA: r and s components
+            KeyType::Asymmetric(c) => {
+                match c {
+                    Curve::NistP256 | Curve::NistP384 => 2 * c.size(), // ECDSA: r and s components
+                }
+            }
             _ => 0,
         }
     }

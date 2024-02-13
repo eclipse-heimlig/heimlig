@@ -1,11 +1,10 @@
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, mutex::Mutex};
-use heimlig::hsm::keystore::Curve;
 use heimlig::{
     client::api::Api,
     common::jobs::{Request, RequestType, Response},
     hsm::{
         core::{self, Builder},
-        keystore::{KeyId, KeyInfo, KeyPermissions, KeyType},
+        keystore::{Curve, KeyId, KeyInfo, KeyPermissions, KeyType},
     },
     integration::{
         embassy::{
