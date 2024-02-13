@@ -222,10 +222,10 @@ impl<
                 }
             }
             Ok((key, key_info)) => match key_info.ty {
-                KeyType::Symmetric128Bits => {
+                KeyType::Symmetric(16) => {
                     aes128gcm_encrypt_in_place_detached(key, iv, aad, buffer, tag)
                 }
-                KeyType::Symmetric256Bits => {
+                KeyType::Symmetric(32) => {
                     aes256gcm_encrypt_in_place_detached(key, iv, aad, buffer, tag)
                 }
                 _ => {
@@ -313,10 +313,10 @@ impl<
                 }
             }
             Ok((key, key_info)) => match key_info.ty {
-                KeyType::Symmetric128Bits => {
+                KeyType::Symmetric(16) => {
                     aes128gcm_decrypt_in_place_detached(key, iv, aad, buffer, tag)
                 }
-                KeyType::Symmetric256Bits => {
+                KeyType::Symmetric(32) => {
                     aes256gcm_decrypt_in_place_detached(key, iv, aad, buffer, tag)
                 }
                 _ => {
@@ -400,13 +400,13 @@ impl<
                 }
             }
             Ok((key, key_info)) => match key_info.ty {
-                KeyType::Symmetric128Bits => {
+                KeyType::Symmetric(16) => {
                     aes128cbc_encrypt::<Pkcs7>(key, iv, buffer, plaintext_size)
                 }
-                KeyType::Symmetric192Bits => {
+                KeyType::Symmetric(24) => {
                     aes192cbc_encrypt::<Pkcs7>(key, iv, buffer, plaintext_size)
                 }
-                KeyType::Symmetric256Bits => {
+                KeyType::Symmetric(32) => {
                     aes256cbc_encrypt::<Pkcs7>(key, iv, buffer, plaintext_size)
                 }
                 _ => {
@@ -494,9 +494,9 @@ impl<
                 }
             }
             Ok((key, key_info)) => match key_info.ty {
-                KeyType::Symmetric128Bits => aes128cbc_decrypt::<Pkcs7>(key, iv, buffer),
-                KeyType::Symmetric192Bits => aes192cbc_decrypt::<Pkcs7>(key, iv, buffer),
-                KeyType::Symmetric256Bits => aes256cbc_decrypt::<Pkcs7>(key, iv, buffer),
+                KeyType::Symmetric(16) => aes128cbc_decrypt::<Pkcs7>(key, iv, buffer),
+                KeyType::Symmetric(24) => aes192cbc_decrypt::<Pkcs7>(key, iv, buffer),
+                KeyType::Symmetric(32) => aes256cbc_decrypt::<Pkcs7>(key, iv, buffer),
                 _ => {
                     return Response::Error {
                         client_id,
@@ -581,9 +581,9 @@ impl<
                 }
             }
             Ok((key, key_info)) => match key_info.ty {
-                KeyType::Symmetric128Bits => aes128_cmac_calculate(key, message, tag),
-                KeyType::Symmetric192Bits => aes192_cmac_calculate(key, message, tag),
-                KeyType::Symmetric256Bits => aes256_cmac_calculate(key, message, tag),
+                KeyType::Symmetric(16) => aes128_cmac_calculate(key, message, tag),
+                KeyType::Symmetric(24) => aes192_cmac_calculate(key, message, tag),
+                KeyType::Symmetric(32) => aes256_cmac_calculate(key, message, tag),
                 _ => {
                     return Response::Error {
                         client_id,
@@ -662,9 +662,9 @@ impl<
                 }
             }
             Ok((key, key_info)) => match key_info.ty {
-                KeyType::Symmetric128Bits => aes128_cmac_verify(key, message, tag),
-                KeyType::Symmetric192Bits => aes192_cmac_verify(key, message, tag),
-                KeyType::Symmetric256Bits => aes256_cmac_verify(key, message, tag),
+                KeyType::Symmetric(16) => aes128_cmac_verify(key, message, tag),
+                KeyType::Symmetric(24) => aes192_cmac_verify(key, message, tag),
+                KeyType::Symmetric(32) => aes256_cmac_verify(key, message, tag),
                 _ => {
                     return Response::Error {
                         client_id,

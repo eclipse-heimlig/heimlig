@@ -6,7 +6,7 @@ use crate::crypto::ecdsa::{
     nist_p384_sign_prehashed, nist_p384_verify, nist_p384_verify_prehashed,
 };
 use crate::hsm::keystore;
-use crate::hsm::keystore::{KeyId, KeyInfo, KeyType};
+use crate::hsm::keystore::{Curve, KeyId, KeyInfo, KeyType};
 use core::ops::DerefMut;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
@@ -134,10 +134,10 @@ impl<
                     client_id,
                     request_id,
                     error: Error::KeyStore(e),
-                }
+                };
             }
             Ok(key_info) => match key_info.ty {
-                KeyType::EccKeypairNistP256 => {
+                KeyType::Asymmetric(Curve::NistP256) => {
                     let (private_key, public_key) =
                         nist_p256_generate_key_pair(self.rng.lock().await.deref_mut());
                     (
@@ -150,7 +150,7 @@ impl<
                         key_info,
                     )
                 }
-                KeyType::EccKeypairNistP384 => {
+                KeyType::Asymmetric(Curve::NistP384) => {
                     let (private_key, public_key) =
                         nist_p384_generate_key_pair(self.rng.lock().await.deref_mut());
                     (
@@ -168,7 +168,7 @@ impl<
                         client_id,
                         request_id,
                         error: Error::KeyStore(keystore::Error::InvalidKeyType),
-                    }
+                    };
                 }
             },
         };
@@ -217,17 +217,17 @@ impl<
                     client_id,
                     request_id,
                     error: Error::KeyStore(e),
-                }
+                };
             }
             Ok((private_key, key_info)) => match key_info.ty {
-                KeyType::EccKeypairNistP256 => {
+                KeyType::Asymmetric(Curve::NistP256) => {
                     if prehashed {
                         nist_p256_sign_prehashed(private_key, message, signature)
                     } else {
                         nist_p256_sign(private_key, message, signature)
                     }
                 }
-                KeyType::EccKeypairNistP384 => {
+                KeyType::Asymmetric(Curve::NistP384) => {
                     if prehashed {
                         nist_p384_sign_prehashed(private_key, message, signature)
                     } else {
@@ -325,17 +325,17 @@ impl<
                     client_id,
                     request_id,
                     error: Error::KeyStore(e),
-                }
+                };
             }
             Ok((public_key, key_info)) => match key_info.ty {
-                KeyType::EccKeypairNistP256 => {
+                KeyType::Asymmetric(Curve::NistP256) => {
                     if prehashed {
                         nist_p256_verify_prehashed(public_key, message, signature)
                     } else {
                         nist_p256_verify(public_key, message, signature)
                     }
                 }
-                KeyType::EccKeypairNistP384 => {
+                KeyType::Asymmetric(Curve::NistP384) => {
                     if prehashed {
                         nist_p384_verify_prehashed(public_key, message, signature)
                     } else {

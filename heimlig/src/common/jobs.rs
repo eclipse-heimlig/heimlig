@@ -1,5 +1,5 @@
 use crate::hsm::keystore;
-use crate::hsm::keystore::{KeyId, KeyType};
+use crate::hsm::keystore::{Curve, KeyId};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Error {
@@ -394,7 +394,7 @@ pub enum Request<'data> {
     EcdhExternalPrivateKey {
         client_id: ClientId,
         request_id: RequestId,
-        key_type: KeyType,
+        curve: Curve,
         public_key: &'data [u8],
         private_key: &'data [u8],
         shared_secret: &'data mut [u8],
