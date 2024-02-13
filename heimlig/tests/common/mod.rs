@@ -4,7 +4,7 @@ use heimlig::{
     common::jobs::{Request, RequestType, Response},
     hsm::{
         core::{self, Builder},
-        keystore::{KeyId, KeyInfo, KeyPermissions, KeyType},
+        keystore::{Curve, KeyId, KeyInfo, KeyPermissions, KeyType},
     },
     integration::{
         embassy::{
@@ -22,7 +22,7 @@ pub const TOTAL_KEY_SIZE: usize =
     SYM_128_KEY.ty.key_size() + SYM_256_KEY.ty.key_size() + ASYM_NIST_P256_KEY.ty.key_size();
 pub const SYM_128_KEY: KeyInfo = KeyInfo {
     id: KeyId(0),
-    ty: KeyType::Symmetric128Bits,
+    ty: KeyType::Symmetric(16),
     permissions: KeyPermissions {
         import: true,
         export_private: false,
@@ -32,7 +32,7 @@ pub const SYM_128_KEY: KeyInfo = KeyInfo {
 };
 pub const SYM_256_KEY: KeyInfo = KeyInfo {
     id: KeyId(1),
-    ty: KeyType::Symmetric256Bits,
+    ty: KeyType::Symmetric(32),
     permissions: KeyPermissions {
         import: true,
         export_private: true,
@@ -42,7 +42,7 @@ pub const SYM_256_KEY: KeyInfo = KeyInfo {
 };
 pub const ASYM_NIST_P256_KEY: KeyInfo = KeyInfo {
     id: KeyId(2),
-    ty: KeyType::EccKeypairNistP256,
+    ty: KeyType::Asymmetric(Curve::NistP256),
     permissions: KeyPermissions {
         import: true,
         export_private: true,

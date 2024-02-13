@@ -249,12 +249,12 @@ impl<const STORAGE_SIZE: usize, const MAX_KEYS: usize> TryFrom<&[KeyInfo]>
 #[cfg(test)]
 pub(crate) mod test {
     use super::*;
-    use crate::hsm::keystore::{Error, KeyId, KeyInfo, KeyPermissions, KeyStore, KeyType};
+    use crate::hsm::keystore::{Curve, Error, KeyId, KeyInfo, KeyPermissions, KeyStore, KeyType};
 
     const TOTAL_KEY_SIZE: usize = KEY1_INFO.ty.key_size() + KEY2_INFO.ty.key_size();
     const KEY1_INFO: KeyInfo = KeyInfo {
         id: KeyId(5),
-        ty: KeyType::Symmetric128Bits,
+        ty: KeyType::Symmetric(16),
         permissions: KeyPermissions {
             import: true,
             export_private: true,
@@ -264,7 +264,7 @@ pub(crate) mod test {
     };
     const KEY2_INFO: KeyInfo = KeyInfo {
         id: KeyId(3),
-        ty: KeyType::EccKeypairNistP256,
+        ty: KeyType::Asymmetric(Curve::NistP256),
         permissions: KeyPermissions {
             import: true,
             export_private: true,
@@ -378,7 +378,7 @@ pub(crate) mod test {
     fn no_permissions() {
         const NOTHING_ALLOWED_KEY: KeyInfo = KeyInfo {
             id: KeyId(0),
-            ty: KeyType::Symmetric128Bits,
+            ty: KeyType::Symmetric(16),
             permissions: KeyPermissions {
                 import: false,
                 export_private: false,
@@ -415,7 +415,7 @@ pub(crate) mod test {
     fn overwrite_allowed() {
         const NO_EXPORT_OVERWRITE_NO_DELETE: KeyInfo = KeyInfo {
             id: KeyId(0),
-            ty: KeyType::Symmetric128Bits,
+            ty: KeyType::Symmetric(16),
             permissions: KeyPermissions {
                 import: true,
                 export_private: false,

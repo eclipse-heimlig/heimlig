@@ -1,4 +1,5 @@
 use crate::common::jobs::{HashAlgorithm, Request, Response};
+use crate::hsm::keystore::{Curve, KeyId};
 use crate::integration::raw_errors::JobErrorRaw;
 use core::slice;
 use strum::EnumCount;
@@ -6,8 +7,12 @@ use strum::EnumCount;
 type ClientIdRaw = u32;
 type RequestIdRaw = u32;
 type KeyIdRaw = u32;
-type BoolRaw = u32; // 0 == false, 1 == true
+type CurveRaw = u32;
 type HashAlgorithmRaw = u32;
+type BoolRaw = u32; // 0 == false, 1 == true
+
+pub const NIST_P256: CurveRaw = 0;
+pub const NIST_P384: CurveRaw = 1;
 
 pub const SHA2_256: HashAlgorithmRaw = 0;
 pub const SHA2_384: HashAlgorithmRaw = 1;
@@ -383,6 +388,7 @@ pub enum RequestRaw {
     EcdhExternalPrivateKey {
         client_id: ClientIdRaw,
         request_id: RequestIdRaw,
+        curve: CurveRaw,
         public_key_data: *const u8,
         public_key_size: u32,
         private_key_data: *const u8,
@@ -1167,6 +1173,7 @@ impl RequestRaw {
             RequestRaw::EcdhExternalPrivateKey {
                 client_id,
                 request_id,
+                curve,
                 public_key_data,
                 public_key_size,
                 private_key_data,
@@ -1176,6 +1183,7 @@ impl RequestRaw {
             } => Request::EcdhExternalPrivateKey {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
+                curve: curve.try_into()?,
                 public_key: check_pointer_and_size(public_key_data, public_key_size, &validator)?,
                 private_key: check_pointer_and_size(
                     private_key_data,
@@ -1763,12 +1771,14 @@ impl From<Request<'_>> for RequestRaw {
             Request::EcdhExternalPrivateKey {
                 client_id,
                 request_id,
+                curve,
                 public_key,
                 private_key,
                 shared_secret,
             } => RequestRaw::EcdhExternalPrivateKey {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
+                curve: curve.into(),
                 public_key_data: public_key.as_ptr(),
                 public_key_size: public_key.len() as u32,
                 private_key_data: private_key.as_ptr(),
@@ -2033,17 +2043,34 @@ impl From<Response<'_>> for ResponseRaw {
     }
 }
 
-impl TryFrom<HashAlgorithmRaw> for HashAlgorithm {
+impl From<KeyId> for KeyIdRaw {
+    fn from(value: KeyId) -> Self {
+        value.0
+    }
+}
+
+impl From<KeyIdRaw> for KeyId {
+    fn from(value: KeyIdRaw) -> Self {
+        KeyId(value)
+    }
+}
+
+impl From<Curve> for CurveRaw {
+    fn from(value: Curve) -> Self {
+        match value {
+            Curve::NistP256 => NIST_P256,
+            Curve::NistP384 => NIST_P384,
+        }
+    }
+}
+
+impl TryFrom<CurveRaw> for Curve {
     type Error = ValidationError;
 
-    fn try_from(value: HashAlgorithmRaw) -> Result<Self, Self::Error> {
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
         match value {
-            SHA2_256 => Ok(Self::Sha2_256),
-            SHA2_384 => Ok(Self::Sha2_384),
-            SHA2_512 => Ok(Self::Sha2_512),
-            SHA3_256 => Ok(Self::Sha3_256),
-            SHA3_384 => Ok(Self::Sha3_384),
-            SHA3_512 => Ok(Self::Sha3_512),
+            NIST_P256 => Ok(Self::NistP256),
+            NIST_P384 => Ok(Self::NistP384),
             _ => Err(ValidationError::InvalidValue),
         }
     }
@@ -2058,6 +2085,22 @@ impl From<HashAlgorithm> for HashAlgorithmRaw {
             HashAlgorithm::Sha3_256 => SHA3_256,
             HashAlgorithm::Sha3_384 => SHA3_384,
             HashAlgorithm::Sha3_512 => SHA3_512,
+        }
+    }
+}
+
+impl TryFrom<HashAlgorithmRaw> for HashAlgorithm {
+    type Error = ValidationError;
+
+    fn try_from(value: HashAlgorithmRaw) -> Result<Self, Self::Error> {
+        match value {
+            SHA2_256 => Ok(Self::Sha2_256),
+            SHA2_384 => Ok(Self::Sha2_384),
+            SHA2_512 => Ok(Self::Sha2_512),
+            SHA3_256 => Ok(Self::Sha3_256),
+            SHA3_384 => Ok(Self::Sha3_384),
+            SHA3_512 => Ok(Self::Sha3_512),
+            _ => Err(ValidationError::InvalidValue),
         }
     }
 }
