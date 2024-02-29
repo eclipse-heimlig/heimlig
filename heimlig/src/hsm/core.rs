@@ -372,23 +372,7 @@ impl<
         client_id: ClientId,
         worker_id: WorkerId,
     ) -> Result<(), Error> {
-        let mut request = self
-            .clients
-            .get(client_id.idx())
-            .ok_or(Error::Internal(InternalError::InvalidClientId(client_id)))?
-            .requests
-            .lock()
-            .await
-            .deref_mut()
-            .next()
-            .await
-            .ok_or(Error::Internal(InternalError::EmptyClientRequestQueue(
-                client_id,
-            )))?;
-
-        // Fill client ID field that will be used to send back the response later
-        request.set_client_id(client_id);
-
+        let request = self.recv_from_client(client_id).await?;
         self.workers
             .get(worker_id.idx())
             .ok_or(Error::Internal(InternalError::InvalidWorkerId(worker_id)))?
@@ -402,19 +386,7 @@ impl<
     }
 
     async fn process_on_core(&mut self, client_id: ClientId) -> Result<(), Error> {
-        let Some(client) = self.clients.get(client_id.idx()) else {
-            return Err(Error::Internal(InternalError::InvalidClientId(client_id)));
-        };
-        let request = client
-            .requests
-            .lock()
-            .await
-            .deref_mut()
-            .next()
-            .await
-            .ok_or(Error::Internal(InternalError::EmptyClientRequestQueue(
-                client_id,
-            )))?;
+        let request = self.recv_from_client(client_id).await?;
         let response = match request {
             Request::IsKeyAvailable {
                 client_id,
@@ -565,11 +537,21 @@ impl<
     }
 
     async fn respond_no_worker_for_request(&mut self, client_id: ClientId) -> Result<(), Error> {
-        let Some(client) = self.clients.get(client_id.idx()) else {
-            return Err(Error::Internal(InternalError::InvalidClientId(client_id)));
+        // Remove request from queue even though we cannot handle it
+        let request = self.recv_from_client(client_id).await?;
+        let response = Response::Error {
+            client_id,
+            request_id: request.get_request_id(),
+            error: jobs::Error::NoWorkerForRequest,
         };
-        // Remove request from queue even tough we cannot handle it
-        let request = client
+        self.send_to_client(response).await
+    }
+
+    async fn recv_from_client<'ch>(&self, client_id: ClientId) -> Result<Request<'data>, Error> {
+        let mut request = self
+            .clients
+            .get(client_id.idx())
+            .ok_or(Error::Internal(InternalError::InvalidClientId(client_id)))?
             .requests
             .lock()
             .await
@@ -579,12 +561,11 @@ impl<
             .ok_or(Error::Internal(InternalError::EmptyClientRequestQueue(
                 client_id,
             )))?;
-        let response = Response::Error {
-            client_id,
-            request_id: request.get_request_id(),
-            error: jobs::Error::NoWorkerForRequest,
-        };
-        self.send_to_client(response).await
+
+        // Fill client ID that was only allocated by not filled by API
+        request.set_client_id(client_id);
+
+        Ok(request)
     }
 
     async fn send_to_client(&mut self, response: Response<'data>) -> Result<(), Error> {
