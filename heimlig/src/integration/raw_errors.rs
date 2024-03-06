@@ -3,7 +3,7 @@ use crate::crypto;
 use crate::hsm::keystore;
 
 /// Raw version of jobs::Error
-#[repr(C)]
+#[repr(C, u8)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum JobErrorRaw {
     /// No worker found for received request type.
@@ -25,7 +25,7 @@ pub enum JobErrorRaw {
 }
 
 /// Raw version of crypto::Error
-#[repr(C)]
+#[repr(u8)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum CryptoErrorRaw {
     /// Error during encryption.
@@ -59,7 +59,7 @@ pub enum CryptoErrorRaw {
 }
 
 /// Raw version of keystore::Error
-#[repr(C)]
+#[repr(u8)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum KeyStoreErrorRaw {
     /// The operation is not permitted

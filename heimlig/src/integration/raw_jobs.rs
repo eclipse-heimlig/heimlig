@@ -41,7 +41,7 @@ pub struct RequestResponseRawPair {
 /// pointers have to point to valid addresses as they can be checked after casting. However, a
 /// nested enum member is not allowed as casting an enum from a value outside the enum range causes
 /// UB in Rust even without accessing the resulting enum.
-#[repr(C)]
+#[repr(C, u8)]
 #[derive(Clone, Copy, Debug, EnumCount)]
 pub enum RequestRaw {
     GetRandom {
@@ -400,7 +400,7 @@ pub enum RequestRaw {
 
 /// Raw response as it is written by clients to shared memory. This type is supposed to be synced
 /// with non-Rust (e.g. C++) clients via cbindgen.
-#[repr(C)]
+#[repr(C, u8)]
 #[derive(Clone, Copy, Debug, EnumCount)]
 pub enum ResponseRaw {
     Error {
