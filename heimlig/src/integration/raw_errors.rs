@@ -66,6 +66,8 @@ pub enum KeyStoreErrorRaw {
     NotAllowed,
     /// The requested key was not found.
     KeyNotFound,
+    /// The operation attempted to overwrite an existing key when it was not permitted
+    KeyAlreadyExists,
     /// The key store cannot handle the amount of requested keys.
     KeyStoreTooSmall,
     /// Attempted to create a key store with duplicate storage IDs.
@@ -119,6 +121,7 @@ impl From<keystore::Error> for KeyStoreErrorRaw {
         match value {
             keystore::Error::NotAllowed => KeyStoreErrorRaw::NotAllowed,
             keystore::Error::KeyNotFound => KeyStoreErrorRaw::KeyNotFound,
+            keystore::Error::KeyAlreadyExists => KeyStoreErrorRaw::KeyAlreadyExists,
             keystore::Error::KeyStoreTooSmall => KeyStoreErrorRaw::KeyStoreTooSmall,
             keystore::Error::DuplicateIds => KeyStoreErrorRaw::DuplicateIds,
             keystore::Error::InvalidKeyId => KeyStoreErrorRaw::InvalidKeyId,
