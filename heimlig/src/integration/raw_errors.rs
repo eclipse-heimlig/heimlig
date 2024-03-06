@@ -3,7 +3,7 @@ use crate::crypto;
 use crate::hsm::keystore;
 
 /// Raw version of jobs::Error
-#[repr(C)]
+#[repr(C, u8)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum JobErrorRaw {
     /// No worker found for received request type.
@@ -25,7 +25,7 @@ pub enum JobErrorRaw {
 }
 
 /// Raw version of crypto::Error
-#[repr(C)]
+#[repr(u8)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum CryptoErrorRaw {
     /// Error during encryption.
@@ -59,13 +59,15 @@ pub enum CryptoErrorRaw {
 }
 
 /// Raw version of keystore::Error
-#[repr(C)]
+#[repr(u8)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum KeyStoreErrorRaw {
     /// The operation is not permitted
     NotAllowed,
     /// The requested key was not found.
     KeyNotFound,
+    /// The operation attempted to overwrite an existing key when it was not permitted
+    KeyAlreadyExists,
     /// The key store cannot handle the amount of requested keys.
     KeyStoreTooSmall,
     /// Attempted to create a key store with duplicate storage IDs.
@@ -119,6 +121,7 @@ impl From<keystore::Error> for KeyStoreErrorRaw {
         match value {
             keystore::Error::NotAllowed => KeyStoreErrorRaw::NotAllowed,
             keystore::Error::KeyNotFound => KeyStoreErrorRaw::KeyNotFound,
+            keystore::Error::KeyAlreadyExists => KeyStoreErrorRaw::KeyAlreadyExists,
             keystore::Error::KeyStoreTooSmall => KeyStoreErrorRaw::KeyStoreTooSmall,
             keystore::Error::DuplicateIds => KeyStoreErrorRaw::DuplicateIds,
             keystore::Error::InvalidKeyId => KeyStoreErrorRaw::InvalidKeyId,

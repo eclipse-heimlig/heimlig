@@ -8,6 +8,8 @@ pub enum Error {
     NotAllowed,
     /// The requested key was not found.
     KeyNotFound,
+    /// The operation attempted to overwrite an existing key when it was not permitted
+    KeyAlreadyExists,
     /// The key store cannot handle the number of requested keys.
     KeyStoreTooSmall,
     /// Attempted to create a key store with duplicate storage IDs.
