@@ -110,7 +110,7 @@ impl<
                     return Response::Error {
                         client_id,
                         request_id,
-                        error: Error::KeyStore(keystore::Error::NotAllowed),
+                        error: Error::KeyStore(keystore::Error::KeyAlreadyExists),
                     };
                 }
 
