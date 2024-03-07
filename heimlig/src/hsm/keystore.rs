@@ -258,7 +258,7 @@ impl<T: InsecureKeyStore> KeyStore for T {
         }
         // Only overwrite if the key is present, the permissions allow it, and the overwrite flag is set.
         if key_exists && (!overwrite || !key_info.permissions.overwrite) {
-            return Err(Error::NotAllowed);
+            return Err(Error::KeyAlreadyExists);
         }
         if !key_info.ty.is_symmetric() {
             return Err(Error::InvalidKeyType);
@@ -280,7 +280,7 @@ impl<T: InsecureKeyStore> KeyStore for T {
             return Err(Error::NotAllowed);
         }
         if key_exists && (!overwrite || !key_info.permissions.overwrite) {
-            return Err(Error::NotAllowed);
+            return Err(Error::KeyAlreadyExists);
         }
         if !key_info.ty.is_asymmetric() {
             return Err(Error::InvalidKeyType);

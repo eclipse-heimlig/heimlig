@@ -432,7 +432,7 @@ pub(crate) mod test {
             .is_ok());
         match key_store.import_symmetric_key(NO_EXPORT_OVERWRITE_NO_DELETE.id, &src_buffer, false) {
             Ok(_) => panic!("Operation should have failed"),
-            Err(e) => assert_eq!(e, Error::NotAllowed),
+            Err(e) => assert_eq!(e, Error::KeyAlreadyExists),
         }
         assert!(key_store
             .import_symmetric_key(NO_EXPORT_OVERWRITE_NO_DELETE.id, &src_buffer, true)
