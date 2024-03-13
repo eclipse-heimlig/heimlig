@@ -22,7 +22,7 @@ ecdsa = { version = "0.16.8", default-features = false }
 ed25519-dalek = { version = "2.1.1", default-features = false, features = ["zeroize"] }
 elliptic-curve = { version = "0.13.5", default-features = false }
 embassy-futures = { version = "0.1.0", default-features = false }
-embassy-sync = { version = "0.3.0", default-features = false }
+embassy-sync = { version = "0.5.0", default-features = false }
 futures = { version = "0.3.28", default-features = false }
 heapless = { version = "0.7.16", default-features = false, features = ["cas", "x86-sync-pool"] }
 hmac = { version = "0.12.1", default-features = false }
