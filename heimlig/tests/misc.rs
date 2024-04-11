@@ -56,7 +56,10 @@ async fn generate_symmetric_key() {
 
     // Export key
     let org_request_id = api
-        .export_symmetric_key(SYM_256_KEY.id, &mut large_key_buffer)
+        .export_symmetric_key(
+            SYM_256_KEY.id,
+            &mut large_key_buffer[..SYM_256_KEY.ty.key_size()],
+        )
         .await
         .expect("failed to send request");
     let Response::ExportSymmetricKey {

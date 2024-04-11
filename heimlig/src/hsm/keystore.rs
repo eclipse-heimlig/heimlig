@@ -1,3 +1,7 @@
+use core::ops::Deref;
+
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
+
 /// Identifier to reference HSM keys
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
 pub struct KeyId(pub u32);
@@ -113,6 +117,23 @@ impl KeyType {
     }
 }
 
+#[derive(Zeroize, ZeroizeOnDrop)]
+pub struct ZeroizableVec<const N: usize>(pub heapless::Vec<u8, N>);
+
+impl<const N: usize> Deref for ZeroizableVec<N> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_slice()
+    }
+}
+
+type KeyData<const N: usize> = Zeroizing<ZeroizableVec<N>>;
+
+pub type SymmetricKey = KeyData<{ KeyType::MAX_SYMMETRIC_KEY_SIZE }>;
+pub type PublicKey = KeyData<{ KeyType::MAX_PUBLIC_KEY_SIZE }>;
+pub type PrivateKey = KeyData<{ KeyType::MAX_PRIVATE_KEY_SIZE }>;
+
 pub trait InsecureKeyStore {
     fn get_key_info(&self, id: KeyId) -> Result<KeyInfo, Error>;
 
@@ -140,32 +161,67 @@ pub trait InsecureKeyStore {
     /// Unlike `export_symmetric_key()`, this function exports keys even if their permissions do not
     /// allow it. It is supposed to be used by workers and is not reachable from outside Heimlig.
     /// Workers operate inside Heimlig and are trusted.
-    ///
-    /// returns: The number of bytes written to `dest` or and error.
-    fn export_symmetric_key_insecure<'data>(
-        &self,
-        id: KeyId,
-        dest: &'data mut [u8],
-    ) -> Result<&'data [u8], Error>;
+    fn export_symmetric_key_insecure(&self, id: KeyId) -> Result<SymmetricKey, Error>;
 
-    fn export_public_key_insecure<'data>(
+    /// Read a symmetric key from storage.
+    ///
+    /// Unlike `export_symmetric_key()`, this function exports keys even if their permissions do not
+    /// allow it. It is supposed to be used by workers and is not reachable from outside Heimlig.
+    /// Workers operate inside Heimlig and are trusted.
+    fn export_symmetric_key_insecure_to_slice(
         &self,
         id: KeyId,
-        dest: &'data mut [u8],
-    ) -> Result<&'data [u8], Error>;
+        dst: &mut [u8],
+    ) -> Result<(), Error> {
+        let key = self.export_symmetric_key_insecure(id)?;
+        if key.len() != dst.len() {
+            return Err(Error::InvalidBufferSize);
+        }
+        dst.copy_from_slice(key.deref());
+        Ok(())
+    }
+
+    /// Read an asymmetric public key from storage.
+    ///
+    /// Unlike `export_public_key()`, this function exports keys even if their permissions do not
+    /// allow it. It is supposed to be used by workers and is not reachable from outside Heimlig.
+    /// Workers operate inside Heimlig and are trusted.
+    fn export_public_key_insecure(&self, id: KeyId) -> Result<PublicKey, Error>;
+
+    /// Read an asymmetric public key from storage.
+    ///
+    /// Unlike `export_public_key()`, this function exports keys even if their permissions do not
+    /// allow it. It is supposed to be used by workers and is not reachable from outside Heimlig.
+    /// Workers operate inside Heimlig and are trusted.
+    fn export_public_key_insecure_to_slice(&self, id: KeyId, dst: &mut [u8]) -> Result<(), Error> {
+        let key = self.export_public_key_insecure(id)?;
+        if key.len() != dst.len() {
+            return Err(Error::InvalidBufferSize);
+        }
+        dst.copy_from_slice(key.deref());
+        Ok(())
+    }
 
     /// Read an asymmetric private key from storage.
     ///
     /// Unlike `export_private_key()`, this function exports keys even if their permissions do not
     /// allow it. It is supposed to be used by workers and is not reachable from outside Heimlig.
     /// Workers operate inside Heimlig and are trusted.
+    fn export_private_key_insecure(&self, id: KeyId) -> Result<PrivateKey, Error>;
+
+    /// Read an asymmetric private key from storage.
     ///
-    /// returns: The number of bytes written to `dest` or and error.
-    fn export_private_key_insecure<'data>(
-        &self,
-        id: KeyId,
-        dest: &'data mut [u8],
-    ) -> Result<&'data [u8], Error>;
+    /// Unlike `export_private_key()`, this function exports keys even if their permissions do not
+    /// allow it. It is supposed to be used by workers and is not reachable from outside Heimlig.
+    /// Workers operate inside Heimlig and are trusted.
+    fn export_private_key_insecure_to_slice(&self, id: KeyId, dst: &mut [u8]) -> Result<(), Error> {
+        let key = self.export_private_key_insecure(id)?;
+        if key.len() != dst.len() {
+            return Err(Error::InvalidBufferSize);
+        }
+        dst.copy_from_slice(key.deref());
+        Ok(())
+    }
 
     /// Delete the key for given ID.
     ///
@@ -200,31 +256,43 @@ pub trait KeyStore {
     ) -> Result<(), Error>;
 
     /// Read a symmetric key from storage.
-    ///
-    /// returns: The number of bytes written to `dest` or and error.
-    fn export_symmetric_key<'data>(
-        &self,
-        id: KeyId,
-        dest: &'data mut [u8],
-    ) -> Result<&'data [u8], Error>;
+    fn export_symmetric_key(&self, id: KeyId) -> Result<SymmetricKey, Error>;
+
+    /// Read a symmetric key from storage.
+    fn export_symmetric_key_to_slice(&self, id: KeyId, dst: &mut [u8]) -> Result<(), Error> {
+        let key = self.export_symmetric_key(id)?;
+        if key.len() != dst.len() {
+            return Err(Error::InvalidBufferSize);
+        }
+        dst.copy_from_slice(key.deref());
+        Ok(())
+    }
 
     /// Read an asymmetric public key from storage.
-    ///
-    /// returns: The number of bytes written to `dest` or and error.
-    fn export_public_key<'data>(
-        &self,
-        id: KeyId,
-        dest: &'data mut [u8],
-    ) -> Result<&'data [u8], Error>;
+    fn export_public_key(&self, id: KeyId) -> Result<PublicKey, Error>;
+
+    /// Read an asymmetric public key from storage.
+    fn export_public_key_to_slice(&self, id: KeyId, dst: &mut [u8]) -> Result<(), Error> {
+        let key = self.export_public_key(id)?;
+        if key.len() != dst.len() {
+            return Err(Error::InvalidBufferSize);
+        }
+        dst.copy_from_slice(key.deref());
+        Ok(())
+    }
 
     /// Read an asymmetric private key from storage.
-    ///
-    /// returns: The number of bytes written to `dest` or and error.
-    fn export_private_key<'data>(
-        &self,
-        id: KeyId,
-        dest: &'data mut [u8],
-    ) -> Result<&'data [u8], Error>;
+    fn export_private_key(&self, id: KeyId) -> Result<PrivateKey, Error>;
+
+    /// Read an asymmetric private key from storage.
+    fn export_private_key_to_slice(&self, id: KeyId, dest: &mut [u8]) -> Result<(), Error> {
+        let key = self.export_private_key(id)?;
+        if key.len() != dest.len() {
+            return Err(Error::InvalidBufferSize);
+        }
+        dest.copy_from_slice(key.deref());
+        Ok(())
+    }
 
     /// Delete the key for given ID.
     ///
@@ -289,11 +357,7 @@ impl<T: InsecureKeyStore> KeyStore for T {
         self.import_key_pair_insecure(id, public_key, private_key)
     }
 
-    fn export_symmetric_key<'data>(
-        &self,
-        id: KeyId,
-        dest: &'data mut [u8],
-    ) -> Result<&'data [u8], Error> {
+    fn export_symmetric_key(&self, id: KeyId) -> Result<SymmetricKey, Error> {
         let key_info = self.get_key_info(id)?;
         if !key_info.permissions.export_private {
             return Err(Error::NotAllowed);
@@ -301,26 +365,18 @@ impl<T: InsecureKeyStore> KeyStore for T {
         if !key_info.ty.is_symmetric() {
             return Err(Error::InvalidKeyType);
         };
-        self.export_symmetric_key_insecure(id, dest)
+        self.export_symmetric_key_insecure(id)
     }
 
-    fn export_public_key<'data>(
-        &self,
-        id: KeyId,
-        dest: &'data mut [u8],
-    ) -> Result<&'data [u8], Error> {
+    fn export_public_key(&self, id: KeyId) -> Result<PublicKey, Error> {
         let key_info = self.get_key_info(id)?;
         if !key_info.ty.is_asymmetric() {
             return Err(Error::InvalidKeyType);
         }
-        self.export_public_key_insecure(id, dest)
+        self.export_public_key_insecure(id)
     }
 
-    fn export_private_key<'data>(
-        &self,
-        id: KeyId,
-        dest: &'data mut [u8],
-    ) -> Result<&'data [u8], Error> {
+    fn export_private_key(&self, id: KeyId) -> Result<PrivateKey, Error> {
         let key_info = self.get_key_info(id)?;
         if !key_info.permissions.export_private {
             return Err(Error::NotAllowed);
@@ -328,7 +384,7 @@ impl<T: InsecureKeyStore> KeyStore for T {
         if !key_info.ty.is_asymmetric() {
             return Err(Error::InvalidKeyType);
         }
-        self.export_private_key_insecure(id, dest)
+        self.export_private_key_insecure(id)
     }
 
     fn delete(&mut self, id: KeyId) -> Result<(), Error> {

@@ -6,11 +6,10 @@ use crate::{
         hmac_sha3_256_calculate, hmac_sha3_256_verify, hmac_sha3_384_calculate,
         hmac_sha3_384_verify, hmac_sha3_512_calculate, hmac_sha3_512_verify,
     },
-    hsm::keystore::{self, KeyId, KeyInfo, KeyType},
+    hsm::keystore::{self, KeyId, KeyInfo, SymmetricKey},
 };
 use embassy_sync::{blocking_mutex::raw::RawMutex, mutex::Mutex};
 use futures::{Sink, SinkExt, Stream, StreamExt};
-use zeroize::Zeroizing;
 
 pub struct HmacWorker<
     'data,
@@ -112,10 +111,7 @@ impl<
         message: &[u8],
         tag: &'data mut [u8],
     ) -> Response<'data> {
-        let mut key_buffer = Zeroizing::new([0u8; KeyType::MAX_SYMMETRIC_KEY_SIZE]);
-        let key_and_info = self
-            .export_key_and_key_info(key_id, key_buffer.as_mut_slice())
-            .await;
+        let key_and_info = self.export_key_and_key_info(key_id).await;
         let result = match key_and_info {
             Err(e) => {
                 return Response::Error {
@@ -133,12 +129,12 @@ impl<
                     };
                 }
                 match hash_algorithm {
-                    HashAlgorithm::Sha2_256 => hmac_sha2_256_calculate(key, message, tag),
-                    HashAlgorithm::Sha2_384 => hmac_sha2_384_calculate(key, message, tag),
-                    HashAlgorithm::Sha2_512 => hmac_sha2_512_calculate(key, message, tag),
-                    HashAlgorithm::Sha3_256 => hmac_sha3_256_calculate(key, message, tag),
-                    HashAlgorithm::Sha3_384 => hmac_sha3_384_calculate(key, message, tag),
-                    HashAlgorithm::Sha3_512 => hmac_sha3_512_calculate(key, message, tag),
+                    HashAlgorithm::Sha2_256 => hmac_sha2_256_calculate(&key, message, tag),
+                    HashAlgorithm::Sha2_384 => hmac_sha2_384_calculate(&key, message, tag),
+                    HashAlgorithm::Sha2_512 => hmac_sha2_512_calculate(&key, message, tag),
+                    HashAlgorithm::Sha3_256 => hmac_sha3_256_calculate(&key, message, tag),
+                    HashAlgorithm::Sha3_384 => hmac_sha3_384_calculate(&key, message, tag),
+                    HashAlgorithm::Sha3_512 => hmac_sha3_512_calculate(&key, message, tag),
                 }
             }
         };
@@ -196,10 +192,7 @@ impl<
         message: &[u8],
         tag: &[u8],
     ) -> Response<'data> {
-        let mut key_buffer = Zeroizing::new([0u8; KeyType::MAX_SYMMETRIC_KEY_SIZE]);
-        let key_and_info = self
-            .export_key_and_key_info(key_id, key_buffer.as_mut_slice())
-            .await;
+        let key_and_info = self.export_key_and_key_info(key_id).await;
         let result = match key_and_info {
             Err(e) => {
                 return Response::Error {
@@ -217,12 +210,12 @@ impl<
                     };
                 }
                 match hash_algorithm {
-                    HashAlgorithm::Sha2_256 => hmac_sha2_256_verify(key, message, tag),
-                    HashAlgorithm::Sha2_384 => hmac_sha2_384_verify(key, message, tag),
-                    HashAlgorithm::Sha2_512 => hmac_sha2_512_verify(key, message, tag),
-                    HashAlgorithm::Sha3_256 => hmac_sha3_256_verify(key, message, tag),
-                    HashAlgorithm::Sha3_384 => hmac_sha3_384_verify(key, message, tag),
-                    HashAlgorithm::Sha3_512 => hmac_sha3_512_verify(key, message, tag),
+                    HashAlgorithm::Sha2_256 => hmac_sha2_256_verify(&key, message, tag),
+                    HashAlgorithm::Sha2_384 => hmac_sha2_384_verify(&key, message, tag),
+                    HashAlgorithm::Sha2_512 => hmac_sha2_512_verify(&key, message, tag),
+                    HashAlgorithm::Sha3_256 => hmac_sha3_256_verify(&key, message, tag),
+                    HashAlgorithm::Sha3_384 => hmac_sha3_384_verify(&key, message, tag),
+                    HashAlgorithm::Sha3_512 => hmac_sha3_512_verify(&key, message, tag),
                 }
             }
         };
@@ -274,12 +267,11 @@ impl<
     async fn export_key_and_key_info<'a>(
         &mut self,
         key_id: KeyId,
-        key_buffer: &'a mut [u8],
-    ) -> Result<(&'a [u8], KeyInfo), keystore::Error> {
+    ) -> Result<(SymmetricKey, KeyInfo), keystore::Error> {
         // Lock keystore only once
         let locked_key_store = self.key_store.lock().await;
         Ok((
-            locked_key_store.export_symmetric_key_insecure(key_id, key_buffer)?,
+            locked_key_store.export_symmetric_key_insecure(key_id)?,
             keystore::KeyStore::get_key_info(*locked_key_store, key_id)?,
         ))
     }
