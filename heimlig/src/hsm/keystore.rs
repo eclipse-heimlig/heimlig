@@ -1,14 +1,16 @@
+use displaydoc::Display;
+
 /// Identifier to reference HSM keys
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
 pub struct KeyId(pub u32);
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Display)]
 pub enum Error {
     /// The operation is not permitted
     NotAllowed,
     /// The requested key was not found.
     KeyNotFound,
-    /// The operation attempted to overwrite an existing key when it was not permitted
+    /// The operation attempted to overwrite an existing key when it was not permitted.
     KeyAlreadyExists,
     /// The key store cannot handle the number of requested keys.
     KeyStoreTooSmall,
