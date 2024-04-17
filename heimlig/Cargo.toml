@@ -19,6 +19,7 @@ chacha20poly1305 = { version = "0.10.1", default-features = false }
 cmac = { version = "0.7.2", default-features = false }
 critical-section = { version = "1.1.2", default-features = false }
 dbl = { version = "0.3.2", default-features = false }
+displaydoc = { version = "0.2.4", default-features = false }
 ecdsa = { version = "0.16.8", default-features = false }
 ed25519-dalek = { version = "2.1.1", default-features = false, features = ["zeroize"] }
 elliptic-curve = { version = "0.13.5", default-features = false }
