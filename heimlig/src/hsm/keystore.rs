@@ -64,7 +64,7 @@ impl Curve {
 }
 
 impl KeyType {
-    pub const MAX_SYMMETRIC_KEY_SIZE: usize = 32;
+    pub const MAX_SYMMETRIC_KEY_SIZE: usize = 64;
     pub const MAX_PUBLIC_KEY_SIZE: usize = KeyType::Asymmetric(Curve::NistP384).public_key_size();
     pub const MAX_PRIVATE_KEY_SIZE: usize = KeyType::Asymmetric(Curve::NistP384).private_key_size();
 
