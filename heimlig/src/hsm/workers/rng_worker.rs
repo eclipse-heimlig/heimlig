@@ -54,7 +54,11 @@ impl<
                     self.generate_symmetric_key(client_id, request_id, key_id, overwrite, key_store)
                         .await
                 } else {
-                    Err(Error::NoKeyStore)?
+                    Response::Error {
+                        client_id,
+                        request_id,
+                        error: Error::NoKeyStore,
+                    }
                 }
             }
             _ => Err(Error::UnexpectedRequestType)?,

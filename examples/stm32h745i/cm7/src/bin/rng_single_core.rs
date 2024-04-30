@@ -58,7 +58,7 @@ async fn hsm_task(
     let key_store: Mutex<NoopRawMutex, _> = Mutex::new(&mut key_store);
     let rng: Mutex<NoopRawMutex, _> = Mutex::new(rng);
     let mut rng_worker = RngWorker {
-        key_store: &key_store,
+        key_store: Some(&key_store),
         rng: &rng,
         requests: rng_req_rx,
         responses: rng_resp_tx,

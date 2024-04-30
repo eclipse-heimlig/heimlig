@@ -15,6 +15,44 @@ use heimlig::{
 };
 
 #[async_std::test]
+async fn generate_symmetric_key_no_keystore() {
+    let (mut client_requests, mut client_responses) = allocate_channel();
+    let (mut worker_requests, mut worker_responses) = allocate_channel();
+    let (mut api, mut core, req_worker_rx, resp_worker_tx) = init_core(
+        &[RequestType::GetRandom, RequestType::GenerateSymmetricKey],
+        &mut client_requests,
+        &mut client_responses,
+        &mut worker_requests,
+        &mut worker_responses,
+        None,
+    );
+    let rng = init_rng();
+    let mut worker = RngWorker {
+        rng: &rng,
+        key_store:
+            Option::<&embassy_sync::mutex::Mutex<NoopRawMutex, &mut MemoryKeyStore<0, 0>>>::None,
+        requests: req_worker_rx,
+        responses: resp_worker_tx,
+    };
+
+    // Generate key
+    let org_request_id = api
+        .generate_symmetric_key(SYM_256_KEY.id, false)
+        .await
+        .expect("failed to send request");
+    let Response::Error {
+        client_id: _,
+        request_id,
+        error,
+    } = get_response_from_worker!(api, core, worker)
+    else {
+        panic!("Unexpected response type")
+    };
+    assert_eq!(request_id, org_request_id);
+    assert_eq!(error, Error::NoKeyStore)
+}
+
+#[async_std::test]
 async fn generate_symmetric_key() {
     let mut large_key_buffer = [0u8; 2 * SYM_256_KEY.ty.key_size()];
 
@@ -33,7 +71,7 @@ async fn generate_symmetric_key() {
     let rng = init_rng();
     let mut worker = RngWorker {
         rng: &rng,
-        key_store: &key_store,
+        key_store: Some(&key_store),
         requests: req_worker_rx,
         responses: resp_worker_tx,
     };
@@ -93,7 +131,7 @@ async fn multiple_clients() {
     let key_store: Mutex<NoopRawMutex, _> = Mutex::new(&mut key_store);
     let mut rng_worker = RngWorker {
         rng: &rng,
-        key_store: &key_store,
+        key_store: Some(&key_store),
         requests: rng_requests_rx,
         responses: rng_responses_tx,
     };
@@ -181,7 +219,7 @@ async fn no_worker_for_request() {
     let key_store: Mutex<NoopRawMutex, _> = Mutex::new(&mut key_store);
     let mut rng_worker = RngWorker {
         rng: &rng,
-        key_store: &key_store,
+        key_store: Some(&key_store),
         requests: rng_requests_rx,
         responses: rng_responses_tx,
     };
