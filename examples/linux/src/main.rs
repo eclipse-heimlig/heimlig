@@ -68,7 +68,7 @@ async fn worker_task(
     let rng: Mutex<CriticalSectionRawMutex, _> =
         Mutex::new(rand_chacha::ChaCha20Rng::from_seed([0u8; 32]));
     let mut rng_worker = RngWorker {
-        key_store: &key_store,
+        key_store: Some(&key_store),
         rng: &rng,
         requests: rng_req_rx,
         responses: rng_resp_tx,

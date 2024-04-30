@@ -31,7 +31,7 @@ async fn get_random() {
     let key_store: Mutex<NoopRawMutex, _> = Mutex::new(&mut key_store);
     let mut rng_worker = RngWorker {
         rng: &rng,
-        key_store: &key_store,
+        key_store: Some(&key_store),
         requests: req_worker_rx,
         responses: resp_worker_tx,
     };
@@ -72,7 +72,7 @@ async fn get_random_request_too_large() {
     let key_store: Mutex<NoopRawMutex, _> = Mutex::new(&mut key_store);
     let mut worker = RngWorker {
         rng: &rng,
-        key_store: &key_store,
+        key_store: Some(&key_store),
         requests: req_worker_rx,
         responses: resp_worker_tx,
     };
