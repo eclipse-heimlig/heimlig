@@ -18,7 +18,7 @@ pub struct RngWorker<
 > {
     pub rng: &'rng Mutex<M, R>,
     // TODO: Move sym. key generation to own worker and get rid of key store here?
-    pub key_store: &'keystore Mutex<M, &'keystore mut KeyStore>,
+    pub key_store: Option<&'keystore Mutex<M, &'keystore mut KeyStore>>,
     pub requests: ReqSrc,
     pub responses: RespSink,
 }
@@ -50,8 +50,12 @@ impl<
                 key_id,
                 overwrite,
             } => {
-                self.generate_symmetric_key(client_id, request_id, key_id, overwrite)
-                    .await
+                if let Some(key_store) = self.key_store {
+                    self.generate_symmetric_key(client_id, request_id, key_id, overwrite, key_store)
+                        .await
+                } else {
+                    Err(Error::NoKeyStore)?
+                }
             }
             _ => Err(Error::UnexpectedRequestType)?,
         };
@@ -88,9 +92,10 @@ impl<
         request_id: RequestId,
         key_id: KeyId,
         overwrite: bool,
+        key_store: &Mutex<M, &mut KeyStore>,
     ) -> Response<'data> {
         // Own variable needed to break mutex lock immediately
-        let key_info = keystore::KeyStore::get_key_info(*self.key_store.lock().await, key_id);
+        let key_info = keystore::KeyStore::get_key_info(*key_store.lock().await, key_id);
         match key_info {
             Err(e) => Response::Error {
                 client_id,
@@ -101,7 +106,7 @@ impl<
                 let mut key = [0u8; keystore::KeyType::MAX_SYMMETRIC_KEY_SIZE];
                 let key = &mut key[0..key_info.ty.key_size()];
                 self.rng.lock().await.fill_bytes(key);
-                let mut locked_key_store = self.key_store.lock().await;
+                let mut locked_key_store = key_store.lock().await;
 
                 // Check overwrite permission
                 if keystore::KeyStore::is_key_available(*locked_key_store, key_id)
