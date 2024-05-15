@@ -5,7 +5,7 @@ use crate::crypto::ecdsa::{
     nist_p256_verify_prehashed, nist_p384_generate_key_pair, nist_p384_sign,
     nist_p384_sign_prehashed, nist_p384_verify, nist_p384_verify_prehashed,
 };
-use crate::hsm::keystore;
+use crate::hsm::keystore::{self, PrivateKey, PublicKey};
 use crate::hsm::keystore::{Curve, KeyId, KeyInfo, KeyType};
 use core::ops::DerefMut;
 use embassy_sync::blocking_mutex::raw::RawMutex;
@@ -206,10 +206,7 @@ impl<
         prehashed: bool,
         signature: &'data mut [u8],
     ) -> Response<'data> {
-        let mut key_buffer = Zeroizing::new([0u8; KeyType::MAX_PRIVATE_KEY_SIZE]);
-        let private_key_and_info = self
-            .export_private_key_and_key_info(key_id, key_buffer.as_mut_slice())
-            .await;
+        let private_key_and_info = self.export_private_key_and_key_info(key_id).await;
 
         let result = match private_key_and_info {
             Err(e) => {
@@ -222,16 +219,16 @@ impl<
             Ok((private_key, key_info)) => match key_info.ty {
                 KeyType::Asymmetric(Curve::NistP256) => {
                     if prehashed {
-                        nist_p256_sign_prehashed(private_key, message, signature)
+                        nist_p256_sign_prehashed(&private_key, message, signature)
                     } else {
-                        nist_p256_sign(private_key, message, signature)
+                        nist_p256_sign(&private_key, message, signature)
                     }
                 }
                 KeyType::Asymmetric(Curve::NistP384) => {
                     if prehashed {
-                        nist_p384_sign_prehashed(private_key, message, signature)
+                        nist_p384_sign_prehashed(&private_key, message, signature)
                     } else {
-                        nist_p384_sign(private_key, message, signature)
+                        nist_p384_sign(&private_key, message, signature)
                     }
                 }
                 _ => {
@@ -314,10 +311,7 @@ impl<
         prehashed: bool,
         signature: &[u8],
     ) -> Response<'data> {
-        let mut key_buffer = Zeroizing::new([0u8; KeyType::MAX_PUBLIC_KEY_SIZE]);
-        let public_key_and_info = self
-            .export_public_key_and_key_info(key_id, key_buffer.as_mut_slice())
-            .await;
+        let public_key_and_info = self.export_public_key_and_key_info(key_id).await;
 
         let result = match public_key_and_info {
             Err(e) => {
@@ -330,16 +324,16 @@ impl<
             Ok((public_key, key_info)) => match key_info.ty {
                 KeyType::Asymmetric(Curve::NistP256) => {
                     if prehashed {
-                        nist_p256_verify_prehashed(public_key, message, signature)
+                        nist_p256_verify_prehashed(&public_key, message, signature)
                     } else {
-                        nist_p256_verify(public_key, message, signature)
+                        nist_p256_verify(&public_key, message, signature)
                     }
                 }
                 KeyType::Asymmetric(Curve::NistP384) => {
                     if prehashed {
-                        nist_p384_verify_prehashed(public_key, message, signature)
+                        nist_p384_verify_prehashed(&public_key, message, signature)
                     } else {
-                        nist_p384_verify(public_key, message, signature)
+                        nist_p384_verify(&public_key, message, signature)
                     }
                 }
                 _ => {
@@ -423,30 +417,28 @@ impl<
         }
     }
 
-    async fn export_private_key_and_key_info<'a>(
+    async fn export_private_key_and_key_info(
         &mut self,
         key_id: KeyId,
-        key_buffer: &'a mut [u8],
-    ) -> Result<(&'a [u8], KeyInfo), keystore::Error> {
+    ) -> Result<(PrivateKey, KeyInfo), keystore::Error> {
         // Lock keystore only once
         let locked_key_store = self.key_store.lock().await;
 
         Ok((
-            locked_key_store.export_private_key_insecure(key_id, key_buffer)?,
+            locked_key_store.export_private_key_insecure(key_id)?,
             keystore::KeyStore::get_key_info(*locked_key_store, key_id)?,
         ))
     }
 
-    async fn export_public_key_and_key_info<'a>(
+    async fn export_public_key_and_key_info(
         &mut self,
         key_id: KeyId,
-        key_buffer: &'a mut [u8],
-    ) -> Result<(&'a [u8], KeyInfo), keystore::Error> {
+    ) -> Result<(PublicKey, KeyInfo), keystore::Error> {
         // Lock keystore only once
         let locked_key_store = self.key_store.lock().await;
 
         Ok((
-            locked_key_store.export_public_key(key_id, key_buffer)?,
+            locked_key_store.export_public_key(key_id)?,
             keystore::KeyStore::get_key_info(*locked_key_store, key_id)?,
         ))
     }

@@ -1,5 +1,8 @@
-use crate::hsm::keystore::{Error, InsecureKeyStore, KeyId, KeyInfo};
+use crate::hsm::keystore::{
+    Error, InsecureKeyStore, KeyId, KeyInfo, PrivateKey, PublicKey, SymmetricKey, ZeroizableVec,
+};
 use heapless::Vec;
+use zeroize::Zeroizing;
 
 pub struct MemoryKeyStore<const STORAGE_SIZE: usize, const MAX_KEYS: usize> {
     storage: [u8; STORAGE_SIZE],
@@ -68,11 +71,7 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> InsecureKeyStore
         Ok(())
     }
 
-    fn export_public_key_insecure<'data>(
-        &self,
-        id: KeyId,
-        dest: &'data mut [u8],
-    ) -> Result<&'data [u8], Error> {
+    fn export_public_key_insecure(&self, id: KeyId) -> Result<PublicKey, Error> {
         let key_layout = self.layout.get(id).ok_or(Error::InvalidKeyId)?;
         assert!(key_layout.info.ty.is_asymmetric());
         if key_layout.actual_size == 0 {
@@ -82,42 +81,31 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> InsecureKeyStore
         assert_eq!(key_layout.actual_size % 3, 0);
         let private_key_size = key_layout.actual_size / 3;
         let public_key_size = 2 * private_key_size;
-        if dest.len() < public_key_size {
-            return Err(Error::InvalidBufferSize);
-        }
+
         let offset = key_layout.offset;
         let src = &self.storage[offset..(offset + public_key_size)];
-        let dest = &mut dest[..src.len()];
-        dest.copy_from_slice(src);
-        Ok(dest)
+
+        Ok(Zeroizing::new(ZeroizableVec(
+            heapless::Vec::from_slice(src).unwrap(),
+        )))
     }
 
-    fn export_symmetric_key_insecure<'data>(
-        &self,
-        id: KeyId,
-        dest: &'data mut [u8],
-    ) -> Result<&'data [u8], Error> {
+    fn export_symmetric_key_insecure(&self, id: KeyId) -> Result<SymmetricKey, Error> {
         let key_layout = self.layout.get(id).ok_or(Error::InvalidKeyId)?;
         assert!(key_layout.info.ty.is_symmetric());
         if key_layout.actual_size == 0 {
             return Err(Error::KeyNotFound);
         }
-        if dest.len() < key_layout.actual_size {
-            return Err(Error::InvalidBufferSize);
-        }
         let offset = key_layout.offset;
         let size = key_layout.actual_size;
         let src = &self.storage[offset..(offset + size)];
-        let dest = &mut dest[..src.len()];
-        dest.copy_from_slice(src);
-        Ok(dest)
+
+        Ok(Zeroizing::new(ZeroizableVec(
+            heapless::Vec::from_slice(src).unwrap(),
+        )))
     }
 
-    fn export_private_key_insecure<'data>(
-        &self,
-        id: KeyId,
-        dest: &'data mut [u8],
-    ) -> Result<&'data [u8], Error> {
+    fn export_private_key_insecure(&self, id: KeyId) -> Result<PrivateKey, Error> {
         let key_layout = self.layout.get(id).ok_or(Error::InvalidKeyId)?;
         assert!(key_layout.info.ty.is_asymmetric());
         if key_layout.actual_size == 0 {
@@ -127,14 +115,13 @@ impl<const STORAGE_SIZE: usize, const NUM_KEYS: usize> InsecureKeyStore
         assert_eq!(key_layout.actual_size % 3, 0);
         let private_key_size = key_layout.actual_size / 3;
         let public_key_size = 2 * private_key_size;
-        if dest.len() < private_key_size {
-            return Err(Error::InvalidBufferSize);
-        }
+
         let offset = key_layout.offset + public_key_size;
         let src = &self.storage[offset..(offset + private_key_size)];
-        let dest = &mut dest[..src.len()];
-        dest.copy_from_slice(src);
-        Ok(dest)
+
+        Ok(Zeroizing::new(ZeroizableVec(
+            heapless::Vec::from_slice(src).unwrap(),
+        )))
     }
 
     fn delete_insecure(&mut self, id: KeyId) -> Result<(), Error> {
@@ -249,7 +236,7 @@ impl<const STORAGE_SIZE: usize, const MAX_KEYS: usize> TryFrom<&[KeyInfo]>
 #[cfg(test)]
 pub(crate) mod test {
     use super::*;
-    use crate::hsm::keystore::{Curve, Error, KeyId, KeyInfo, KeyPermissions, KeyStore, KeyType};
+    use crate::hsm::keystore::{Curve, KeyPermissions, KeyStore, KeyType};
 
     const TOTAL_KEY_SIZE: usize = KEY1_INFO.ty.key_size() + KEY2_INFO.ty.key_size();
     const KEY1_INFO: KeyInfo = KeyInfo {
@@ -279,7 +266,6 @@ pub(crate) mod test {
 
         let key_infos: [KeyInfo; 2] = [KEY1_INFO, KEY2_INFO];
         let mut src_buffer = [0u8; KEY2_INFO.ty.key_size()];
-        let mut dest_buffer = [0u8; KEY2_INFO.ty.key_size()];
         let mut key_store = MemoryKeyStore::<{ TOTAL_KEY_SIZE }, 2>::try_new(&key_infos)
             .expect("failed to create key store");
         for key_id in 0..10 {
@@ -288,12 +274,8 @@ pub(crate) mod test {
             assert!(!InsecureKeyStore::is_key_available(&key_store, key_id));
             assert!(KeyStore::size(&key_store, key_id).is_err());
             assert!(InsecureKeyStore::size(&key_store, key_id).is_err());
-            assert!(key_store
-                .export_public_key(key_id, &mut dest_buffer)
-                .is_err());
-            assert!(key_store
-                .export_private_key(key_id, &mut dest_buffer)
-                .is_err());
+            assert!(key_store.export_public_key(key_id).is_err());
+            assert!(key_store.export_private_key(key_id).is_err());
         }
 
         // Store first key
@@ -303,19 +285,11 @@ pub(crate) mod test {
             .is_ok());
         assert!(KeyStore::is_key_available(&key_store, KEY1_INFO.id));
         assert!(InsecureKeyStore::is_key_available(&key_store, KEY1_INFO.id));
-        assert_eq!(
-            key_store
-                .export_symmetric_key(KEY1_INFO.id, &mut dest_buffer)
-                .expect("failed to retrieve key from store")
-                .len(),
-            KEY1_INFO.ty.key_size()
-        );
-        assert!(dest_buffer[0..KEY1_INFO.ty.key_size()]
-            .iter()
-            .all(|byte| *byte == 1));
-        assert!(dest_buffer[KEY1_INFO.ty.key_size()..]
-            .iter()
-            .all(|byte| *byte == 0));
+        let key = key_store
+            .export_symmetric_key(KEY1_INFO.id)
+            .expect("failed to retrieve key from store");
+        assert_eq!(key.len(), KEY1_INFO.ty.key_size());
+        assert!(key.iter().all(|byte| *byte == 1));
 
         // Store second key
         src_buffer.fill(2);
@@ -333,30 +307,16 @@ pub(crate) mod test {
         assert!(InsecureKeyStore::is_key_available(&key_store, KEY1_INFO.id));
         assert_eq!(
             key_store
-                .export_public_key(
-                    KEY2_INFO.id,
-                    &mut dest_buffer[..KEY2_INFO.ty.public_key_size()]
-                )
+                .export_public_key(KEY2_INFO.id,)
                 .expect("failed to retrieve key from store")
                 .len(),
             KEY2_INFO.ty.public_key_size()
         );
-        assert_eq!(
-            key_store
-                .export_private_key(
-                    KEY2_INFO.id,
-                    &mut dest_buffer[KEY2_INFO.ty.public_key_size()..]
-                )
-                .expect("failed to retrieve key from store")
-                .len(),
-            KEY2_INFO.ty.private_key_size()
-        );
-        assert!(dest_buffer[0..KEY2_INFO.ty.key_size()]
-            .iter()
-            .all(|byte| *byte == 2));
-        assert!(dest_buffer[KEY2_INFO.ty.key_size()..]
-            .iter()
-            .all(|byte| *byte == 0));
+        let key = key_store
+            .export_private_key(KEY2_INFO.id)
+            .expect("failed to retrieve key from store");
+        assert_eq!(key.len(), KEY2_INFO.ty.private_key_size());
+        assert!(key.iter().all(|byte| *byte == 2));
 
         // Delete keys
         assert_eq!(key_store.delete(UNKNOWN_KEY_ID), Err(Error::InvalidKeyId));
@@ -388,7 +348,6 @@ pub(crate) mod test {
         };
         let key_infos: [KeyInfo; 1] = [NOTHING_ALLOWED_KEY];
         let src_buffer = [0u8; NOTHING_ALLOWED_KEY.ty.key_size()];
-        let mut dest_buffer = [0u8; NOTHING_ALLOWED_KEY.ty.key_size()];
         let mut key_store = MemoryKeyStore::<{ TOTAL_KEY_SIZE }, 2>::try_new(&key_infos)
             .expect("failed to create key store");
         match key_store.import_symmetric_key(NOTHING_ALLOWED_KEY.id, &src_buffer, false) {
@@ -402,12 +361,12 @@ pub(crate) mod test {
             Ok(_) => panic!("Operation should have failed"),
             Err(e) => assert_eq!(e, Error::NotAllowed),
         }
-        match key_store.export_symmetric_key(NOTHING_ALLOWED_KEY.id, &mut dest_buffer) {
+        match key_store.export_symmetric_key(NOTHING_ALLOWED_KEY.id) {
             Ok(_) => panic!("Operation should have failed"),
             Err(e) => assert_eq!(e, Error::NotAllowed),
         }
         assert!(key_store
-            .export_symmetric_key_insecure(NOTHING_ALLOWED_KEY.id, &mut dest_buffer)
+            .export_symmetric_key_insecure(NOTHING_ALLOWED_KEY.id)
             .is_ok());
     }
 

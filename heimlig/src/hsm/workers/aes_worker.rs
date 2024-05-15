@@ -18,12 +18,11 @@ use crate::{
             KEY128_SIZE, KEY192_SIZE, KEY256_SIZE,
         },
     },
-    hsm::keystore::{self, KeyId, KeyInfo, KeyType},
+    hsm::keystore::{self, KeyId, KeyInfo, KeyType, SymmetricKey},
 };
 use cbc::cipher::block_padding::Pkcs7;
 use embassy_sync::{blocking_mutex::raw::RawMutex, mutex::Mutex};
 use futures::{Sink, SinkExt, Stream, StreamExt};
-use zeroize::Zeroizing;
 
 pub struct AesWorker<
     'data,
@@ -209,10 +208,7 @@ impl<
         aad: &[u8],
         tag: &'data mut [u8],
     ) -> Response<'data> {
-        let mut key_buffer = Zeroizing::new([0u8; KeyType::MAX_SYMMETRIC_KEY_SIZE]);
-        let key_and_info = self
-            .export_key_and_key_info(key_id, key_buffer.as_mut_slice())
-            .await;
+        let key_and_info = self.export_key_and_key_info(key_id).await;
         let result = match key_and_info {
             Err(e) => {
                 return Response::Error {
@@ -223,10 +219,10 @@ impl<
             }
             Ok((key, key_info)) => match key_info.ty {
                 KeyType::Symmetric(16) => {
-                    aes128gcm_encrypt_in_place_detached(key, iv, aad, buffer, tag)
+                    aes128gcm_encrypt_in_place_detached(&key, iv, aad, buffer, tag)
                 }
                 KeyType::Symmetric(32) => {
-                    aes256gcm_encrypt_in_place_detached(key, iv, aad, buffer, tag)
+                    aes256gcm_encrypt_in_place_detached(&key, iv, aad, buffer, tag)
                 }
                 _ => {
                     return Response::Error {
@@ -300,10 +296,7 @@ impl<
         aad: &[u8],
         tag: &[u8],
     ) -> Response<'data> {
-        let mut key_buffer = Zeroizing::new([0u8; KeyType::MAX_SYMMETRIC_KEY_SIZE]);
-        let key_and_info = self
-            .export_key_and_key_info(key_id, key_buffer.as_mut_slice())
-            .await;
+        let key_and_info = self.export_key_and_key_info(key_id).await;
         let result = match key_and_info {
             Err(e) => {
                 return Response::Error {
@@ -314,10 +307,10 @@ impl<
             }
             Ok((key, key_info)) => match key_info.ty {
                 KeyType::Symmetric(16) => {
-                    aes128gcm_decrypt_in_place_detached(key, iv, aad, buffer, tag)
+                    aes128gcm_decrypt_in_place_detached(&key, iv, aad, buffer, tag)
                 }
                 KeyType::Symmetric(32) => {
-                    aes256gcm_decrypt_in_place_detached(key, iv, aad, buffer, tag)
+                    aes256gcm_decrypt_in_place_detached(&key, iv, aad, buffer, tag)
                 }
                 _ => {
                     return Response::Error {
@@ -387,10 +380,7 @@ impl<
         buffer: &'data mut [u8],
         plaintext_size: usize,
     ) -> Response<'data> {
-        let mut key_buffer = Zeroizing::new([0u8; KeyType::MAX_SYMMETRIC_KEY_SIZE]);
-        let key_and_info = self
-            .export_key_and_key_info(key_id, key_buffer.as_mut_slice())
-            .await;
+        let key_and_info = self.export_key_and_key_info(key_id).await;
         let result = match key_and_info {
             Err(e) => {
                 return Response::Error {
@@ -401,13 +391,13 @@ impl<
             }
             Ok((key, key_info)) => match key_info.ty {
                 KeyType::Symmetric(16) => {
-                    aes128cbc_encrypt::<Pkcs7>(key, iv, buffer, plaintext_size)
+                    aes128cbc_encrypt::<Pkcs7>(&key, iv, buffer, plaintext_size)
                 }
                 KeyType::Symmetric(24) => {
-                    aes192cbc_encrypt::<Pkcs7>(key, iv, buffer, plaintext_size)
+                    aes192cbc_encrypt::<Pkcs7>(&key, iv, buffer, plaintext_size)
                 }
                 KeyType::Symmetric(32) => {
-                    aes256cbc_encrypt::<Pkcs7>(key, iv, buffer, plaintext_size)
+                    aes256cbc_encrypt::<Pkcs7>(&key, iv, buffer, plaintext_size)
                 }
                 _ => {
                     return Response::Error {
@@ -481,10 +471,7 @@ impl<
         iv: &[u8],
         buffer: &'data mut [u8],
     ) -> Response<'data> {
-        let mut key_buffer = Zeroizing::new([0u8; KeyType::MAX_SYMMETRIC_KEY_SIZE]);
-        let key_and_info = self
-            .export_key_and_key_info(key_id, key_buffer.as_mut_slice())
-            .await;
+        let key_and_info = self.export_key_and_key_info(key_id).await;
         let result = match key_and_info {
             Err(e) => {
                 return Response::Error {
@@ -494,9 +481,9 @@ impl<
                 }
             }
             Ok((key, key_info)) => match key_info.ty {
-                KeyType::Symmetric(16) => aes128cbc_decrypt::<Pkcs7>(key, iv, buffer),
-                KeyType::Symmetric(24) => aes192cbc_decrypt::<Pkcs7>(key, iv, buffer),
-                KeyType::Symmetric(32) => aes256cbc_decrypt::<Pkcs7>(key, iv, buffer),
+                KeyType::Symmetric(16) => aes128cbc_decrypt::<Pkcs7>(&key, iv, buffer),
+                KeyType::Symmetric(24) => aes192cbc_decrypt::<Pkcs7>(&key, iv, buffer),
+                KeyType::Symmetric(32) => aes256cbc_decrypt::<Pkcs7>(&key, iv, buffer),
                 _ => {
                     return Response::Error {
                         client_id,
@@ -568,10 +555,7 @@ impl<
         message: &[u8],
         tag: &'data mut [u8],
     ) -> Response<'data> {
-        let mut key_buffer = Zeroizing::new([0u8; KeyType::MAX_SYMMETRIC_KEY_SIZE]);
-        let key_and_info = self
-            .export_key_and_key_info(key_id, key_buffer.as_mut_slice())
-            .await;
+        let key_and_info = self.export_key_and_key_info(key_id).await;
         let result = match key_and_info {
             Err(e) => {
                 return Response::Error {
@@ -581,9 +565,9 @@ impl<
                 }
             }
             Ok((key, key_info)) => match key_info.ty {
-                KeyType::Symmetric(16) => aes128_cmac_calculate(key, message, tag),
-                KeyType::Symmetric(24) => aes192_cmac_calculate(key, message, tag),
-                KeyType::Symmetric(32) => aes256_cmac_calculate(key, message, tag),
+                KeyType::Symmetric(16) => aes128_cmac_calculate(&key, message, tag),
+                KeyType::Symmetric(24) => aes192_cmac_calculate(&key, message, tag),
+                KeyType::Symmetric(32) => aes256_cmac_calculate(&key, message, tag),
                 _ => {
                     return Response::Error {
                         client_id,
@@ -649,10 +633,7 @@ impl<
         message: &[u8],
         tag: &[u8],
     ) -> Response<'data> {
-        let mut key_buffer = Zeroizing::new([0u8; KeyType::MAX_SYMMETRIC_KEY_SIZE]);
-        let key_and_info = self
-            .export_key_and_key_info(key_id, key_buffer.as_mut_slice())
-            .await;
+        let key_and_info = self.export_key_and_key_info(key_id).await;
         let result = match key_and_info {
             Err(e) => {
                 return Response::Error {
@@ -662,9 +643,9 @@ impl<
                 }
             }
             Ok((key, key_info)) => match key_info.ty {
-                KeyType::Symmetric(16) => aes128_cmac_verify(key, message, tag),
-                KeyType::Symmetric(24) => aes192_cmac_verify(key, message, tag),
-                KeyType::Symmetric(32) => aes256_cmac_verify(key, message, tag),
+                KeyType::Symmetric(16) => aes128_cmac_verify(&key, message, tag),
+                KeyType::Symmetric(24) => aes192_cmac_verify(&key, message, tag),
+                KeyType::Symmetric(32) => aes256_cmac_verify(&key, message, tag),
                 _ => {
                     return Response::Error {
                         client_id,
@@ -722,15 +703,14 @@ impl<
         }
     }
 
-    async fn export_key_and_key_info<'a>(
+    async fn export_key_and_key_info(
         &mut self,
         key_id: KeyId,
-        key_buffer: &'a mut [u8],
-    ) -> Result<(&'a [u8], KeyInfo), keystore::Error> {
+    ) -> Result<(SymmetricKey, KeyInfo), keystore::Error> {
         // Lock keystore only once
         let locked_key_store = self.key_store.lock().await;
         Ok((
-            locked_key_store.export_symmetric_key_insecure(key_id, key_buffer)?,
+            locked_key_store.export_symmetric_key_insecure(key_id)?,
             keystore::KeyStore::get_key_info(*locked_key_store, key_id)?,
         ))
     }

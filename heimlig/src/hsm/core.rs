@@ -393,14 +393,14 @@ impl<
                 request_id,
                 key_id,
             } => match self.key_store {
-                None => Ok(Self::no_key_store_response(client_id, request_id)),
+                None => Self::no_key_store_response(client_id, request_id),
                 Some(key_store) => {
                     let is_available = key_store.lock().await.deref_mut().is_key_available(key_id);
-                    Ok(Response::IsKeyAvailable {
+                    Response::IsKeyAvailable {
                         client_id,
                         request_id,
                         is_available,
-                    })
+                    }
                 }
             },
             Request::ImportSymmetricKey {
@@ -410,7 +410,7 @@ impl<
                 data,
                 overwrite,
             } => match self.key_store {
-                None => Ok(Self::no_key_store_response(client_id, request_id)),
+                None => Self::no_key_store_response(client_id, request_id),
                 Some(key_store) => {
                     let result = key_store
                         .lock()
@@ -418,11 +418,11 @@ impl<
                         .deref_mut()
                         .import_symmetric_key(key_id, data, overwrite);
                     match result {
-                        Ok(()) => Ok(Response::ImportSymmetricKey {
+                        Ok(()) => Response::ImportSymmetricKey {
                             client_id,
                             request_id,
-                        }),
-                        Err(e) => Ok(Self::key_store_error_response(client_id, request_id, e)),
+                        },
+                        Err(e) => Self::key_store_error_response(client_id, request_id, e),
                     }
                 }
             },
@@ -434,7 +434,7 @@ impl<
                 private_key,
                 overwrite,
             } => match self.key_store {
-                None => Ok(Self::no_key_store_response(client_id, request_id)),
+                None => Self::no_key_store_response(client_id, request_id),
                 Some(key_store) => {
                     let result = key_store.lock().await.deref_mut().import_key_pair(
                         key_id,
@@ -443,11 +443,11 @@ impl<
                         overwrite,
                     );
                     match result {
-                        Ok(()) => Ok(Response::ImportKeyPair {
+                        Ok(()) => Response::ImportKeyPair {
                             client_id,
                             request_id,
-                        }),
-                        Err(e) => Ok(Self::key_store_error_response(client_id, request_id, e)),
+                        },
+                        Err(e) => Self::key_store_error_response(client_id, request_id, e),
                     }
                 }
             },
@@ -457,25 +457,20 @@ impl<
                 key_id,
                 data,
             } => match self.key_store {
-                None => Ok(Self::no_key_store_response(client_id, request_id)),
-                Some(key_store) => {
-                    let exported_key = key_store
-                        .lock()
-                        .await
-                        .deref_mut()
-                        .export_symmetric_key(key_id, data);
-                    match exported_key {
-                        Ok(written) => {
-                            let written_len = written.len();
-                            Ok(Response::ExportSymmetricKey {
-                                client_id,
-                                request_id,
-                                key: &mut data[..written_len],
-                            })
-                        }
-                        Err(e) => Ok(Self::key_store_error_response(client_id, request_id, e)),
-                    }
-                }
+                None => Self::no_key_store_response(client_id, request_id),
+                Some(key_store) => key_store
+                    .lock()
+                    .await
+                    .deref_mut()
+                    .export_symmetric_key_to_slice(key_id, data)
+                    .map_or_else(
+                        |e| Self::key_store_error_response(client_id, request_id, e),
+                        |()| Response::ExportSymmetricKey {
+                            client_id,
+                            request_id,
+                            key: data,
+                        },
+                    ),
             },
             Request::ExportPublicKey {
                 client_id,
@@ -483,25 +478,20 @@ impl<
                 key_id,
                 public_key,
             } => match self.key_store {
-                None => Ok(Self::no_key_store_response(client_id, request_id)),
-                Some(key_store) => {
-                    let exported_key = key_store
-                        .lock()
-                        .await
-                        .deref_mut()
-                        .export_public_key(key_id, public_key);
-                    match exported_key {
-                        Ok(written) => {
-                            let exported_key_len = written.len();
-                            Ok(Response::ExportPublicKey {
-                                client_id,
-                                request_id,
-                                public_key: &mut public_key[..exported_key_len],
-                            })
-                        }
-                        Err(e) => Ok(Self::key_store_error_response(client_id, request_id, e)),
-                    }
-                }
+                None => Self::no_key_store_response(client_id, request_id),
+                Some(key_store) => key_store
+                    .lock()
+                    .await
+                    .deref_mut()
+                    .export_public_key_to_slice(key_id, public_key)
+                    .map_or_else(
+                        |e| Self::key_store_error_response(client_id, request_id, e),
+                        |()| Response::ExportPublicKey {
+                            client_id,
+                            request_id,
+                            public_key,
+                        },
+                    ),
             },
             Request::ExportPrivateKey {
                 client_id,
@@ -509,30 +499,27 @@ impl<
                 key_id,
                 private_key,
             } => match self.key_store {
-                None => Ok(Self::no_key_store_response(client_id, request_id)),
-                Some(key_store) => {
-                    let exported_key = key_store
-                        .lock()
-                        .await
-                        .deref_mut()
-                        .export_private_key(key_id, private_key);
-                    match exported_key {
-                        Ok(written) => {
-                            let written_len = written.len();
-                            Ok(Response::ExportPrivateKey {
-                                client_id,
-                                request_id,
-                                private_key: &mut private_key[..written_len],
-                            })
-                        }
-                        Err(e) => Ok(Self::key_store_error_response(client_id, request_id, e)),
-                    }
-                }
+                None => Self::no_key_store_response(client_id, request_id),
+                Some(key_store) => key_store
+                    .lock()
+                    .await
+                    .deref_mut()
+                    .export_private_key_to_slice(key_id, private_key)
+                    .map_or_else(
+                        |e| Self::key_store_error_response(client_id, request_id, e),
+                        |()| Response::ExportPrivateKey {
+                            client_id,
+                            request_id,
+                            private_key,
+                        },
+                    ),
             },
-            _ => Err(Error::Internal(InternalError::UnexpectedCoreRequest(
-                request.get_type(),
-            ))),
-        }?;
+            req => Response::Error {
+                client_id: req.get_client_id(),
+                request_id: req.get_request_id(),
+                error: jobs::Error::UnexpectedRequestType,
+            },
+        };
         self.send_to_client(response).await
     }
 
