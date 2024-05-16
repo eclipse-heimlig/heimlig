@@ -1,3 +1,5 @@
+use displaydoc::Display;
+
 pub mod aes;
 pub mod chacha20poly1305;
 pub mod ecc;
@@ -10,7 +12,7 @@ pub mod rng;
 pub mod x25519;
 
 /// Common errors.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Display)]
 pub enum Error {
     /// Error during encryption.
     Encrypt,

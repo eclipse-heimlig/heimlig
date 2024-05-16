@@ -1,7 +1,9 @@
+use displaydoc::Display;
+
 use crate::hsm::keystore;
 use crate::hsm::keystore::{Curve, KeyId};
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Display)]
 pub enum Error {
     /// No worker found for received request type.
     NoWorkerForRequest,
@@ -13,11 +15,11 @@ pub enum Error {
     NoKeyStore,
     /// Failed to send through channel.
     Send,
-    /// Futures Stream was terminated
+    /// Futures Stream was terminated.
     StreamTerminated,
-    /// A cryptographic error occurred.
+    /// A cryptographic error occurred: {0}
     Crypto(crate::crypto::Error),
-    /// A key store error occurred.
+    /// A key store error occurred: {0}
     KeyStore(keystore::Error),
 }
 

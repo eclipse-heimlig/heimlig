@@ -4,13 +4,14 @@ use crate::hsm::keystore;
 use core::future::poll_fn;
 use core::ops::DerefMut;
 use core::pin::Pin;
+use displaydoc::Display;
 use embassy_futures::select::select_slice;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
 use futures::{FutureExt, Sink, SinkExt, Stream, StreamExt};
 use heapless::Vec;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Display)]
 pub enum Error {
     /// Error sending message through queue
     Send,
@@ -26,24 +27,24 @@ pub enum Error {
     ChannelForRequestExists,
     /// Maximum number of request types for a single worker exceeded
     TooManyRequestTypes,
-    /// An internal error occurred
+    /// An internal error occurred: {0}
     Internal(InternalError),
 }
 
 /// Internal errors that a client should not be able to trigger.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Display)]
 pub enum InternalError {
-    // The internal client ID was invalid for the internal list of client channels.
+    /// The internal client ID ({0:?}) was invalid for the internal list of client channels.
     InvalidClientId(ClientId),
-    // The internal worker ID was invalid for the internal list of worker channels.
+    /// The internal worker ID ({0:?}) was invalid for the internal list of worker channels.
     InvalidWorkerId(WorkerId),
-    /// An empty client request queue was encountered even though a previous check made sure that it was non-empty.
+    /// An empty client ({0:?}) request queue was encountered even though a previous check made sure that it was non-empty.
     EmptyClientRequestQueue(ClientId),
-    /// An empty worker response queue was encountered even though a previous check made sure that it was non-empty.
+    /// An empty worker ({0:?}) response queue was encountered even though a previous check made sure that it was non-empty.
     EmptyWorkerResponseQueue(WorkerId),
-    /// The core encountered a request type it cannot handle
+    /// The core encountered a request ({0:?}) type it cannot handle.
     UnexpectedCoreRequest(RequestType),
-    // The client ID of the response that was determined to be processed next did not match the one in the response queue.
+    /// The client ID of the response that was determined to be processed next ({0:?}) did not match the one in the response queue ({1:?}).
     ClientIdMismatch(ClientId, ClientId),
 }
 
