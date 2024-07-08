@@ -28,6 +28,8 @@ pub enum JobErrorRaw {
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum CryptoErrorRaw {
+    /// Error during random number generation
+    Random,
     /// Error during encryption.
     Encrypt,
     /// Error during decryption.
@@ -98,6 +100,7 @@ impl From<jobs::Error> for JobErrorRaw {
 impl From<crypto::Error> for CryptoErrorRaw {
     fn from(value: crypto::Error) -> Self {
         match value {
+            crypto::Error::Random => CryptoErrorRaw::Random,
             crypto::Error::Encrypt => CryptoErrorRaw::Encrypt,
             crypto::Error::Decrypt => CryptoErrorRaw::Decrypt,
             crypto::Error::Sign => CryptoErrorRaw::Sign,

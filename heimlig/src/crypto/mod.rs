@@ -12,6 +12,8 @@ pub mod x25519;
 /// Common errors.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Error {
+    /// Error during random number generation.
+    Random,
     /// Error during encryption.
     Encrypt,
     /// Error during decryption.
