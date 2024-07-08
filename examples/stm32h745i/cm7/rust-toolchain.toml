@@ -1,5 +1,5 @@
 [toolchain]
-channel = "nightly"
+channel = "nightly-2024-06-12" # See https://github.com/embassy-rs/embassy/issues/3078
 components = [ "rust-src", "rustfmt" ]
 targets = [
     "thumbv7em-none-eabihf"
