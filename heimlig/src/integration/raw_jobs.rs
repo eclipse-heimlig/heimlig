@@ -1,6 +1,7 @@
 use crate::common::jobs::{HashAlgorithm, Request, Response};
 use crate::hsm::keystore::{Curve, KeyId};
 use crate::integration::raw_errors::JobErrorRaw;
+use core::mem::offset_of;
 use core::slice;
 use strum::EnumCount;
 
@@ -41,38 +42,38 @@ pub struct RequestResponseRawPair {
 /// pointers have to point to valid addresses as they can be checked after casting. However, a
 /// nested enum member is not allowed as casting an enum from a value outside the enum range causes
 /// UB in Rust even without accessing the resulting enum.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct RequestRaw {
+    client_id: ClientIdRaw,
+    request_id: RequestIdRaw,
+    data: RequestDataRaw,
+}
+
+/// Raw request as it is written by clients to shared memory. This type is supposed to be synced
+/// with non-Rust (e.g. C++) clients via cbindgen.
 #[repr(C, u8)]
 #[derive(Clone, Copy, Debug, EnumCount)]
-pub enum RequestRaw {
+pub enum RequestDataRaw {
     GetRandom {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         output_data: *mut u8,
         output_size: u32,
     },
     GenerateSymmetricKey {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_id: KeyIdRaw,
         overwrite: BoolRaw,
     },
     GenerateKeyPair {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_id: KeyIdRaw,
         overwrite: BoolRaw,
     },
     ImportSymmetricKey {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_id: KeyIdRaw,
         data_data: *const u8,
         data_size: u32,
         overwrite: BoolRaw,
     },
     ImportKeyPair {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_id: KeyIdRaw,
         public_key_data: *const u8,
         public_key_size: u32,
@@ -81,34 +82,24 @@ pub enum RequestRaw {
         overwrite: BoolRaw,
     },
     ExportSymmetricKey {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_id: KeyIdRaw,
         data_data: *mut u8,
         data_size: u32,
     },
     ExportPublicKey {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_id: KeyIdRaw,
         public_key_data: *mut u8,
         public_key_size: u32,
     },
     ExportPrivateKey {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_id: KeyIdRaw,
         private_key_data: *mut u8,
         private_key_size: u32,
     },
     IsKeyAvailable {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_id: KeyIdRaw,
     },
     EncryptChaChaPoly {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_id: KeyIdRaw,
         nonce_data: *const u8,
         nonce_size: u32,
@@ -120,8 +111,6 @@ pub enum RequestRaw {
         tag_size: u32,
     },
     EncryptChaChaPolyExternalKey {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_data: *const u8,
         key_size: u32,
         nonce_data: *const u8,
@@ -134,8 +123,6 @@ pub enum RequestRaw {
         tag_size: u32,
     },
     DecryptChaChaPoly {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_id: KeyIdRaw,
         nonce_data: *const u8,
         nonce_size: u32,
@@ -147,8 +134,6 @@ pub enum RequestRaw {
         tag_size: u32,
     },
     DecryptChaChaPolyExternalKey {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_data: *const u8,
         key_size: u32,
         nonce_data: *const u8,
@@ -161,8 +146,6 @@ pub enum RequestRaw {
         tag_size: u32,
     },
     EncryptAesGcm {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_id: KeyIdRaw,
         iv_data: *const u8,
         iv_size: u32,
@@ -174,8 +157,6 @@ pub enum RequestRaw {
         tag_size: u32,
     },
     EncryptAesGcmExternalKey {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_data: *const u8,
         key_size: u32,
         iv_data: *const u8,
@@ -188,8 +169,6 @@ pub enum RequestRaw {
         tag_size: u32,
     },
     DecryptAesGcm {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_id: KeyIdRaw,
         iv_data: *const u8,
         iv_size: u32,
@@ -201,8 +180,6 @@ pub enum RequestRaw {
         tag_size: u32,
     },
     DecryptAesGcmExternalKey {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_data: *const u8,
         key_size: u32,
         iv_data: *const u8,
@@ -215,8 +192,6 @@ pub enum RequestRaw {
         tag_size: u32,
     },
     EncryptAesCbc {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_id: KeyIdRaw,
         iv_data: *const u8,
         iv_size: u32,
@@ -225,8 +200,6 @@ pub enum RequestRaw {
         plaintext_size: u32,
     },
     EncryptAesCbcExternalKey {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_data: *const u8,
         key_size: u32,
         iv_data: *const u8,
@@ -236,8 +209,6 @@ pub enum RequestRaw {
         plaintext_size: u32,
     },
     DecryptAesCbc {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_id: KeyIdRaw,
         iv_data: *const u8,
         iv_size: u32,
@@ -245,8 +216,6 @@ pub enum RequestRaw {
         buffer_size: u32,
     },
     DecryptAesCbcExternalKey {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_data: *const u8,
         key_size: u32,
         iv_data: *const u8,
@@ -255,8 +224,6 @@ pub enum RequestRaw {
         buffer_size: u32,
     },
     CalculateAesCmac {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_id: KeyIdRaw,
         message_data: *const u8,
         message_size: u32,
@@ -264,8 +231,6 @@ pub enum RequestRaw {
         tag_size: u32,
     },
     CalculateAesCmacExternalKey {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_data: *const u8,
         key_size: u32,
         message_data: *const u8,
@@ -274,8 +239,6 @@ pub enum RequestRaw {
         tag_size: u32,
     },
     VerifyAesCmac {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_id: KeyIdRaw,
         message_data: *const u8,
         message_size: u32,
@@ -283,8 +246,6 @@ pub enum RequestRaw {
         tag_size: u32,
     },
     VerifyAesCmacExternalKey {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_data: *const u8,
         key_size: u32,
         message_data: *const u8,
@@ -293,8 +254,6 @@ pub enum RequestRaw {
         tag_size: u32,
     },
     CalculateHmac {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_id: KeyIdRaw,
         hash_algorithm: HashAlgorithmRaw,
         message_data: *const u8,
@@ -303,8 +262,6 @@ pub enum RequestRaw {
         tag_size: u32,
     },
     CalculateHmacExternalKey {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_data: *const u8,
         key_size: u32,
         hash_algorithm: HashAlgorithmRaw,
@@ -314,8 +271,6 @@ pub enum RequestRaw {
         tag_size: u32,
     },
     VerifyHmac {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_id: KeyIdRaw,
         hash_algorithm: HashAlgorithmRaw,
         message_data: *const u8,
@@ -324,8 +279,6 @@ pub enum RequestRaw {
         tag_size: u32,
     },
     VerifyHmacExternalKey {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_data: *const u8,
         key_size: u32,
         hash_algorithm: HashAlgorithmRaw,
@@ -335,8 +288,6 @@ pub enum RequestRaw {
         tag_size: u32,
     },
     Sign {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_id: KeyIdRaw,
         message_data: *const u8,
         message_size: u32,
@@ -345,8 +296,6 @@ pub enum RequestRaw {
         signature_size: u32,
     },
     SignExternalKey {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_data: *const u8,
         key_size: u32,
         message_data: *const u8,
@@ -356,8 +305,6 @@ pub enum RequestRaw {
         signature_size: u32,
     },
     Verify {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_id: KeyIdRaw,
         message_data: *const u8,
         message_size: u32,
@@ -366,8 +313,6 @@ pub enum RequestRaw {
         signature_size: u32,
     },
     VerifyExternalKey {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_data: *const u8,
         key_size: u32,
         message_data: *const u8,
@@ -377,8 +322,6 @@ pub enum RequestRaw {
         signature_size: u32,
     },
     Ecdh {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         public_key_data: *const u8,
         public_key_size: u32,
         private_key_id: KeyIdRaw,
@@ -386,8 +329,6 @@ pub enum RequestRaw {
         shared_secret_size: u32,
     },
     EcdhExternalPrivateKey {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         curve: CurveRaw,
         public_key_data: *const u8,
         public_key_size: u32,
@@ -400,135 +341,95 @@ pub enum RequestRaw {
 
 /// Raw response as it is written by clients to shared memory. This type is supposed to be synced
 /// with non-Rust (e.g. C++) clients via cbindgen.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ResponseRaw {
+    client_id: ClientIdRaw,
+    request_id: RequestIdRaw,
+    data: ResponseDataRaw,
+}
+
+/// Raw response as it is written by clients to shared memory. This type is supposed to be synced
+/// with non-Rust (e.g. C++) clients via cbindgen.
 #[repr(C, u8)]
 #[derive(Clone, Copy, Debug, EnumCount)]
-pub enum ResponseRaw {
+pub enum ResponseDataRaw {
     Error {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         error: JobErrorRaw,
     },
     GetRandom {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         data_data: *mut u8,
         data_size: u32,
     },
-    GenerateSymmetricKey {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
-    },
-    GenerateKeyPair {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
-    },
-    ImportSymmetricKey {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
-    },
-    ImportKeyPair {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
-    },
+    GenerateSymmetricKey {},
+    GenerateKeyPair {},
+    ImportSymmetricKey {},
+    ImportKeyPair {},
     ExportSymmetricKey {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         key_data: *mut u8,
         key_size: u32,
     },
     ExportPublicKey {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         public_key_data: *mut u8,
         public_key_size: u32,
     },
     ExportPrivateKey {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         private_key_data: *mut u8,
         private_key_size: u32,
     },
     IsKeyAvailable {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         is_available: u32,
     },
     EncryptChaChaPoly {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         buffer_data: *mut u8,
         buffer_size: u32,
         tag_data: *mut u8,
         tag_size: u32,
     },
     DecryptChaChaPoly {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         buffer_data: *mut u8,
         buffer_size: u32,
     },
     EncryptAesGcm {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         buffer_data: *mut u8,
         buffer_size: u32,
         tag_data: *mut u8,
         tag_size: u32,
     },
     DecryptAesGcm {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         buffer_data: *mut u8,
         buffer_size: u32,
     },
     EncryptAesCbc {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         buffer_data: *mut u8,
         buffer_size: u32,
     },
     DecryptAesCbc {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         buffer_data: *mut u8,
         buffer_size: u32,
     },
     CalculateAesCmac {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         tag_data: *mut u8,
         tag_size: u32,
     },
     VerifyAesCmac {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         verified: BoolRaw,
     },
     CalculateHmac {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         tag_data: *mut u8,
         tag_size: u32,
     },
     VerifyHmac {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         verified: BoolRaw,
     },
     Sign {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         signature_data: *mut u8,
         signature_size: u32,
     },
     Verify {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         verified: BoolRaw,
     },
     Ecdh {
-        client_id: ClientIdRaw,
-        request_id: RequestIdRaw,
         shared_secret_data: *mut u8,
         shared_secret_size: u32,
     },
@@ -575,10 +476,10 @@ impl RequestRaw {
     ///
     pub unsafe fn from_raw(ptr: *const u8) -> Result<Self, ValidationError> {
         // SAFETY: Pointer and size must be checked by integrator
-        let tag: u8 = unsafe { *ptr };
+        let tag: u8 = unsafe { *(ptr.add(offset_of!(RequestRaw, data))) };
 
         // Validate tag value. Invalid tag values cause UB when transmuted into an enum.
-        if tag >= RequestRaw::COUNT as u8 {
+        if tag >= RequestDataRaw::COUNT as u8 {
             return Err(ValidationError::InvalidTagValue);
         }
 
@@ -590,56 +491,44 @@ impl RequestRaw {
         self,
         validator: &impl Fn(*const u8, u32) -> bool,
     ) -> Result<Request<'data>, ValidationError> {
-        let request = match self {
-            RequestRaw::GetRandom {
-                client_id,
-                request_id,
+        let client_id = self.client_id.into();
+        let request_id = self.request_id.into();
+        let request = match self.data {
+            RequestDataRaw::GetRandom {
                 output_data,
                 output_size,
             } => Request::GetRandom {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 output: check_mut_pointer_and_size(output_data, output_size, &validator)?,
             },
-            RequestRaw::GenerateSymmetricKey {
+            RequestDataRaw::GenerateSymmetricKey { key_id, overwrite } => {
+                Request::GenerateSymmetricKey {
+                    client_id,
+                    request_id,
+                    key_id: key_id.into(),
+                    overwrite: bool_raw_to_bool(overwrite),
+                }
+            }
+            RequestDataRaw::GenerateKeyPair { key_id, overwrite } => Request::GenerateKeyPair {
                 client_id,
                 request_id,
-                key_id,
-                overwrite,
-            } => Request::GenerateSymmetricKey {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
                 key_id: key_id.into(),
                 overwrite: bool_raw_to_bool(overwrite),
             },
-            RequestRaw::GenerateKeyPair {
-                client_id,
-                request_id,
-                key_id,
-                overwrite,
-            } => Request::GenerateKeyPair {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
-                key_id: key_id.into(),
-                overwrite: bool_raw_to_bool(overwrite),
-            },
-            RequestRaw::ImportSymmetricKey {
-                client_id,
-                request_id,
+            RequestDataRaw::ImportSymmetricKey {
                 key_id,
                 data_data,
                 data_size,
                 overwrite,
             } => Request::ImportSymmetricKey {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key_id: key_id.into(),
                 data: check_pointer_and_size(data_data, data_size, &validator)?,
                 overwrite: bool_raw_to_bool(overwrite),
             },
-            RequestRaw::ImportKeyPair {
-                client_id,
-                request_id,
+            RequestDataRaw::ImportKeyPair {
                 key_id,
                 public_key_data,
                 public_key_size,
@@ -647,8 +536,8 @@ impl RequestRaw {
                 private_key_size,
                 overwrite,
             } => Request::ImportKeyPair {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key_id: key_id.into(),
                 public_key: check_pointer_and_size(public_key_data, public_key_size, &validator)?,
                 private_key: check_pointer_and_size(
@@ -658,27 +547,23 @@ impl RequestRaw {
                 )?,
                 overwrite: bool_raw_to_bool(overwrite),
             },
-            RequestRaw::ExportSymmetricKey {
-                client_id,
-                request_id,
+            RequestDataRaw::ExportSymmetricKey {
                 key_id,
                 data_data,
                 data_size,
             } => Request::ExportSymmetricKey {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key_id: key_id.into(),
                 data: check_mut_pointer_and_size(data_data, data_size, &validator)?,
             },
-            RequestRaw::ExportPublicKey {
-                client_id,
-                request_id,
+            RequestDataRaw::ExportPublicKey {
                 key_id,
                 public_key_data,
                 public_key_size,
             } => Request::ExportPublicKey {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key_id: key_id.into(),
                 public_key: check_mut_pointer_and_size(
                     public_key_data,
@@ -686,15 +571,13 @@ impl RequestRaw {
                     &validator,
                 )?,
             },
-            RequestRaw::ExportPrivateKey {
-                client_id,
-                request_id,
+            RequestDataRaw::ExportPrivateKey {
                 key_id,
                 private_key_data,
                 private_key_size,
             } => Request::ExportPrivateKey {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key_id: key_id.into(),
                 private_key: check_mut_pointer_and_size(
                     private_key_data,
@@ -702,18 +585,12 @@ impl RequestRaw {
                     &validator,
                 )?,
             },
-            RequestRaw::IsKeyAvailable {
+            RequestDataRaw::IsKeyAvailable { key_id } => Request::IsKeyAvailable {
                 client_id,
                 request_id,
-                key_id,
-            } => Request::IsKeyAvailable {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
                 key_id: key_id.into(),
             },
-            RequestRaw::EncryptChaChaPoly {
-                client_id,
-                request_id,
+            RequestDataRaw::EncryptChaChaPoly {
                 key_id,
                 nonce_data,
                 nonce_size,
@@ -724,17 +601,15 @@ impl RequestRaw {
                 tag_data,
                 tag_size,
             } => Request::EncryptChaChaPoly {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key_id: key_id.into(),
                 nonce: check_pointer_and_size(nonce_data, nonce_size, &validator)?,
                 buffer: check_mut_pointer_and_size(buffer_data, buffer_size, &validator)?,
                 aad: check_pointer_and_size(aad_data, aad_size, &validator)?,
                 tag: check_mut_pointer_and_size(tag_data, tag_size, &validator)?,
             },
-            RequestRaw::EncryptChaChaPolyExternalKey {
-                client_id,
-                request_id,
+            RequestDataRaw::EncryptChaChaPolyExternalKey {
                 key_data,
                 key_size,
                 nonce_data,
@@ -746,17 +621,15 @@ impl RequestRaw {
                 tag_data,
                 tag_size,
             } => Request::EncryptChaChaPolyExternalKey {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key: check_pointer_and_size(key_data, key_size, &validator)?,
                 nonce: check_pointer_and_size(nonce_data, nonce_size, &validator)?,
                 buffer: check_mut_pointer_and_size(buffer_data, buffer_size, &validator)?,
                 aad: check_pointer_and_size(aad_data, aad_size, &validator)?,
                 tag: check_mut_pointer_and_size(tag_data, tag_size, &validator)?,
             },
-            RequestRaw::DecryptChaChaPoly {
-                client_id,
-                request_id,
+            RequestDataRaw::DecryptChaChaPoly {
                 key_id,
                 nonce_data,
                 nonce_size,
@@ -767,17 +640,15 @@ impl RequestRaw {
                 tag_data,
                 tag_size,
             } => Request::DecryptChaChaPoly {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key_id: key_id.into(),
                 nonce: check_pointer_and_size(nonce_data, nonce_size, &validator)?,
                 buffer: check_mut_pointer_and_size(buffer_data, buffer_size, &validator)?,
                 aad: check_pointer_and_size(aad_data, aad_size, &validator)?,
                 tag: check_pointer_and_size(tag_data, tag_size, &validator)?,
             },
-            RequestRaw::DecryptChaChaPolyExternalKey {
-                client_id,
-                request_id,
+            RequestDataRaw::DecryptChaChaPolyExternalKey {
                 key_data,
                 key_size,
                 nonce_data,
@@ -789,17 +660,15 @@ impl RequestRaw {
                 tag_data,
                 tag_size,
             } => Request::DecryptChaChaPolyExternalKey {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key: check_pointer_and_size(key_data, key_size, &validator)?,
                 nonce: check_pointer_and_size(nonce_data, nonce_size, &validator)?,
                 buffer: check_mut_pointer_and_size(buffer_data, buffer_size, &validator)?,
                 aad: check_pointer_and_size(aad_data, aad_size, &validator)?,
                 tag: check_pointer_and_size(tag_data, tag_size, &validator)?,
             },
-            RequestRaw::EncryptAesGcm {
-                client_id,
-                request_id,
+            RequestDataRaw::EncryptAesGcm {
                 key_id,
                 iv_data,
                 iv_size,
@@ -810,17 +679,15 @@ impl RequestRaw {
                 tag_data,
                 tag_size,
             } => Request::EncryptAesGcm {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key_id: key_id.into(),
                 iv: check_pointer_and_size(iv_data, iv_size, &validator)?,
                 buffer: check_mut_pointer_and_size(buffer_data, buffer_size, &validator)?,
                 aad: check_pointer_and_size(aad_data, aad_size, &validator)?,
                 tag: check_mut_pointer_and_size(tag_data, tag_size, &validator)?,
             },
-            RequestRaw::EncryptAesGcmExternalKey {
-                client_id,
-                request_id,
+            RequestDataRaw::EncryptAesGcmExternalKey {
                 key_data,
                 key_size,
                 iv_data,
@@ -832,17 +699,15 @@ impl RequestRaw {
                 tag_data,
                 tag_size,
             } => Request::EncryptAesGcmExternalKey {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key: check_pointer_and_size(key_data, key_size, &validator)?,
                 iv: check_pointer_and_size(iv_data, iv_size, &validator)?,
                 buffer: check_mut_pointer_and_size(buffer_data, buffer_size, &validator)?,
                 aad: check_pointer_and_size(aad_data, aad_size, &validator)?,
                 tag: check_mut_pointer_and_size(tag_data, tag_size, &validator)?,
             },
-            RequestRaw::DecryptAesGcm {
-                client_id,
-                request_id,
+            RequestDataRaw::DecryptAesGcm {
                 key_id,
                 iv_data,
                 iv_size,
@@ -853,17 +718,15 @@ impl RequestRaw {
                 tag_data,
                 tag_size,
             } => Request::DecryptAesGcm {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key_id: key_id.into(),
                 iv: check_pointer_and_size(iv_data, iv_size, &validator)?,
                 buffer: check_mut_pointer_and_size(buffer_data, buffer_size, &validator)?,
                 aad: check_pointer_and_size(aad_data, aad_size, &validator)?,
                 tag: check_pointer_and_size(tag_data, tag_size, &validator)?,
             },
-            RequestRaw::DecryptAesGcmExternalKey {
-                client_id,
-                request_id,
+            RequestDataRaw::DecryptAesGcmExternalKey {
                 key_data,
                 key_size,
                 iv_data,
@@ -875,17 +738,15 @@ impl RequestRaw {
                 tag_data,
                 tag_size,
             } => Request::DecryptAesGcmExternalKey {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key: check_pointer_and_size(key_data, key_size, &validator)?,
                 iv: check_pointer_and_size(iv_data, iv_size, &validator)?,
                 buffer: check_mut_pointer_and_size(buffer_data, buffer_size, &validator)?,
                 aad: check_pointer_and_size(aad_data, aad_size, &validator)?,
                 tag: check_pointer_and_size(tag_data, tag_size, &validator)?,
             },
-            RequestRaw::EncryptAesCbc {
-                client_id,
-                request_id,
+            RequestDataRaw::EncryptAesCbc {
                 key_id,
                 iv_data,
                 iv_size,
@@ -893,16 +754,14 @@ impl RequestRaw {
                 buffer_size,
                 plaintext_size,
             } => Request::EncryptAesCbc {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key_id: key_id.into(),
                 iv: check_pointer_and_size(iv_data, iv_size, &validator)?,
                 buffer: check_mut_pointer_and_size(buffer_data, buffer_size, &validator)?,
                 plaintext_size: plaintext_size as usize,
             },
-            RequestRaw::EncryptAesCbcExternalKey {
-                client_id,
-                request_id,
+            RequestDataRaw::EncryptAesCbcExternalKey {
                 key_data,
                 key_size,
                 iv_data,
@@ -911,31 +770,27 @@ impl RequestRaw {
                 buffer_size,
                 plaintext_size,
             } => Request::EncryptAesCbcExternalKey {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key: check_pointer_and_size(key_data, key_size, &validator)?,
                 iv: check_pointer_and_size(iv_data, iv_size, &validator)?,
                 buffer: check_mut_pointer_and_size(buffer_data, buffer_size, &validator)?,
                 plaintext_size: plaintext_size as usize,
             },
-            RequestRaw::DecryptAesCbc {
-                client_id,
-                request_id,
+            RequestDataRaw::DecryptAesCbc {
                 key_id,
                 iv_data,
                 iv_size,
                 buffer_data,
                 buffer_size,
             } => Request::DecryptAesCbc {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key_id: key_id.into(),
                 iv: check_pointer_and_size(iv_data, iv_size, &validator)?,
                 buffer: check_mut_pointer_and_size(buffer_data, buffer_size, &validator)?,
             },
-            RequestRaw::DecryptAesCbcExternalKey {
-                client_id,
-                request_id,
+            RequestDataRaw::DecryptAesCbcExternalKey {
                 key_data,
                 key_size,
                 iv_data,
@@ -943,30 +798,26 @@ impl RequestRaw {
                 buffer_data,
                 buffer_size,
             } => Request::DecryptAesCbcExternalKey {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key: check_pointer_and_size(key_data, key_size, &validator)?,
                 iv: check_pointer_and_size(iv_data, iv_size, &validator)?,
                 buffer: check_mut_pointer_and_size(buffer_data, buffer_size, &validator)?,
             },
-            RequestRaw::CalculateAesCmac {
-                client_id,
-                request_id,
+            RequestDataRaw::CalculateAesCmac {
                 key_id,
                 message_data,
                 message_size,
                 tag_data,
                 tag_size,
             } => Request::CalculateAesCmac {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key_id: key_id.into(),
                 message: check_pointer_and_size(message_data, message_size, &validator)?,
                 tag: check_mut_pointer_and_size(tag_data, tag_size, &validator)?,
             },
-            RequestRaw::CalculateAesCmacExternalKey {
-                client_id,
-                request_id,
+            RequestDataRaw::CalculateAesCmacExternalKey {
                 key_data,
                 key_size,
                 message_data,
@@ -974,30 +825,26 @@ impl RequestRaw {
                 tag_data,
                 tag_size,
             } => Request::CalculateAesCmacExternalKey {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key: check_pointer_and_size(key_data, key_size, &validator)?,
                 message: check_pointer_and_size(message_data, message_size, &validator)?,
                 tag: check_mut_pointer_and_size(tag_data, tag_size, &validator)?,
             },
-            RequestRaw::VerifyAesCmac {
-                client_id,
-                request_id,
+            RequestDataRaw::VerifyAesCmac {
                 key_id,
                 message_data,
                 message_size,
                 tag_data,
                 tag_size,
             } => Request::VerifyAesCmac {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key_id: key_id.into(),
                 message: check_pointer_and_size(message_data, message_size, &validator)?,
                 tag: check_pointer_and_size(tag_data, tag_size, &validator)?,
             },
-            RequestRaw::VerifyAesCmacExternalKey {
-                client_id,
-                request_id,
+            RequestDataRaw::VerifyAesCmacExternalKey {
                 key_data,
                 key_size,
                 message_data,
@@ -1005,15 +852,13 @@ impl RequestRaw {
                 tag_data,
                 tag_size,
             } => Request::VerifyAesCmacExternalKey {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key: check_pointer_and_size(key_data, key_size, &validator)?,
                 message: check_pointer_and_size(message_data, message_size, &validator)?,
                 tag: check_pointer_and_size(tag_data, tag_size, &validator)?,
             },
-            RequestRaw::CalculateHmac {
-                client_id,
-                request_id,
+            RequestDataRaw::CalculateHmac {
                 key_id,
                 hash_algorithm,
                 message_data,
@@ -1021,16 +866,14 @@ impl RequestRaw {
                 tag_data,
                 tag_size,
             } => Request::CalculateHmac {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key_id: key_id.into(),
                 hash_algorithm: hash_algorithm.try_into()?,
                 message: check_pointer_and_size(message_data, message_size, &validator)?,
                 tag: check_mut_pointer_and_size(tag_data, tag_size, &validator)?,
             },
-            RequestRaw::CalculateHmacExternalKey {
-                client_id,
-                request_id,
+            RequestDataRaw::CalculateHmacExternalKey {
                 key_data,
                 key_size,
                 hash_algorithm,
@@ -1039,16 +882,14 @@ impl RequestRaw {
                 tag_data,
                 tag_size,
             } => Request::CalculateHmacExternalKey {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key: check_pointer_and_size(key_data, key_size, &validator)?,
                 hash_algorithm: hash_algorithm.try_into()?,
                 message: check_pointer_and_size(message_data, message_size, &validator)?,
                 tag: check_mut_pointer_and_size(tag_data, tag_size, &validator)?,
             },
-            RequestRaw::VerifyHmac {
-                client_id,
-                request_id,
+            RequestDataRaw::VerifyHmac {
                 key_id,
                 hash_algorithm,
                 message_data,
@@ -1056,16 +897,14 @@ impl RequestRaw {
                 tag_data,
                 tag_size,
             } => Request::VerifyHmac {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key_id: key_id.into(),
                 hash_algorithm: hash_algorithm.try_into()?,
                 message: check_pointer_and_size(message_data, message_size, &validator)?,
                 tag: check_pointer_and_size(tag_data, tag_size, &validator)?,
             },
-            RequestRaw::VerifyHmacExternalKey {
-                client_id,
-                request_id,
+            RequestDataRaw::VerifyHmacExternalKey {
                 key_data,
                 key_size,
                 hash_algorithm,
@@ -1074,16 +913,14 @@ impl RequestRaw {
                 tag_data,
                 tag_size,
             } => Request::VerifyHmacExternalKey {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key: check_pointer_and_size(key_data, key_size, &validator)?,
                 hash_algorithm: hash_algorithm.try_into()?,
                 message: check_pointer_and_size(message_data, message_size, &validator)?,
                 tag: check_pointer_and_size(tag_data, tag_size, &validator)?,
             },
-            RequestRaw::Sign {
-                client_id,
-                request_id,
+            RequestDataRaw::Sign {
                 key_id,
                 message_data,
                 message_size,
@@ -1091,16 +928,14 @@ impl RequestRaw {
                 signature_data,
                 signature_size,
             } => Request::Sign {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key_id: key_id.into(),
                 message: check_pointer_and_size(message_data, message_size, &validator)?,
                 prehashed: bool_raw_to_bool(prehashed),
                 signature: check_mut_pointer_and_size(signature_data, signature_size, &validator)?,
             },
-            RequestRaw::SignExternalKey {
-                client_id,
-                request_id,
+            RequestDataRaw::SignExternalKey {
                 key_data,
                 key_size,
                 message_data,
@@ -1109,16 +944,14 @@ impl RequestRaw {
                 signature_data,
                 signature_size,
             } => Request::SignExternalKey {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 private_key: check_pointer_and_size(key_data, key_size, &validator)?,
                 message: check_pointer_and_size(message_data, message_size, &validator)?,
                 prehashed: bool_raw_to_bool(prehashed),
                 signature: check_mut_pointer_and_size(signature_data, signature_size, &validator)?,
             },
-            RequestRaw::Verify {
-                client_id,
-                request_id,
+            RequestDataRaw::Verify {
                 key_id,
                 message_data,
                 message_size,
@@ -1126,16 +959,14 @@ impl RequestRaw {
                 signature_data,
                 signature_size,
             } => Request::Verify {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 key_id: key_id.into(),
                 message: check_pointer_and_size(message_data, message_size, &validator)?,
                 prehashed: bool_raw_to_bool(prehashed),
                 signature: check_pointer_and_size(signature_data, signature_size, &validator)?,
             },
-            RequestRaw::VerifyExternalKey {
-                client_id,
-                request_id,
+            RequestDataRaw::VerifyExternalKey {
                 key_data,
                 key_size,
                 message_data,
@@ -1144,24 +975,22 @@ impl RequestRaw {
                 signature_data,
                 signature_size,
             } => Request::VerifyExternalKey {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 public_key: check_pointer_and_size(key_data, key_size, &validator)?,
                 message: check_pointer_and_size(message_data, message_size, &validator)?,
                 prehashed: bool_raw_to_bool(prehashed),
                 signature: check_pointer_and_size(signature_data, signature_size, &validator)?,
             },
-            RequestRaw::Ecdh {
-                client_id,
-                request_id,
+            RequestDataRaw::Ecdh {
                 public_key_data,
                 public_key_size,
                 private_key_id,
                 shared_secret_data,
                 shared_secret_size,
             } => Request::Ecdh {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 public_key: check_pointer_and_size(public_key_data, public_key_size, &validator)?,
                 private_key_id: private_key_id.into(),
                 shared_secret: check_mut_pointer_and_size(
@@ -1170,9 +999,7 @@ impl RequestRaw {
                     &validator,
                 )?,
             },
-            RequestRaw::EcdhExternalPrivateKey {
-                client_id,
-                request_id,
+            RequestDataRaw::EcdhExternalPrivateKey {
                 curve,
                 public_key_data,
                 public_key_size,
@@ -1181,8 +1008,8 @@ impl RequestRaw {
                 shared_secret_data,
                 shared_secret_size,
             } => Request::EcdhExternalPrivateKey {
-                client_id: client_id.into(),
-                request_id: request_id.into(),
+                client_id,
+                request_id,
                 curve: curve.try_into()?,
                 public_key: check_pointer_and_size(public_key_data, public_key_size, &validator)?,
                 private_key: check_pointer_and_size(
@@ -1209,33 +1036,39 @@ impl From<Request<'_>> for RequestRaw {
                 client_id,
                 request_id,
                 output,
-            } => RequestRaw::GetRandom {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                output_data: output.as_mut_ptr(),
-                output_size: output.len() as u32,
+                data: RequestDataRaw::GetRandom {
+                    output_data: output.as_mut_ptr(),
+                    output_size: output.len() as u32,
+                },
             },
             Request::GenerateSymmetricKey {
                 client_id,
                 request_id,
                 key_id,
                 overwrite,
-            } => RequestRaw::GenerateSymmetricKey {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_id: key_id.into(),
-                overwrite: overwrite.into(),
+                data: RequestDataRaw::GenerateSymmetricKey {
+                    key_id: key_id.into(),
+                    overwrite: overwrite.into(),
+                },
             },
             Request::GenerateKeyPair {
                 client_id,
                 request_id,
                 key_id,
                 overwrite,
-            } => RequestRaw::GenerateKeyPair {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_id: key_id.into(),
-                overwrite: overwrite.into(),
+                data: RequestDataRaw::GenerateKeyPair {
+                    key_id: key_id.into(),
+                    overwrite: overwrite.into(),
+                },
             },
             Request::ImportSymmetricKey {
                 client_id,
@@ -1243,13 +1076,15 @@ impl From<Request<'_>> for RequestRaw {
                 key_id,
                 data,
                 overwrite,
-            } => RequestRaw::ImportSymmetricKey {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_id: key_id.into(),
-                data_data: data.as_ptr(),
-                data_size: data.len() as u32,
-                overwrite: overwrite.into(),
+                data: RequestDataRaw::ImportSymmetricKey {
+                    key_id: key_id.into(),
+                    data_data: data.as_ptr(),
+                    data_size: data.len() as u32,
+                    overwrite: overwrite.into(),
+                },
             },
             Request::ImportKeyPair {
                 client_id,
@@ -1258,60 +1093,70 @@ impl From<Request<'_>> for RequestRaw {
                 public_key,
                 private_key,
                 overwrite,
-            } => RequestRaw::ImportKeyPair {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_id: key_id.into(),
-                public_key_data: public_key.as_ptr(),
-                public_key_size: public_key.len() as u32,
-                private_key_data: private_key.as_ptr(),
-                private_key_size: private_key.len() as u32,
-                overwrite: overwrite.into(),
+                data: RequestDataRaw::ImportKeyPair {
+                    key_id: key_id.into(),
+                    public_key_data: public_key.as_ptr(),
+                    public_key_size: public_key.len() as u32,
+                    private_key_data: private_key.as_ptr(),
+                    private_key_size: private_key.len() as u32,
+                    overwrite: overwrite.into(),
+                },
             },
             Request::ExportSymmetricKey {
                 client_id,
                 request_id,
                 key_id,
                 data,
-            } => RequestRaw::ExportSymmetricKey {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_id: key_id.into(),
-                data_data: data.as_mut_ptr(),
-                data_size: data.len() as u32,
+                data: RequestDataRaw::ExportSymmetricKey {
+                    key_id: key_id.into(),
+                    data_data: data.as_mut_ptr(),
+                    data_size: data.len() as u32,
+                },
             },
             Request::ExportPublicKey {
                 client_id,
                 request_id,
                 key_id,
                 public_key,
-            } => RequestRaw::ExportPublicKey {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_id: key_id.into(),
-                public_key_data: public_key.as_mut_ptr(),
-                public_key_size: public_key.len() as u32,
+                data: RequestDataRaw::ExportPublicKey {
+                    key_id: key_id.into(),
+                    public_key_data: public_key.as_mut_ptr(),
+                    public_key_size: public_key.len() as u32,
+                },
             },
             Request::ExportPrivateKey {
                 client_id,
                 request_id,
                 key_id,
                 private_key,
-            } => RequestRaw::ExportPrivateKey {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_id: key_id.into(),
-                private_key_data: private_key.as_mut_ptr(),
-                private_key_size: private_key.len() as u32,
+                data: RequestDataRaw::ExportPrivateKey {
+                    key_id: key_id.into(),
+                    private_key_data: private_key.as_mut_ptr(),
+                    private_key_size: private_key.len() as u32,
+                },
             },
             Request::IsKeyAvailable {
                 client_id,
                 request_id,
                 key_id,
-            } => RequestRaw::IsKeyAvailable {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_id: key_id.into(),
+                data: RequestDataRaw::IsKeyAvailable {
+                    key_id: key_id.into(),
+                },
             },
             Request::EncryptChaChaPoly {
                 client_id,
@@ -1321,18 +1166,20 @@ impl From<Request<'_>> for RequestRaw {
                 buffer,
                 aad,
                 tag,
-            } => RequestRaw::EncryptChaChaPoly {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_id: key_id.into(),
-                nonce_data: nonce.as_ptr(),
-                nonce_size: nonce.len() as u32,
-                buffer_data: buffer.as_mut_ptr(),
-                buffer_size: buffer.len() as u32,
-                aad_data: aad.as_ptr(),
-                aad_size: aad.len() as u32,
-                tag_data: tag.as_mut_ptr(),
-                tag_size: tag.len() as u32,
+                data: RequestDataRaw::EncryptChaChaPoly {
+                    key_id: key_id.into(),
+                    nonce_data: nonce.as_ptr(),
+                    nonce_size: nonce.len() as u32,
+                    buffer_data: buffer.as_mut_ptr(),
+                    buffer_size: buffer.len() as u32,
+                    aad_data: aad.as_ptr(),
+                    aad_size: aad.len() as u32,
+                    tag_data: tag.as_mut_ptr(),
+                    tag_size: tag.len() as u32,
+                },
             },
             Request::EncryptChaChaPolyExternalKey {
                 client_id,
@@ -1342,19 +1189,21 @@ impl From<Request<'_>> for RequestRaw {
                 buffer,
                 aad,
                 tag,
-            } => RequestRaw::EncryptChaChaPolyExternalKey {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_data: key.as_ptr(),
-                key_size: key.len() as u32,
-                nonce_data: nonce.as_ptr(),
-                nonce_size: nonce.len() as u32,
-                buffer_data: buffer.as_mut_ptr(),
-                buffer_size: buffer.len() as u32,
-                aad_data: aad.as_ptr(),
-                aad_size: aad.len() as u32,
-                tag_data: tag.as_mut_ptr(),
-                tag_size: tag.len() as u32,
+                data: RequestDataRaw::EncryptChaChaPolyExternalKey {
+                    key_data: key.as_ptr(),
+                    key_size: key.len() as u32,
+                    nonce_data: nonce.as_ptr(),
+                    nonce_size: nonce.len() as u32,
+                    buffer_data: buffer.as_mut_ptr(),
+                    buffer_size: buffer.len() as u32,
+                    aad_data: aad.as_ptr(),
+                    aad_size: aad.len() as u32,
+                    tag_data: tag.as_mut_ptr(),
+                    tag_size: tag.len() as u32,
+                },
             },
             Request::DecryptChaChaPoly {
                 client_id,
@@ -1364,18 +1213,20 @@ impl From<Request<'_>> for RequestRaw {
                 buffer,
                 aad,
                 tag,
-            } => RequestRaw::DecryptChaChaPoly {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_id: key_id.into(),
-                nonce_data: nonce.as_ptr(),
-                nonce_size: nonce.len() as u32,
-                buffer_data: buffer.as_mut_ptr(),
-                buffer_size: buffer.len() as u32,
-                aad_data: aad.as_ptr(),
-                aad_size: aad.len() as u32,
-                tag_data: tag.as_ptr(),
-                tag_size: tag.len() as u32,
+                data: RequestDataRaw::DecryptChaChaPoly {
+                    key_id: key_id.into(),
+                    nonce_data: nonce.as_ptr(),
+                    nonce_size: nonce.len() as u32,
+                    buffer_data: buffer.as_mut_ptr(),
+                    buffer_size: buffer.len() as u32,
+                    aad_data: aad.as_ptr(),
+                    aad_size: aad.len() as u32,
+                    tag_data: tag.as_ptr(),
+                    tag_size: tag.len() as u32,
+                },
             },
             Request::DecryptChaChaPolyExternalKey {
                 client_id,
@@ -1385,19 +1236,21 @@ impl From<Request<'_>> for RequestRaw {
                 buffer,
                 aad,
                 tag,
-            } => RequestRaw::DecryptChaChaPolyExternalKey {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_data: key.as_ptr(),
-                key_size: key.len() as u32,
-                nonce_data: nonce.as_ptr(),
-                nonce_size: nonce.len() as u32,
-                buffer_data: buffer.as_mut_ptr(),
-                buffer_size: buffer.len() as u32,
-                aad_data: aad.as_ptr(),
-                aad_size: aad.len() as u32,
-                tag_data: tag.as_ptr(),
-                tag_size: tag.len() as u32,
+                data: RequestDataRaw::DecryptChaChaPolyExternalKey {
+                    key_data: key.as_ptr(),
+                    key_size: key.len() as u32,
+                    nonce_data: nonce.as_ptr(),
+                    nonce_size: nonce.len() as u32,
+                    buffer_data: buffer.as_mut_ptr(),
+                    buffer_size: buffer.len() as u32,
+                    aad_data: aad.as_ptr(),
+                    aad_size: aad.len() as u32,
+                    tag_data: tag.as_ptr(),
+                    tag_size: tag.len() as u32,
+                },
             },
             Request::EncryptAesGcm {
                 client_id,
@@ -1407,18 +1260,20 @@ impl From<Request<'_>> for RequestRaw {
                 buffer,
                 aad,
                 tag,
-            } => RequestRaw::EncryptAesGcm {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_id: key_id.into(),
-                iv_data: iv.as_ptr(),
-                iv_size: iv.len() as u32,
-                buffer_data: buffer.as_mut_ptr(),
-                buffer_size: buffer.len() as u32,
-                aad_data: aad.as_ptr(),
-                aad_size: aad.len() as u32,
-                tag_data: tag.as_mut_ptr(),
-                tag_size: tag.len() as u32,
+                data: RequestDataRaw::EncryptAesGcm {
+                    key_id: key_id.into(),
+                    iv_data: iv.as_ptr(),
+                    iv_size: iv.len() as u32,
+                    buffer_data: buffer.as_mut_ptr(),
+                    buffer_size: buffer.len() as u32,
+                    aad_data: aad.as_ptr(),
+                    aad_size: aad.len() as u32,
+                    tag_data: tag.as_mut_ptr(),
+                    tag_size: tag.len() as u32,
+                },
             },
             Request::EncryptAesGcmExternalKey {
                 client_id,
@@ -1428,19 +1283,21 @@ impl From<Request<'_>> for RequestRaw {
                 buffer,
                 aad,
                 tag,
-            } => RequestRaw::EncryptAesGcmExternalKey {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_data: key.as_ptr(),
-                key_size: key.len() as u32,
-                iv_data: iv.as_ptr(),
-                iv_size: iv.len() as u32,
-                buffer_data: buffer.as_mut_ptr(),
-                buffer_size: buffer.len() as u32,
-                aad_data: aad.as_ptr(),
-                aad_size: aad.len() as u32,
-                tag_data: tag.as_mut_ptr(),
-                tag_size: tag.len() as u32,
+                data: RequestDataRaw::EncryptAesGcmExternalKey {
+                    key_data: key.as_ptr(),
+                    key_size: key.len() as u32,
+                    iv_data: iv.as_ptr(),
+                    iv_size: iv.len() as u32,
+                    buffer_data: buffer.as_mut_ptr(),
+                    buffer_size: buffer.len() as u32,
+                    aad_data: aad.as_ptr(),
+                    aad_size: aad.len() as u32,
+                    tag_data: tag.as_mut_ptr(),
+                    tag_size: tag.len() as u32,
+                },
             },
             Request::DecryptAesGcm {
                 client_id,
@@ -1450,18 +1307,20 @@ impl From<Request<'_>> for RequestRaw {
                 buffer,
                 aad,
                 tag,
-            } => RequestRaw::DecryptAesGcm {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_id: key_id.into(),
-                iv_data: iv.as_ptr(),
-                iv_size: iv.len() as u32,
-                buffer_data: buffer.as_mut_ptr(),
-                buffer_size: buffer.len() as u32,
-                aad_data: aad.as_ptr(),
-                aad_size: aad.len() as u32,
-                tag_data: tag.as_ptr(),
-                tag_size: tag.len() as u32,
+                data: RequestDataRaw::DecryptAesGcm {
+                    key_id: key_id.into(),
+                    iv_data: iv.as_ptr(),
+                    iv_size: iv.len() as u32,
+                    buffer_data: buffer.as_mut_ptr(),
+                    buffer_size: buffer.len() as u32,
+                    aad_data: aad.as_ptr(),
+                    aad_size: aad.len() as u32,
+                    tag_data: tag.as_ptr(),
+                    tag_size: tag.len() as u32,
+                },
             },
             Request::DecryptAesGcmExternalKey {
                 client_id,
@@ -1471,19 +1330,21 @@ impl From<Request<'_>> for RequestRaw {
                 buffer,
                 aad,
                 tag,
-            } => RequestRaw::DecryptAesGcmExternalKey {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_data: key.as_ptr(),
-                key_size: key.len() as u32,
-                iv_data: iv.as_ptr(),
-                iv_size: iv.len() as u32,
-                buffer_data: buffer.as_mut_ptr(),
-                buffer_size: buffer.len() as u32,
-                aad_data: aad.as_ptr(),
-                aad_size: aad.len() as u32,
-                tag_data: tag.as_ptr(),
-                tag_size: tag.len() as u32,
+                data: RequestDataRaw::DecryptAesGcmExternalKey {
+                    key_data: key.as_ptr(),
+                    key_size: key.len() as u32,
+                    iv_data: iv.as_ptr(),
+                    iv_size: iv.len() as u32,
+                    buffer_data: buffer.as_mut_ptr(),
+                    buffer_size: buffer.len() as u32,
+                    aad_data: aad.as_ptr(),
+                    aad_size: aad.len() as u32,
+                    tag_data: tag.as_ptr(),
+                    tag_size: tag.len() as u32,
+                },
             },
             Request::EncryptAesCbc {
                 client_id,
@@ -1492,15 +1353,17 @@ impl From<Request<'_>> for RequestRaw {
                 iv,
                 buffer,
                 plaintext_size,
-            } => RequestRaw::EncryptAesCbc {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_id: key_id.into(),
-                iv_data: iv.as_ptr(),
-                iv_size: iv.len() as u32,
-                buffer_data: buffer.as_mut_ptr(),
-                buffer_size: buffer.len() as u32,
-                plaintext_size: plaintext_size as u32,
+                data: RequestDataRaw::EncryptAesCbc {
+                    key_id: key_id.into(),
+                    iv_data: iv.as_ptr(),
+                    iv_size: iv.len() as u32,
+                    buffer_data: buffer.as_mut_ptr(),
+                    buffer_size: buffer.len() as u32,
+                    plaintext_size: plaintext_size as u32,
+                },
             },
             Request::EncryptAesCbcExternalKey {
                 client_id,
@@ -1509,16 +1372,18 @@ impl From<Request<'_>> for RequestRaw {
                 iv,
                 buffer,
                 plaintext_size,
-            } => RequestRaw::EncryptAesCbcExternalKey {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_data: key.as_ptr(),
-                key_size: key.len() as u32,
-                iv_data: iv.as_ptr(),
-                iv_size: iv.len() as u32,
-                buffer_data: buffer.as_mut_ptr(),
-                buffer_size: buffer.len() as u32,
-                plaintext_size: plaintext_size as u32,
+                data: RequestDataRaw::EncryptAesCbcExternalKey {
+                    key_data: key.as_ptr(),
+                    key_size: key.len() as u32,
+                    iv_data: iv.as_ptr(),
+                    iv_size: iv.len() as u32,
+                    buffer_data: buffer.as_mut_ptr(),
+                    buffer_size: buffer.len() as u32,
+                    plaintext_size: plaintext_size as u32,
+                },
             },
             Request::DecryptAesCbc {
                 client_id,
@@ -1526,14 +1391,16 @@ impl From<Request<'_>> for RequestRaw {
                 key_id,
                 iv,
                 buffer,
-            } => RequestRaw::DecryptAesCbc {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_id: key_id.into(),
-                iv_data: iv.as_ptr(),
-                iv_size: iv.len() as u32,
-                buffer_data: buffer.as_mut_ptr(),
-                buffer_size: buffer.len() as u32,
+                data: RequestDataRaw::DecryptAesCbc {
+                    key_id: key_id.into(),
+                    iv_data: iv.as_ptr(),
+                    iv_size: iv.len() as u32,
+                    buffer_data: buffer.as_mut_ptr(),
+                    buffer_size: buffer.len() as u32,
+                },
             },
             Request::DecryptAesCbcExternalKey {
                 client_id,
@@ -1541,15 +1408,17 @@ impl From<Request<'_>> for RequestRaw {
                 key,
                 iv,
                 buffer,
-            } => RequestRaw::DecryptAesCbcExternalKey {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_data: key.as_ptr(),
-                key_size: key.len() as u32,
-                iv_data: iv.as_ptr(),
-                iv_size: iv.len() as u32,
-                buffer_data: buffer.as_mut_ptr(),
-                buffer_size: buffer.len() as u32,
+                data: RequestDataRaw::DecryptAesCbcExternalKey {
+                    key_data: key.as_ptr(),
+                    key_size: key.len() as u32,
+                    iv_data: iv.as_ptr(),
+                    iv_size: iv.len() as u32,
+                    buffer_data: buffer.as_mut_ptr(),
+                    buffer_size: buffer.len() as u32,
+                },
             },
             Request::CalculateAesCmac {
                 client_id,
@@ -1557,14 +1426,16 @@ impl From<Request<'_>> for RequestRaw {
                 key_id,
                 message,
                 tag,
-            } => RequestRaw::CalculateAesCmac {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_id: key_id.into(),
-                message_data: message.as_ptr(),
-                message_size: message.len() as u32,
-                tag_data: tag.as_mut_ptr(),
-                tag_size: tag.len() as u32,
+                data: RequestDataRaw::CalculateAesCmac {
+                    key_id: key_id.into(),
+                    message_data: message.as_ptr(),
+                    message_size: message.len() as u32,
+                    tag_data: tag.as_mut_ptr(),
+                    tag_size: tag.len() as u32,
+                },
             },
             Request::CalculateAesCmacExternalKey {
                 client_id,
@@ -1572,15 +1443,17 @@ impl From<Request<'_>> for RequestRaw {
                 key,
                 message,
                 tag,
-            } => RequestRaw::CalculateAesCmacExternalKey {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_data: key.as_ptr(),
-                key_size: key.len() as u32,
-                message_data: message.as_ptr(),
-                message_size: message.len() as u32,
-                tag_data: tag.as_mut_ptr(),
-                tag_size: tag.len() as u32,
+                data: RequestDataRaw::CalculateAesCmacExternalKey {
+                    key_data: key.as_ptr(),
+                    key_size: key.len() as u32,
+                    message_data: message.as_ptr(),
+                    message_size: message.len() as u32,
+                    tag_data: tag.as_mut_ptr(),
+                    tag_size: tag.len() as u32,
+                },
             },
             Request::VerifyAesCmac {
                 client_id,
@@ -1588,14 +1461,16 @@ impl From<Request<'_>> for RequestRaw {
                 key_id,
                 message,
                 tag,
-            } => RequestRaw::VerifyAesCmac {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_id: key_id.into(),
-                message_data: message.as_ptr(),
-                message_size: message.len() as u32,
-                tag_data: tag.as_ptr(),
-                tag_size: tag.len() as u32,
+                data: RequestDataRaw::VerifyAesCmac {
+                    key_id: key_id.into(),
+                    message_data: message.as_ptr(),
+                    message_size: message.len() as u32,
+                    tag_data: tag.as_ptr(),
+                    tag_size: tag.len() as u32,
+                },
             },
             Request::VerifyAesCmacExternalKey {
                 client_id,
@@ -1603,15 +1478,17 @@ impl From<Request<'_>> for RequestRaw {
                 key,
                 message,
                 tag,
-            } => RequestRaw::VerifyAesCmacExternalKey {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_data: key.as_ptr(),
-                key_size: key.len() as u32,
-                message_data: message.as_ptr(),
-                message_size: message.len() as u32,
-                tag_data: tag.as_ptr(),
-                tag_size: tag.len() as u32,
+                data: RequestDataRaw::VerifyAesCmacExternalKey {
+                    key_data: key.as_ptr(),
+                    key_size: key.len() as u32,
+                    message_data: message.as_ptr(),
+                    message_size: message.len() as u32,
+                    tag_data: tag.as_ptr(),
+                    tag_size: tag.len() as u32,
+                },
             },
             Request::CalculateHmac {
                 client_id,
@@ -1620,15 +1497,17 @@ impl From<Request<'_>> for RequestRaw {
                 hash_algorithm,
                 message,
                 tag,
-            } => RequestRaw::CalculateHmac {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_id: key_id.into(),
-                hash_algorithm: hash_algorithm.into(),
-                message_data: message.as_ptr(),
-                message_size: message.len() as u32,
-                tag_data: tag.as_mut_ptr(),
-                tag_size: tag.len() as u32,
+                data: RequestDataRaw::CalculateHmac {
+                    key_id: key_id.into(),
+                    hash_algorithm: hash_algorithm.into(),
+                    message_data: message.as_ptr(),
+                    message_size: message.len() as u32,
+                    tag_data: tag.as_mut_ptr(),
+                    tag_size: tag.len() as u32,
+                },
             },
             Request::CalculateHmacExternalKey {
                 client_id,
@@ -1637,16 +1516,18 @@ impl From<Request<'_>> for RequestRaw {
                 hash_algorithm,
                 message,
                 tag,
-            } => RequestRaw::CalculateHmacExternalKey {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_data: key.as_ptr(),
-                key_size: key.len() as u32,
-                hash_algorithm: hash_algorithm.into(),
-                message_data: message.as_ptr(),
-                message_size: message.len() as u32,
-                tag_data: tag.as_mut_ptr(),
-                tag_size: tag.len() as u32,
+                data: RequestDataRaw::CalculateHmacExternalKey {
+                    key_data: key.as_ptr(),
+                    key_size: key.len() as u32,
+                    hash_algorithm: hash_algorithm.into(),
+                    message_data: message.as_ptr(),
+                    message_size: message.len() as u32,
+                    tag_data: tag.as_mut_ptr(),
+                    tag_size: tag.len() as u32,
+                },
             },
             Request::VerifyHmac {
                 client_id,
@@ -1655,15 +1536,17 @@ impl From<Request<'_>> for RequestRaw {
                 hash_algorithm,
                 message,
                 tag,
-            } => RequestRaw::VerifyHmac {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_id: key_id.into(),
-                hash_algorithm: hash_algorithm.into(),
-                message_data: message.as_ptr(),
-                message_size: message.len() as u32,
-                tag_data: tag.as_ptr(),
-                tag_size: tag.len() as u32,
+                data: RequestDataRaw::VerifyHmac {
+                    key_id: key_id.into(),
+                    hash_algorithm: hash_algorithm.into(),
+                    message_data: message.as_ptr(),
+                    message_size: message.len() as u32,
+                    tag_data: tag.as_ptr(),
+                    tag_size: tag.len() as u32,
+                },
             },
             Request::VerifyHmacExternalKey {
                 client_id,
@@ -1672,16 +1555,18 @@ impl From<Request<'_>> for RequestRaw {
                 hash_algorithm,
                 message,
                 tag,
-            } => RequestRaw::VerifyHmacExternalKey {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_data: key.as_ptr(),
-                key_size: key.len() as u32,
-                hash_algorithm: hash_algorithm.into(),
-                message_data: message.as_ptr(),
-                message_size: message.len() as u32,
-                tag_data: tag.as_ptr(),
-                tag_size: tag.len() as u32,
+                data: RequestDataRaw::VerifyHmacExternalKey {
+                    key_data: key.as_ptr(),
+                    key_size: key.len() as u32,
+                    hash_algorithm: hash_algorithm.into(),
+                    message_data: message.as_ptr(),
+                    message_size: message.len() as u32,
+                    tag_data: tag.as_ptr(),
+                    tag_size: tag.len() as u32,
+                },
             },
             Request::Sign {
                 client_id,
@@ -1690,15 +1575,17 @@ impl From<Request<'_>> for RequestRaw {
                 message,
                 prehashed,
                 signature,
-            } => RequestRaw::Sign {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_id: key_id.into(),
-                message_data: message.as_ptr(),
-                message_size: message.len() as u32,
-                prehashed: prehashed.into(),
-                signature_data: signature.as_mut_ptr(),
-                signature_size: signature.len() as u32,
+                data: RequestDataRaw::Sign {
+                    key_id: key_id.into(),
+                    message_data: message.as_ptr(),
+                    message_size: message.len() as u32,
+                    prehashed: prehashed.into(),
+                    signature_data: signature.as_mut_ptr(),
+                    signature_size: signature.len() as u32,
+                },
             },
             Request::SignExternalKey {
                 client_id,
@@ -1707,16 +1594,18 @@ impl From<Request<'_>> for RequestRaw {
                 message,
                 prehashed,
                 signature,
-            } => RequestRaw::SignExternalKey {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_data: key.as_ptr(),
-                key_size: key.len() as u32,
-                message_data: message.as_ptr(),
-                message_size: message.len() as u32,
-                prehashed: prehashed.into(),
-                signature_data: signature.as_mut_ptr(),
-                signature_size: signature.len() as u32,
+                data: RequestDataRaw::SignExternalKey {
+                    key_data: key.as_ptr(),
+                    key_size: key.len() as u32,
+                    message_data: message.as_ptr(),
+                    message_size: message.len() as u32,
+                    prehashed: prehashed.into(),
+                    signature_data: signature.as_mut_ptr(),
+                    signature_size: signature.len() as u32,
+                },
             },
             Request::Verify {
                 client_id,
@@ -1725,15 +1614,17 @@ impl From<Request<'_>> for RequestRaw {
                 message,
                 prehashed,
                 signature,
-            } => RequestRaw::Verify {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_id: key_id.into(),
-                message_data: message.as_ptr(),
-                message_size: message.len() as u32,
-                prehashed: prehashed.into(),
-                signature_data: signature.as_ptr(),
-                signature_size: signature.len() as u32,
+                data: RequestDataRaw::Verify {
+                    key_id: key_id.into(),
+                    message_data: message.as_ptr(),
+                    message_size: message.len() as u32,
+                    prehashed: prehashed.into(),
+                    signature_data: signature.as_ptr(),
+                    signature_size: signature.len() as u32,
+                },
             },
             Request::VerifyExternalKey {
                 client_id,
@@ -1742,16 +1633,18 @@ impl From<Request<'_>> for RequestRaw {
                 message,
                 prehashed,
                 signature,
-            } => RequestRaw::VerifyExternalKey {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_data: key.as_ptr(),
-                key_size: key.len() as u32,
-                message_data: message.as_ptr(),
-                message_size: message.len() as u32,
-                prehashed: prehashed.into(),
-                signature_data: signature.as_ptr(),
-                signature_size: signature.len() as u32,
+                data: RequestDataRaw::VerifyExternalKey {
+                    key_data: key.as_ptr(),
+                    key_size: key.len() as u32,
+                    message_data: message.as_ptr(),
+                    message_size: message.len() as u32,
+                    prehashed: prehashed.into(),
+                    signature_data: signature.as_ptr(),
+                    signature_size: signature.len() as u32,
+                },
             },
             Request::Ecdh {
                 client_id,
@@ -1759,14 +1652,16 @@ impl From<Request<'_>> for RequestRaw {
                 public_key,
                 private_key_id,
                 shared_secret,
-            } => RequestRaw::Ecdh {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                public_key_data: public_key.as_ptr(),
-                public_key_size: public_key.len() as u32,
-                private_key_id: private_key_id.into(),
-                shared_secret_data: shared_secret.as_mut_ptr(),
-                shared_secret_size: shared_secret.len() as u32,
+                data: RequestDataRaw::Ecdh {
+                    public_key_data: public_key.as_ptr(),
+                    public_key_size: public_key.len() as u32,
+                    private_key_id: private_key_id.into(),
+                    shared_secret_data: shared_secret.as_mut_ptr(),
+                    shared_secret_size: shared_secret.len() as u32,
+                },
             },
             Request::EcdhExternalPrivateKey {
                 client_id,
@@ -1775,16 +1670,18 @@ impl From<Request<'_>> for RequestRaw {
                 public_key,
                 private_key,
                 shared_secret,
-            } => RequestRaw::EcdhExternalPrivateKey {
+            } => RequestRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                curve: curve.into(),
-                public_key_data: public_key.as_ptr(),
-                public_key_size: public_key.len() as u32,
-                private_key_data: private_key.as_ptr(),
-                private_key_size: private_key.len() as u32,
-                shared_secret_data: shared_secret.as_mut_ptr(),
-                shared_secret_size: shared_secret.len() as u32,
+                data: RequestDataRaw::EcdhExternalPrivateKey {
+                    curve: curve.into(),
+                    public_key_data: public_key.as_ptr(),
+                    public_key_size: public_key.len() as u32,
+                    private_key_data: private_key.as_ptr(),
+                    private_key_size: private_key.len() as u32,
+                    shared_secret_data: shared_secret.as_mut_ptr(),
+                    shared_secret_size: shared_secret.len() as u32,
+                },
             },
         }
     }
@@ -1805,10 +1702,10 @@ impl ResponseRaw {
     ///
     pub unsafe fn from_raw(ptr: *const u8) -> Result<Self, ValidationError> {
         // SAFETY: Pointer and size must be checked by integrator
-        let tag: u8 = unsafe { *ptr };
+        let tag: u8 = unsafe { *(ptr.add(offset_of!(RequestRaw, data))) };
 
         // Validate tag value. Invalid tag values cause UB when transmuted into an enum.
-        if tag >= ResponseRaw::COUNT as u8 {
+        if tag >= ResponseDataRaw::COUNT as u8 {
             return Err(ValidationError::InvalidTagValue);
         }
 
@@ -1824,220 +1721,262 @@ impl From<Response<'_>> for ResponseRaw {
                 client_id,
                 request_id,
                 error,
-            } => ResponseRaw::Error {
+            } => ResponseRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                error: error.into(),
+                data: ResponseDataRaw::Error {
+                    error: error.into(),
+                },
             },
             Response::GetRandom {
                 client_id,
                 request_id,
                 data,
-            } => ResponseRaw::GetRandom {
+            } => ResponseRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                data_data: data.as_mut_ptr(),
-                data_size: data.len() as u32,
+                data: ResponseDataRaw::GetRandom {
+                    data_data: data.as_mut_ptr(),
+                    data_size: data.len() as u32,
+                },
             },
             Response::GenerateSymmetricKey {
                 client_id,
                 request_id,
-            } => ResponseRaw::GenerateSymmetricKey {
+            } => ResponseRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
+                data: ResponseDataRaw::GenerateSymmetricKey {},
             },
             Response::GenerateKeyPair {
                 client_id,
                 request_id,
-            } => ResponseRaw::GenerateKeyPair {
+            } => ResponseRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
+                data: ResponseDataRaw::GenerateKeyPair {},
             },
             Response::ImportSymmetricKey {
                 client_id,
                 request_id,
-            } => ResponseRaw::ImportSymmetricKey {
+            } => ResponseRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
+                data: ResponseDataRaw::ImportSymmetricKey {},
             },
             Response::ImportKeyPair {
                 client_id,
                 request_id,
-            } => ResponseRaw::ImportKeyPair {
+            } => ResponseRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
+                data: ResponseDataRaw::ImportKeyPair {},
             },
             Response::ExportSymmetricKey {
                 client_id,
                 request_id,
                 key,
-            } => ResponseRaw::ExportSymmetricKey {
+            } => ResponseRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                key_data: key.as_mut_ptr(),
-                key_size: key.len() as u32,
+                data: ResponseDataRaw::ExportSymmetricKey {
+                    key_data: key.as_mut_ptr(),
+                    key_size: key.len() as u32,
+                },
             },
             Response::ExportPublicKey {
                 client_id,
                 request_id,
                 public_key,
-            } => ResponseRaw::ExportPublicKey {
+            } => ResponseRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                public_key_data: public_key.as_mut_ptr(),
-                public_key_size: public_key.len() as u32,
+                data: ResponseDataRaw::ExportPublicKey {
+                    public_key_data: public_key.as_mut_ptr(),
+                    public_key_size: public_key.len() as u32,
+                },
             },
             Response::ExportPrivateKey {
                 client_id,
                 request_id,
                 private_key,
-            } => ResponseRaw::ExportPrivateKey {
+            } => ResponseRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                private_key_data: private_key.as_mut_ptr(),
-                private_key_size: private_key.len() as u32,
+                data: ResponseDataRaw::ExportPrivateKey {
+                    private_key_data: private_key.as_mut_ptr(),
+                    private_key_size: private_key.len() as u32,
+                },
             },
             Response::IsKeyAvailable {
                 client_id,
                 request_id,
                 is_available,
-            } => ResponseRaw::IsKeyAvailable {
+            } => ResponseRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                is_available: is_available.into(),
+                data: ResponseDataRaw::IsKeyAvailable {
+                    is_available: is_available.into(),
+                },
             },
             Response::EncryptChaChaPoly {
                 client_id,
                 request_id,
                 buffer,
                 tag,
-            } => ResponseRaw::EncryptChaChaPoly {
+            } => ResponseRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                buffer_data: buffer.as_mut_ptr(),
-                buffer_size: buffer.len() as u32,
-                tag_data: tag.as_mut_ptr(),
-                tag_size: tag.len() as u32,
+                data: ResponseDataRaw::EncryptChaChaPoly {
+                    buffer_data: buffer.as_mut_ptr(),
+                    buffer_size: buffer.len() as u32,
+                    tag_data: tag.as_mut_ptr(),
+                    tag_size: tag.len() as u32,
+                },
             },
             Response::DecryptChaChaPoly {
                 client_id,
                 request_id,
                 buffer,
-            } => ResponseRaw::DecryptChaChaPoly {
+            } => ResponseRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                buffer_data: buffer.as_mut_ptr(),
-                buffer_size: buffer.len() as u32,
+                data: ResponseDataRaw::DecryptChaChaPoly {
+                    buffer_data: buffer.as_mut_ptr(),
+                    buffer_size: buffer.len() as u32,
+                },
             },
             Response::EncryptAesGcm {
                 client_id,
                 request_id,
                 buffer,
                 tag,
-            } => ResponseRaw::EncryptAesGcm {
+            } => ResponseRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                buffer_data: buffer.as_mut_ptr(),
-                buffer_size: buffer.len() as u32,
-                tag_data: tag.as_mut_ptr(),
-                tag_size: tag.len() as u32,
+                data: ResponseDataRaw::EncryptAesGcm {
+                    buffer_data: buffer.as_mut_ptr(),
+                    buffer_size: buffer.len() as u32,
+                    tag_data: tag.as_mut_ptr(),
+                    tag_size: tag.len() as u32,
+                },
             },
             Response::DecryptAesGcm {
                 client_id,
                 request_id,
                 buffer,
-            } => ResponseRaw::DecryptAesGcm {
+            } => ResponseRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                buffer_data: buffer.as_mut_ptr(),
-                buffer_size: buffer.len() as u32,
+                data: ResponseDataRaw::DecryptAesGcm {
+                    buffer_data: buffer.as_mut_ptr(),
+                    buffer_size: buffer.len() as u32,
+                },
             },
             Response::EncryptAesCbc {
                 client_id,
                 request_id,
                 buffer,
-            } => ResponseRaw::EncryptAesCbc {
+            } => ResponseRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                buffer_data: buffer.as_mut_ptr(),
-                buffer_size: buffer.len() as u32,
+                data: ResponseDataRaw::EncryptAesCbc {
+                    buffer_data: buffer.as_mut_ptr(),
+                    buffer_size: buffer.len() as u32,
+                },
             },
             Response::DecryptAesCbc {
                 client_id,
                 request_id,
                 plaintext: buffer,
-            } => ResponseRaw::DecryptAesCbc {
+            } => ResponseRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                buffer_data: buffer.as_mut_ptr(),
-                buffer_size: buffer.len() as u32,
+                data: ResponseDataRaw::DecryptAesCbc {
+                    buffer_data: buffer.as_mut_ptr(),
+                    buffer_size: buffer.len() as u32,
+                },
             },
             Response::CalculateAesCmac {
                 client_id,
                 request_id,
                 tag,
-            } => ResponseRaw::CalculateAesCmac {
+            } => ResponseRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                tag_data: tag.as_mut_ptr(),
-                tag_size: tag.len() as u32,
+                data: ResponseDataRaw::CalculateAesCmac {
+                    tag_data: tag.as_mut_ptr(),
+                    tag_size: tag.len() as u32,
+                },
             },
             Response::VerifyAesCmac {
                 client_id,
                 request_id,
                 verified,
-            } => ResponseRaw::VerifyAesCmac {
+            } => ResponseRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                verified: verified.into(),
+                data: ResponseDataRaw::VerifyAesCmac {
+                    verified: verified.into(),
+                },
             },
             Response::CalculateHmac {
                 client_id,
                 request_id,
                 tag,
-            } => ResponseRaw::CalculateHmac {
+            } => ResponseRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                tag_data: tag.as_mut_ptr(),
-                tag_size: tag.len() as u32,
+                data: ResponseDataRaw::CalculateHmac {
+                    tag_data: tag.as_mut_ptr(),
+                    tag_size: tag.len() as u32,
+                },
             },
             Response::VerifyHmac {
                 client_id,
                 request_id,
                 verified,
-            } => ResponseRaw::VerifyHmac {
+            } => ResponseRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                verified: verified.into(),
+                data: ResponseDataRaw::VerifyHmac {
+                    verified: verified.into(),
+                },
             },
             Response::Sign {
                 client_id,
                 request_id,
                 signature,
-            } => ResponseRaw::Sign {
+            } => ResponseRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                signature_data: signature.as_mut_ptr(),
-                signature_size: signature.len() as u32,
+                data: ResponseDataRaw::Sign {
+                    signature_data: signature.as_mut_ptr(),
+                    signature_size: signature.len() as u32,
+                },
             },
             Response::Verify {
                 client_id,
                 request_id,
                 verified,
-            } => ResponseRaw::Verify {
+            } => ResponseRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                verified: verified.into(),
+                data: ResponseDataRaw::Verify {
+                    verified: verified.into(),
+                },
             },
             Response::Ecdh {
                 client_id,
                 request_id,
                 shared_secret,
-            } => ResponseRaw::Ecdh {
+            } => ResponseRaw {
                 client_id: client_id.into(),
                 request_id: request_id.into(),
-                shared_secret_data: shared_secret.as_mut_ptr(),
-                shared_secret_size: shared_secret.len() as u32,
+                data: ResponseDataRaw::Ecdh {
+                    shared_secret_data: shared_secret.as_mut_ptr(),
+                    shared_secret_size: shared_secret.len() as u32,
+                },
             },
         }
     }
@@ -2253,7 +2192,7 @@ mod test {
         // Invalidate enum tag of raw request
         unsafe {
             ptr::copy(&request_raw, request_response_start as *mut RequestRaw, 1);
-            let tag: *mut u8 = request_response_start;
+            let tag: *mut u8 = request_response_start.add(offset_of!(RequestRaw, data));
             const INVALID_TAG: u8 = 0xFF;
             *tag = INVALID_TAG;
         }

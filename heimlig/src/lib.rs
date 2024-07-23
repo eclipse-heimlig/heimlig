@@ -1,4 +1,5 @@
 #![no_std]
+#![feature(offset_of)]
 
 pub mod client;
 pub mod common;
