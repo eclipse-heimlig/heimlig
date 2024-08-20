@@ -18,11 +18,11 @@ pub const TAG_SIZE: usize = <ChaCha20Poly1305 as AeadCore>::TagSize::USIZE;
 ///
 /// * `key`: The key to be used for encryption. Must be exactly [KEY_SIZE] bytes long.
 /// * `nonce`: The nonce to be sued for encryption. The nonce __must not__ be reused for any given
-/// key used. The nonce must have a size of exactly [NONCE_SIZE] bytes.
+///   key used. The nonce must have a size of exactly [NONCE_SIZE] bytes.
 /// * `associated_data`: The additional associated data (AAD) to be authenticated during encryption.
-/// This data will not be part of the ciphertext output.
+///   This data will not be part of the ciphertext output.
 /// * `buffer`: The buffer holding the plaintext.
-/// After successful execution, this buffer will hold the ciphertext
+///   After successful execution, this buffer will hold the ciphertext
 ///
 /// returns: The authenticate [Tag] (on success) or an error value (on error).
 pub fn encrypt_in_place_detached(
@@ -47,11 +47,11 @@ pub fn encrypt_in_place_detached(
 ///
 /// * `key`: The key to be used for decryption. Must be exactly [KEY_SIZE] bytes long.
 /// * `nonce`: The nonce to be sued for decryption. The nonce __must not__ be reused for any given
-/// key used. The nonce must have a size of exactly [NONCE_SIZE] bytes.
+///   key used. The nonce must have a size of exactly [NONCE_SIZE] bytes.
 /// * `associated_data`: The additional associated data (AAD) to be authenticated during decryption.
-/// This data will not be part of the plaintext output.
+///   This data will not be part of the plaintext output.
 /// * `buffer`: The buffer holding the ciphertext.
-/// After successful execution, this buffer will hold the plaintext
+///   After successful execution, this buffer will hold the plaintext
 /// * `tag`: The tag (signature) to authenticate the input data with.
 ///
 /// returns: An empty [Result] (on success) or an error value (on error).
