@@ -52,15 +52,6 @@ checksum = "96d30a06541fbafbc7f82ed10c06164cfbd2c401138f6addd8404629c4b16711"
 
 [[package]]
 name = "atomic-polyfill"
-version = "0.1.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3ff7eb3f316534d83a8a2c3d1674ace8a5a71198eba31e2e2b597833f699b28"
-dependencies = [
- "critical-section",
-]
-
-[[package]]
-name = "atomic-polyfill"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8cf2bce30dfe09ef0bfaef228b9d414faaf7e563035494d7fe092dba54b300f4"
@@ -460,7 +451,7 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a4aa6caef00aa56e881bce7c18b7172422c9bc930940a10e1abf2955d79243f"
 dependencies = [
- "atomic-polyfill 1.0.3",
+ "atomic-polyfill",
  "critical-section",
  "embassy-macros",
  "embassy-time",
@@ -510,7 +501,7 @@ dependencies = [
  "critical-section",
  "embedded-hal",
  "futures-util",
- "heapless 0.7.16",
+ "heapless 0.7.17",
  "log",
 ]
 
@@ -724,11 +715,11 @@ checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
 
 [[package]]
 name = "heapless"
-version = "0.7.16"
+version = "0.7.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db04bc24a18b9ea980628ecf00e6c0264f3c1426dac36c00cb49b6fbad8b0743"
+checksum = "cdc6457c0eb62c71aac4bc17216026d8410337c4126773b9c5daba343f17964f"
 dependencies = [
- "atomic-polyfill 0.1.11",
+ "atomic-polyfill",
  "hash32 0.2.1",
  "rustc_version",
  "spin",
@@ -771,7 +762,7 @@ dependencies = [
  "embassy-futures",
  "embassy-sync",
  "futures",
- "heapless 0.7.16",
+ "heapless 0.7.17",
  "hmac",
  "p256",
  "p384",
@@ -885,7 +876,7 @@ dependencies = [
  "embassy-sync",
  "embassy-time",
  "futures",
- "heapless 0.7.16",
+ "heapless 0.7.17",
  "heimlig",
  "hex",
  "log",
@@ -1253,7 +1244,7 @@ version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49cd323fc21eb534f903ee78d781d622099f9716c5b408ed23bcf39f8f1651c0"
 dependencies = [
- "atomic-polyfill 1.0.3",
+ "atomic-polyfill",
 ]
 
 [[package]]
