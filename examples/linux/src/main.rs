@@ -1,4 +1,4 @@
-#![feature(type_alias_impl_trait)] // Required for embassy
+#![feature(impl_trait_in_assoc_type)] // Required for embassy
 
 use embassy_executor::Spawner;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
