@@ -62,7 +62,10 @@ async fn sign_verify_nist_p256() {
 
     // Export public key
     let org_request_id = api
-        .export_public_key(ASYM_NIST_P256_KEY.id, &mut large_public_key_buffer)
+        .export_public_key(
+            ASYM_NIST_P256_KEY.id,
+            &mut large_public_key_buffer[..ASYM_NIST_P256_KEY.ty.public_key_size()],
+        )
         .await
         .expect("failed to send request");
     let Response::ExportPublicKey {
@@ -78,7 +81,10 @@ async fn sign_verify_nist_p256() {
 
     // Export private key
     let org_request_id = api
-        .export_private_key(ASYM_NIST_P256_KEY.id, &mut large_private_key_buffer)
+        .export_private_key(
+            ASYM_NIST_P256_KEY.id,
+            &mut large_private_key_buffer[..ASYM_NIST_P256_KEY.ty.private_key_size()],
+        )
         .await
         .expect("failed to send request");
     let Response::ExportPrivateKey {

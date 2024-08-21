@@ -134,7 +134,7 @@ define_aes_cmac_impl!(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::crypto::aes::{test::*, CMAC_TAG_SIZE, KEY128_SIZE, KEY192_SIZE, KEY256_SIZE};
+    use crate::crypto::aes::{test::*, KEY128_SIZE, KEY192_SIZE, KEY256_SIZE};
 
     macro_rules! define_aes_cmac_calculate_verify_test {
         (

@@ -1,11 +1,9 @@
 use crate::common::jobs::{ClientId, Error, Request, RequestId, Response};
 use crate::crypto;
-use crate::crypto::chacha20poly1305::KEY_SIZE;
 use crate::hsm::keystore::{self, KeyId};
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
 use futures::{Sink, SinkExt, Stream, StreamExt};
-use zeroize::Zeroizing;
 
 pub struct ChaChaPolyWorker<
     'data,
@@ -101,14 +99,13 @@ impl<
         aad: &'data [u8],
         tag: &'data mut [u8],
     ) -> Response<'data> {
-        let mut key_buffer = Zeroizing::new([0u8; KEY_SIZE]);
-        let export = self
+        let key = self
             .key_store
             .lock()
             .await
-            .export_symmetric_key_insecure(key_id, key_buffer.as_mut_slice());
-        match export {
-            Ok(key) => self.encrypt(client_id, request_id, key, nonce, aad, plaintext, tag),
+            .export_symmetric_key_insecure(key_id);
+        match key {
+            Ok(key) => self.encrypt(client_id, request_id, &key, nonce, aad, plaintext, tag),
             Err(e) => Response::Error {
                 client_id,
                 request_id,
@@ -128,14 +125,13 @@ impl<
         aad: &'data [u8],
         tag: &'data [u8],
     ) -> Response<'data> {
-        let mut key_buffer = Zeroizing::new([0u8; KEY_SIZE]);
-        let export = self
+        let key = self
             .key_store
             .lock()
             .await
-            .export_symmetric_key_insecure(key_id, key_buffer.as_mut_slice());
-        match export {
-            Ok(key) => self.decrypt(client_id, request_id, key, nonce, aad, ciphertext, tag),
+            .export_symmetric_key_insecure(key_id);
+        match key {
+            Ok(key) => self.decrypt(client_id, request_id, &key, nonce, aad, ciphertext, tag),
             Err(e) => Response::Error {
                 client_id,
                 request_id,
