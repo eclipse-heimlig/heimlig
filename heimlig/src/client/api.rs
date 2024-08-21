@@ -181,7 +181,7 @@ impl<
     /// * `key_id`: The key identifier to use
     /// * `nonce`: The 'Number used once' to use
     /// * `plaintext_size`: Used for algorithms that require padding (e.g. AES-CBC) only.
-    /// Indicates the size of the actual plaintext located in `buffer` starting from the beginning.
+    ///   Indicates the size of the actual plaintext located in `buffer` starting from the beginning.
     /// * `buffer`: The buffer containing the plaintext and room for padding (if needed)
     /// * `aad`: 'Additional authenticated data' to be used for tag computation
     /// * `tag`: Buffer for the generated tag
@@ -235,7 +235,7 @@ impl<
     /// * `key`: The key to use
     /// * `nonce`: The 'Number used once' to use
     /// * `plaintext_size`: Used for algorithms that require padding (e.g. AES-CBC) only.
-    /// Indicates the size of the actual plaintext located in `buffer` starting from the beginning.
+    ///   Indicates the size of the actual plaintext located in `buffer` starting from the beginning.
     /// * `buffer`: The buffer containing the plaintext and room for padding (if needed)
     /// * `aad`: 'Additional authenticated data' to be used for tag computation
     /// * `tag`: Buffer for the generated tag
@@ -338,7 +338,7 @@ impl<
     /// * `key`: The key to use
     /// * `nonce`: The 'Number used once' to use
     /// * `plaintext_size`: Used for algorithms that require padding (e.g. AES-CBC) only.
-    /// Indicates the size of the actual plaintext located in `buffer` starting from the beginning.
+    ///   Indicates the size of the actual plaintext located in `buffer` starting from the beginning.
     /// * `buffer`: The buffer containing the plaintext and room for padding (if needed)
     /// * `aad`: 'Additional authenticated data' to be used for tag computation
     /// * `tag`: The authentication tag used to authenticate the data
