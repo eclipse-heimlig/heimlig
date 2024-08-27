@@ -18,5 +18,5 @@ heapless = "0.7.16"
 hex = "0.4.3"
 log = "0.4.20"
 rand_chacha = "0.3.1"
-simple_logger = "4.2.0"
+simple_logger = "5.0.0"
 heimlig = { path = "../../heimlig" }
