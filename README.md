@@ -32,9 +32,7 @@ client.
 
 ## Status
 
-__Warning: Heimlig is still under development and is not production ready__.
-
-Heimlig implements common cryptographic algorithms:
+Heimlig implements common cryptographic algorithms as software workers:
 
 - Symmetric encryption and decryption
   ([AES-CBC](https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Cipher_block_chaining_(CBC)),
@@ -54,12 +52,16 @@ An [example implementation](examples/stm32h745i/README.md) is available for the
 [STM32H745XI](https://www.st.com/en/evaluation-tools/stm32h745i-disco.html) discovery board as well
 as for [Linux](examples/linux/README.md) (for development).
 
-Current limitations include:
+The code has not yet been independently audited by security experts.
 
-- Most cryptographic algorithms are implemented in software only.
-- Storage for key material is not persistent yet.
-- While safe cross-core communication works, safe cross-MCU has not been demonstrated yet.
-- The code has not been independently audited by security experts.
+## Deployment
+
+To deploy Heimlig in a bare-metal environment, additional integration with the hardware is required:
+
+- Chip bring-up and peripheral access
+- Async executor (such as [embassy-executor](https://crates.io/crates/embassy-executor))
+- Hardware-specific workers for persistent key storage and hardware-accelerated cryptography.
+  The provided software workers can be used where hardware acceleration is not required.
 
 ## Quickstart
 
