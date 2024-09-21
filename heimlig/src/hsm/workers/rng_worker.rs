@@ -1,5 +1,6 @@
 use crate::common::jobs::{ClientId, Error, Request, RequestId, Response};
 use crate::common::limits::MAX_RANDOM_SIZE;
+use crate::crypto;
 use crate::hsm::keystore::{self, KeyId};
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
@@ -82,11 +83,17 @@ impl<
                 error: Error::RequestTooLarge,
             };
         }
-        self.rng.lock().await.fill_bytes(output);
-        Response::GetRandom {
-            client_id,
-            request_id,
-            data: output,
+        match self.rng.lock().await.try_fill_bytes(output) {
+            Ok(()) => Response::GetRandom {
+                client_id,
+                request_id,
+                data: output,
+            },
+            Err(_) => Response::Error {
+                client_id,
+                request_id,
+                error: Error::Crypto(crypto::Error::Random),
+            },
         }
     }
 
@@ -109,7 +116,13 @@ impl<
             Ok(key_info) => {
                 let mut key = [0u8; keystore::KeyType::MAX_SYMMETRIC_KEY_SIZE];
                 let key = &mut key[0..key_info.ty.key_size()];
-                self.rng.lock().await.fill_bytes(key);
+                if self.rng.lock().await.try_fill_bytes(key).is_err() {
+                    return Response::Error {
+                        client_id,
+                        request_id,
+                        error: Error::Crypto(crypto::Error::Random),
+                    };
+                };
                 let mut locked_key_store = key_store.lock().await;
 
                 // Check overwrite permission
