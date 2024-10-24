@@ -1,7 +1,7 @@
 use crate::common::jobs::{HashAlgorithm, Request, Response};
 use crate::hsm::keystore::{Curve, KeyId};
 use crate::integration::raw_errors::JobErrorRaw;
-use core::mem::offset_of;
+use core::mem::{offset_of, MaybeUninit};
 use core::slice;
 use strum::EnumCount;
 
@@ -475,16 +475,31 @@ impl RequestRaw {
     /// valid `RequestRaw` instance.  
     ///
     pub unsafe fn from_raw(ptr: *const u8) -> Result<Self, ValidationError> {
+        // We create a copy of the untrusted request on the stack to prevent a potential
+        // point-of-check/point-of-use issue
+        let mut request: MaybeUninit<RequestRaw> = MaybeUninit::uninit();
+
         // SAFETY: Pointer and size must be checked by integrator
-        let tag: u8 = unsafe { *(ptr.add(offset_of!(RequestRaw, data))) };
+        unsafe {
+            core::ptr::copy(ptr.cast(), request.as_mut_ptr(), 1);
+        }
+
+        // SAFETY: request is of type RequestRaw, so adding the offset of a field of such a struct
+        // still falls under the object behind the pointer
+        let tag: u8 = unsafe {
+            *(request
+                .as_ptr()
+                .cast::<u8>()
+                .add(offset_of!(RequestRaw, data)))
+        };
 
         // Validate tag value. Invalid tag values cause UB when transmuted into an enum.
         if tag >= RequestDataRaw::COUNT as u8 {
             return Err(ValidationError::InvalidTagValue);
         }
 
-        // SAFETY: All members of RequestRaw are valid for all possible values found in memory
-        Ok(*ptr.cast::<RequestRaw>())
+        // SAFETY: Besides the tag, which we checked, all other members are ok with any value
+        Ok(unsafe { request.assume_init() })
     }
 
     pub fn verify<'data>(
@@ -1701,16 +1716,31 @@ impl ResponseRaw {
     /// valid `ResponseRaw` instance.  
     ///
     pub unsafe fn from_raw(ptr: *const u8) -> Result<Self, ValidationError> {
+        // We create a copy of the untrusted response on the stack to prevent a potential
+        // point-of-check/point-of-use issue
+        let mut response: MaybeUninit<ResponseRaw> = MaybeUninit::uninit();
+
         // SAFETY: Pointer and size must be checked by integrator
-        let tag: u8 = unsafe { *(ptr.add(offset_of!(RequestRaw, data))) };
+        unsafe {
+            core::ptr::copy(ptr.cast(), response.as_mut_ptr(), 1);
+        }
+
+        // SAFETY: response is of type ResponseRaw, so adding the offset of a field of such a struct
+        // still falls under the object behind the pointer
+        let tag: u8 = unsafe {
+            *(response
+                .as_ptr()
+                .cast::<u8>()
+                .add(offset_of!(ResponseRaw, data)))
+        };
 
         // Validate tag value. Invalid tag values cause UB when transmuted into an enum.
         if tag >= ResponseDataRaw::COUNT as u8 {
             return Err(ValidationError::InvalidTagValue);
         }
 
-        // SAFETY: All members of RequestRaw are valid for all possible values found in memory
-        Ok(*ptr.cast::<ResponseRaw>())
+        // SAFETY: Besides the tag, which we checked, all other members are ok with any value
+        Ok(unsafe { response.assume_init() })
     }
 }
 
