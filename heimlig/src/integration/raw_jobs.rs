@@ -45,8 +45,8 @@ pub struct RequestResponseRawPair {
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct RequestRaw {
-    client_id: ClientIdRaw,
-    request_id: RequestIdRaw,
+    pub client_id: ClientIdRaw,
+    pub request_id: RequestIdRaw,
     data: RequestDataRaw,
 }
 
@@ -344,8 +344,8 @@ pub enum RequestDataRaw {
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct ResponseRaw {
-    client_id: ClientIdRaw,
-    request_id: RequestIdRaw,
+    pub client_id: ClientIdRaw,
+    pub request_id: RequestIdRaw,
     data: ResponseDataRaw,
 }
 
