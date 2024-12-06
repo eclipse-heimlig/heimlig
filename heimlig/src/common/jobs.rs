@@ -544,7 +544,7 @@ pub enum Response<'data> {
     },
 }
 
-impl<'data> Request<'data> {
+impl Request<'_> {
     pub fn get_type(&self) -> RequestType {
         match self {
             Request::GetRandom { .. } => RequestType::GetRandom,
@@ -754,7 +754,7 @@ impl<'data> Request<'data> {
     }
 }
 
-impl<'data> Response<'data> {
+impl Response<'_> {
     pub fn get_client_id(&self) -> ClientId {
         *match self {
             Response::Error { client_id, .. } => client_id,
