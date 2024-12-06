@@ -151,14 +151,13 @@ pub struct Builder<
 
 impl<
         'data,
-        'keystore,
         M: RawMutex,
         ReqSrc: Stream<Item = Request<'data>> + Unpin,
         RespSink: Sink<Response<'data>> + Unpin,
         ReqSink: Sink<Request<'data>> + Unpin,
         RespSrc: Stream<Item = Response<'data>> + Unpin,
         KeyStore: keystore::KeyStore,
-    > Default for Builder<'data, 'keystore, M, ReqSrc, RespSink, ReqSink, RespSrc, KeyStore>
+    > Default for Builder<'data, '_, M, ReqSrc, RespSink, ReqSink, RespSrc, KeyStore>
 {
     fn default() -> Self {
         Builder::new()
