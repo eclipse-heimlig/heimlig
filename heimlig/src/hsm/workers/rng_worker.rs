@@ -1,5 +1,4 @@
 use crate::common::jobs::{ClientId, Error, Request, RequestId, Response};
-use crate::common::limits::MAX_RANDOM_SIZE;
 use crate::hsm::keystore::{self, KeyId};
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::mutex::Mutex;
@@ -75,13 +74,6 @@ impl<
         request_id: RequestId,
         output: &'data mut [u8],
     ) -> Response<'data> {
-        if output.len() >= MAX_RANDOM_SIZE {
-            return Response::Error {
-                client_id,
-                request_id,
-                error: Error::RequestTooLarge,
-            };
-        }
         self.rng.lock().await.fill_bytes(output);
         Response::GetRandom {
             client_id,
