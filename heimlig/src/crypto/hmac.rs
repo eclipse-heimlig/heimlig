@@ -100,7 +100,7 @@ macro_rules! define_hmac_impl {
         /// # Arguments
         ///
         /// * `key`: A slice containing key bytes.
-        /// * `message`: A slice containing the message to veify.
+        /// * `message`: A slice containing the message to verify.
         /// * `tag`: A slice containing the HMAC to verify.
         #[doc = concat!("The `tag` slice length has to be `", stringify!($tag_size), "` bytes long).")]
         ///

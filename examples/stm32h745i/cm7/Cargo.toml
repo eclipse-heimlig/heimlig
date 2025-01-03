@@ -8,10 +8,12 @@ license = "MIT OR Apache-2.0"
 [[bin]]
 name = "rng_single_core"
 path = "src/bin/rng_single_core.rs"
+test = false
 
 [[bin]]
 name = "blinky"
 path = "src/bin/blinky.rs"
+test = false
 
 [dependencies]
 cortex-m = { version = "0.7.7", default-features = false, features = ["critical-section-single-core"] }

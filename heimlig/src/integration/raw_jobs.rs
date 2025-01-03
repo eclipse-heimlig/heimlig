@@ -456,7 +456,7 @@ impl RequestResponseRawPair {
     ///
     pub unsafe fn from_raw(ptr: *const u8) -> Result<Self, ValidationError> {
         let request = RequestRaw::from_raw(ptr)?;
-        let response_ptr = ptr.add(core::mem::size_of::<RequestRaw>());
+        let response_ptr = ptr.add(size_of::<RequestRaw>());
         let response = ResponseRaw::from_raw(response_ptr)?;
         Ok(RequestResponseRawPair { request, response })
     }
@@ -2124,7 +2124,6 @@ mod test {
     use super::*;
     use crate::common::jobs::Request::GetRandom;
     use crate::common::jobs::{ClientId, RequestId};
-    use core::{mem, ptr};
 
     #[test]
     fn test_serialize_deserialize() {
@@ -2166,9 +2165,9 @@ mod test {
         let client_id = ClientId(5);
         let request_id = RequestId(7);
         const OUTPUT_SIZE: usize = 16;
-        let mut shared_memory = [0u8; mem::size_of::<RequestRaw>() + OUTPUT_SIZE];
+        let mut shared_memory = [0u8; size_of::<RequestRaw>() + OUTPUT_SIZE];
         let request_response_start = shared_memory.as_mut_ptr();
-        let output_start = unsafe { shared_memory.as_mut_ptr().add(mem::size_of::<RequestRaw>()) };
+        let output_start = unsafe { shared_memory.as_mut_ptr().add(size_of::<RequestRaw>()) };
         let request = GetRandom {
             client_id,
             request_id,
@@ -2209,9 +2208,9 @@ mod test {
         let client_id = ClientId(5);
         let request_id = RequestId(7);
         const OUTPUT_SIZE: usize = 16;
-        let mut shared_memory = [0u8; mem::size_of::<RequestRaw>() + OUTPUT_SIZE];
+        let mut shared_memory = [0u8; size_of::<RequestRaw>() + OUTPUT_SIZE];
         let request_response_start = shared_memory.as_mut_ptr();
-        let output_start = unsafe { shared_memory.as_mut_ptr().add(mem::size_of::<RequestRaw>()) };
+        let output_start = unsafe { shared_memory.as_mut_ptr().add(size_of::<RequestRaw>()) };
         let request = GetRandom {
             client_id,
             request_id,
@@ -2221,7 +2220,7 @@ mod test {
 
         // Invalidate enum tag of raw request
         unsafe {
-            ptr::copy(&request_raw, request_response_start as *mut RequestRaw, 1);
+            core::ptr::copy(&request_raw, request_response_start as *mut RequestRaw, 1);
             let tag: *mut u8 = request_response_start.add(offset_of!(RequestRaw, data));
             const INVALID_TAG: u8 = 0xFF;
             *tag = INVALID_TAG;

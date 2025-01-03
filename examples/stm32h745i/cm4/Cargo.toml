@@ -8,6 +8,7 @@ license = "MIT OR Apache-2.0"
 [[bin]]
 name = "blinky"
 path = "src/bin/blinky.rs"
+test = false
 
 [dependencies]
 cortex-m = { version = "0.7.7", default-features = false, features = ["critical-section-single-core"] }
