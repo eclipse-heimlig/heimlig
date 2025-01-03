@@ -2,16 +2,16 @@ use crate::common::jobs::{ClientId, HashAlgorithm, Request, RequestId, Response}
 use crate::hsm::keystore::KeyId;
 use futures::{Sink, SinkExt, Stream, StreamExt};
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Error {
+    Send,
+}
+
 /// An interface to send [Request]s to the HSM core and receive [Response]es from it.
 pub struct Api<'data, Req: Sink<Request<'data>>, Resp: Stream<Item = Response<'data>>> {
     requests: Req,
     responses: Resp,
     request_id_counter: RequestId,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum Error {
-    Send,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
