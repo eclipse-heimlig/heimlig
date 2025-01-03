@@ -70,7 +70,7 @@ pub fn ed25519_verify(public_key: &[u8], message: &[u8], signature: &[u8]) -> Re
 /// * `private_key`: A slice containing the private key bytes. The private key has to
 ///   be `PRIVATE_KEY_SIZE` bytes long.
 /// * `public_key`: A mutable slice where the computed public key will be stored. The
-///   public key slice length has be `PUBLIC_KEY_SIZE` bytes long.
+///   public key slice length has to be `PUBLIC_KEY_SIZE` bytes long.
 ///
 /// # Errors
 ///

@@ -58,7 +58,7 @@ pub fn x25519_calculate_shared_secret(
 /// * `private_key`: A slice containing the private key bytes. The private key has to
 ///   be `KEY_SIZE` bytes long.
 /// * `public_key`: A mutable slice where the computed public key will be stored. The
-///   public key slice length has be `KEY_SIZE` bytes long.
+///   public key slice length has to be `KEY_SIZE` bytes long.
 ///
 /// # Errors
 ///

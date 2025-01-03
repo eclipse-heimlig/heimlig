@@ -417,7 +417,7 @@ mod test {
     const MESSAGE: &[u8] =
         b"You have to understand the rules in the first place if you're going to break them.";
 
-    macro_rules! define_nist_sign_veify_test {
+    macro_rules! define_nist_sign_verify_test {
         (
             $test_name:ident,
             $curve:tt,
@@ -459,7 +459,7 @@ mod test {
         };
     }
 
-    define_nist_sign_veify_test!(
+    define_nist_sign_verify_test!(
         nist_p256_sign_verify_test,
         NistP256,
         nist_p256_sign,
@@ -471,7 +471,7 @@ mod test {
         NIST_P256_DIGEST_SIZE
     );
 
-    define_nist_sign_veify_test!(
+    define_nist_sign_verify_test!(
         nist_p384_sign_verify_test,
         NistP384,
         nist_p384_sign,

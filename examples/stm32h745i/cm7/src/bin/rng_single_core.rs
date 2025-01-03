@@ -2,6 +2,7 @@
 #![no_main]
 #![feature(impl_trait_in_assoc_type)]
 
+use core::ptr::addr_of_mut;
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_stm32::bind_interrupts;
@@ -97,8 +98,8 @@ async fn client_task(
 
     // Memory
     let pool = heapless::pool::Pool::<[u8; 16]>::new();
-    // Safety: we are the only users of MEMORY
-    pool.grow(unsafe { &mut MEMORY });
+    // SAFETY: we are the only users of MEMORY
+    pool.grow(unsafe { &mut *addr_of_mut!(MEMORY) });
 
     // Api
     let mut api = Api::new(req_tx, resp_rx);
@@ -112,7 +113,7 @@ async fn client_task(
             .alloc()
             .expect("Failed to allocate buffer for random data")
             .init([0; 16]);
-        // Safety: we forget about the box below, so it doesn't get dropped!
+        // SAFETY: we forget about the box below, so it doesn't get dropped!
         let random_buffer = unsafe {
             core::slice::from_raw_parts_mut(
                 random_buffer_alloc.as_mut_ptr(),
