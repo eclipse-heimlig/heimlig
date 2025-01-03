@@ -1,9 +1,5 @@
 use displaydoc::Display;
 
-/// Identifier to reference HSM keys
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
-pub struct KeyId(pub u32);
-
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Display)]
 pub enum Error {
     /// The operation is not permitted
@@ -23,6 +19,10 @@ pub enum Error {
     /// The size of the provided buffer is invalid.
     InvalidBufferSize,
 }
+
+/// Identifier to reference HSM keys
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
+pub struct KeyId(pub u32);
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Curve {
