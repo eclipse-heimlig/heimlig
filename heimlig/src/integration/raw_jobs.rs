@@ -2137,6 +2137,7 @@ mod test {
         };
         let request_raw: RequestRaw = request.into();
         let request_raw_ptr = &request_raw as *const RequestRaw as *const u8;
+        // SAFETY: Raw data format of RequestResponseRawPair in : RequestRaw || ResponseRaw
         let reconstructed_request_raw = unsafe { RequestRaw::from_raw(request_raw_ptr) }
             .expect("failed to create raw request from pointer.");
         let always_valid = |_data: *const u8, _size: u32| true;
@@ -2167,22 +2168,31 @@ mod test {
         const OUTPUT_SIZE: usize = 16;
         let mut shared_memory = [0u8; size_of::<RequestRaw>() + OUTPUT_SIZE];
         let request_response_start = shared_memory.as_mut_ptr();
-        let output_start = unsafe { shared_memory.as_mut_ptr().add(size_of::<RequestRaw>()) };
+        // SAFETY: Raw data format in shared memory: RequestResponseRawPair || output
+        let output_start = unsafe {
+            shared_memory
+                .as_mut_ptr()
+                .add(size_of::<RequestResponseRawPair>())
+        };
         let request = GetRandom {
             client_id,
             request_id,
+            // SAFETY: Raw data format in shared memory: RequestResponseRawPair || output
             output: unsafe { slice::from_raw_parts_mut(output_start, OUTPUT_SIZE) },
         };
         let request_raw = request.into();
         let mut request_response_pair =
+            // SAFETY: Raw data format in shared memory: RequestResponseRawPair || output
             unsafe { RequestResponseRawPair::from_raw(request_response_start) }
                 .expect("failed to create request-response pair from pointer.");
         request_response_pair.request = request_raw;
 
         let is_in_shared_memory_1st_half = |data: *const u8, size: u32| {
             let start_data = data;
+            // SAFETY: Raw pointer is trusted in unit tests
             let end_data = unsafe { start_data.add(size as usize) };
             let start_shared_memory = shared_memory.as_ptr();
+            // SAFETY: Calculation to determine first half of raw memory region
             let end_shared_memory_1st_half =
                 unsafe { start_shared_memory.add(shared_memory.len() / 2) };
             start_shared_memory <= start_data && end_data <= end_shared_memory_1st_half
@@ -2210,15 +2220,22 @@ mod test {
         const OUTPUT_SIZE: usize = 16;
         let mut shared_memory = [0u8; size_of::<RequestRaw>() + OUTPUT_SIZE];
         let request_response_start = shared_memory.as_mut_ptr();
-        let output_start = unsafe { shared_memory.as_mut_ptr().add(size_of::<RequestRaw>()) };
+        // SAFETY: Raw data format in shared memory: RequestResponseRawPair || output
+        let output_start = unsafe {
+            shared_memory
+                .as_mut_ptr()
+                .add(size_of::<RequestResponseRawPair>())
+        };
         let request = GetRandom {
             client_id,
             request_id,
+            // SAFETY: Raw data format in shared memory: RequestResponseRawPair || output
             output: unsafe { slice::from_raw_parts_mut(output_start, OUTPUT_SIZE) },
         };
         let request_raw = request.into();
 
         // Invalidate enum tag of raw request
+        // SAFETY: Raw data format of RequestResponseRawPair in shared memory: RequestRaw || ResponseRaw
         unsafe {
             core::ptr::copy(&request_raw, request_response_start as *mut RequestRaw, 1);
             let tag: *mut u8 = request_response_start.add(offset_of!(RequestRaw, data));
@@ -2226,6 +2243,7 @@ mod test {
             *tag = INVALID_TAG;
         }
 
+        // SAFETY: Testing errors in conversion from raw memory to RequestResponseRawPair
         match unsafe { RequestResponseRawPair::from_raw(request_response_start) } {
             Ok(_) => {
                 panic!("Expected request raw reconstruction to fail")
