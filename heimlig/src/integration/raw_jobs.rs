@@ -2129,15 +2129,15 @@ mod test {
     fn test_serialize_deserialize() {
         let client_id = ClientId(5);
         let request_id = RequestId(7);
-        let mut shared_memory = [0u8; 16];
+        let mut output_buffer = [0u8; 16];
         let request = GetRandom {
             client_id,
             request_id,
-            output: &mut shared_memory,
+            output: &mut output_buffer,
         };
         let request_raw: RequestRaw = request.into();
         let request_raw_ptr = &request_raw as *const RequestRaw as *const u8;
-        // SAFETY: Raw data format of RequestResponseRawPair in : RequestRaw || ResponseRaw
+        // SAFETY: RequestRaw is reconstructed from instance on the stack created just now
         let reconstructed_request_raw = unsafe { RequestRaw::from_raw(request_raw_ptr) }
             .expect("failed to create raw request from pointer.");
         let always_valid = |_data: *const u8, _size: u32| true;
@@ -2152,8 +2152,8 @@ mod test {
             } => {
                 assert_eq!(reconstructed_client_id, client_id);
                 assert_eq!(reconstructed_request_id, request_id);
-                assert_eq!(reconstructed_output.as_ptr(), shared_memory.as_ptr());
-                assert_eq!(reconstructed_output.len(), shared_memory.len());
+                assert_eq!(reconstructed_output.as_ptr(), output_buffer.as_ptr());
+                assert_eq!(reconstructed_output.len(), output_buffer.len());
             }
             _ => {
                 panic!("Unexpected reconstructed request type")
@@ -2166,7 +2166,7 @@ mod test {
         let client_id = ClientId(5);
         let request_id = RequestId(7);
         const OUTPUT_SIZE: usize = 16;
-        let mut shared_memory = [0u8; size_of::<RequestRaw>() + OUTPUT_SIZE];
+        let mut shared_memory = [0u8; size_of::<RequestResponseRawPair>() + OUTPUT_SIZE];
         let request_response_start = shared_memory.as_mut_ptr();
         // SAFETY: Raw data format in shared memory: RequestResponseRawPair || output
         let output_start = unsafe {
@@ -2218,7 +2218,7 @@ mod test {
         let client_id = ClientId(5);
         let request_id = RequestId(7);
         const OUTPUT_SIZE: usize = 16;
-        let mut shared_memory = [0u8; size_of::<RequestRaw>() + OUTPUT_SIZE];
+        let mut shared_memory = [0u8; size_of::<RequestResponseRawPair>() + OUTPUT_SIZE];
         let request_response_start = shared_memory.as_mut_ptr();
         // SAFETY: Raw data format in shared memory: RequestResponseRawPair || output
         let output_start = unsafe {
@@ -2232,13 +2232,15 @@ mod test {
             // SAFETY: Raw data format in shared memory: RequestResponseRawPair || output
             output: unsafe { slice::from_raw_parts_mut(output_start, OUTPUT_SIZE) },
         };
-        let request_raw = request.into();
+        let request_raw: RequestRaw = request.into();
 
         // Invalidate enum tag of raw request
-        // SAFETY: Raw data format of RequestResponseRawPair in shared memory: RequestRaw || ResponseRaw
+        // SAFETY: Populating RequestRaw member of RequestResponseRawPair and modifying its tag
         unsafe {
-            core::ptr::copy(&request_raw, request_response_start as *mut RequestRaw, 1);
-            let tag: *mut u8 = request_response_start.add(offset_of!(RequestRaw, data));
+            let pair_request_raw: *mut u8 =
+                request_response_start.add(offset_of!(RequestResponseRawPair, request));
+            *(pair_request_raw as *mut RequestRaw) = request_raw;
+            let tag: *mut u8 = pair_request_raw.add(offset_of!(RequestRaw, data));
             const INVALID_TAG: u8 = 0xFF;
             *tag = INVALID_TAG;
         }
